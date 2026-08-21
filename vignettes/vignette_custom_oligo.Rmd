@@ -1,0 +1,436 @@
+---
+title: "Running the Oligonucleotide Metabolite ID Pipeline on Custom Sequences"
+subtitle: "A practical guide to generating metabolite libraries, charge envelopes, fragment ions, and PRM inclusion lists for any therapeutic oligonucleotide"
+author: "Oligo Metabolite ID Pipeline"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+    theme: readable
+    highlight: tango
+    df_print: paged
+    self_contained: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE, message = FALSE, warning = FALSE)
+script_dir <- "/workspace/oligo_metabolite_id"
+```
+
+# Overview
+
+This vignette walks through running the oligonucleotide metabolite identification pipeline on a sequence of your choice — whether it uses standard DNA/RNA chemistry or custom modifications you define yourself.
+
+The pipeline takes an oligonucleotide sequence plus chemistry description as input and produces:
+
+- **Theoretical metabolite library** — parent, 3'/5' exonuclease truncations, endonuclease internal fragments
+- **Masses and formulas** — monoisotopic mass, average mass, molecular formula for every metabolite
+- **Charge envelopes** — m/z values for charge states z = 3–12 under negative ESI, with adduct variants (H, Na, K, NH~4~)
+- **Isotope patterns** — top-N isotope peaks per charge state
+- **PS oxidation series** — phosphorothioate-to-phosphodiester conversion at each PS position (mass shift -15.977 Da)
+- **McLuckey MS/MS fragment ions** — a, a-B, b, b-B, c, d, w, x, y, z terminal ions plus internal fragments, with PS diagnostic ions
+- **PRM inclusion list** — precursor m/z values for targeted MS acquisition
+- **Excel workbook** (7 sheets) and **HTML report** (5 plots)
+
+Two entry points are available:
+
+| Script | When to use |
+|--------|-------------|
+| `main_ION337.R` | Command-line driver. Works for any sequence using standard dictionary codes. Always validates against the ION337 reference workbook. |
+| `run_custom_oligo.R` | Template script. Edit the CONFIG block at the top and run. Supports custom chemistry overrides and skips ION337 validation. |
+
+# Quick start
+
+If your oligo uses only standard chemistry (DNA, RNA, 2'-OMe, 2'-F, MOE sugars; PO/PS linkages; standard bases), you can run it in one line:
+
+```{r quickstart-cli}
+# From the command line:
+# Rscript main_ION337.R --seq "Gm-sTm-sCm-sTm-sCm-sTd-sCd-sTd-sCd-sTd-sTd-sCm-sTm-sCm-sTm-sGm"
+```
+
+For anything with custom modifications, copy the template, edit the config, and run:
+
+```{r quickstart-template}
+# cp run_custom_oligo.R my_oligo_run.R
+# (edit the CONFIG block in my_oligo_run.R)
+# Rscript my_oligo_run.R
+```
+
+# Input notations
+
+The pipeline accepts three input formats, auto-detected from the input string. All three reduce to the same internal representation: parallel vectors of bases, sugars, and linkages (5' to 3'), plus optional 5'/3' conjugate codes.
+
+## Triplet notation
+
+Each token is `[linkage][base][sugar]`, separated by dashes. The first token (5' end) has no linkage prefix. The linkage prefix on token *i* represents the incoming bond from position *i-1*.
+
+```
+Gm-sTm-sCm-sTm-sCm-sTd-sCd-sTd-sCd-sTd-sTd-sCm-sTm-sCm-sTm-sGm
+```
+
+Breaking this down:
+
+- `Gm` — position 1: base G, sugar m (2'-OMe), no incoming linkage (5' terminal)
+- `sTm` — position 2: base T, sugar m, incoming PS bond from position 1
+- `sTd` — position 6: base T, sugar d (DNA), incoming PS bond from position 5
+- The last token's outgoing linkage is implicitly NA (3' terminal)
+
+Linkage codes: `o` = phosphodiester (PO), `s` = phosphorothioate (PS).
+
+## OligoDistiller notation
+
+Wrapped in `OH-...-OH`, with `*` marking PS outgoing bonds. Sugar is a suffix on the base.
+
+```
+OH-Gm*-Tm*-Cm*-Tm*-Cm*-Td*-Cd*-Td*-Cd*-Td*-Td*-Cm*-Tm*-Cm*-Tm*-Gm*-OH
+```
+
+Sugar suffixes: `m` = 2'-OMe, `f` = 2'-F, `d` = DNA, `r` = RNA, `e` = MOE. The `*` after a token means the outgoing bond from that position is PS; no `*` means PO.
+
+## Structured input
+
+An R list with explicit parallel vectors. Use this when you need conjugates or want full control.
+
+```{r structured-example}
+my_spec <- list(
+  bases    = c("G","T","C","T","C","T","C","T","C","T","T","C","T","C","T","G"),
+  sugars   = c("m","m","m","m","m","d","d","d","d","d","d","m","m","m","m","m"),
+  linkages = c("s","s","s","s","s","s","s","s","s","s","s","s","s","s","s", NA),
+  conj5    = "none",
+  conj3    = "GalNAc"     # trivalent GalNAc cluster at 3' end
+)
+```
+
+The `linkages` vector has length *n* (same as bases/sugars). `linkages[i]` is the bond from position *i* to position *i+1*. The last entry is `NA` because the 3' terminal position has no outgoing bond.
+
+# Chemistry dictionary
+
+## Built-in codes
+
+All standard codes are exact (validated against known masses or the ION337 reference workbook).
+
+### Bases
+
+| Code | Name | Formula |
+|------|------|---------|
+| A | adenine | C~5~H~5~N~5~ |
+| G | guanine | C~5~H~5~N~5~O |
+| C | cytosine | C~4~H~5~N~3~O |
+| T | thymine | C~5~H~6~N~2~O~2~ |
+| U | uracil | C~4~H~4~N~2~O~2~ |
+| S | 5-methylcytosine (m5C) | C~5~H~7~N~3~O |
+| D | 2,6-diaminopurine | C~5~H~6~N~6~ |
+| I | hypoxanthine (inosine) | C~5~H~4~N~4~O |
+
+### Sugars
+
+| Code | Name | Formula | Status |
+|------|------|---------|--------|
+| d | 2'-deoxyribose (DNA) | C~5~H~10~O~4~ | exact |
+| r | ribose (RNA) | C~5~H~10~O~5~ | exact |
+| m | 2'-O-methylribose | C~6~H~12~O~5~ | exact |
+| f | 2'-fluororibose | C~5~H~9~FO~4~ | exact |
+| MOE | 2'-O-methoxyethylribose | C~8~H~16~O~6~ | exact |
+| NH2 | 2'-amino-2'-deoxyribose | C~5~H~11~NO~4~ | exact |
+| cEt | constrained ethyl | C~7~H~12~O~4~ | verify |
+| LNA | locked nucleic acid | C~6~H~10~O~5~ | verify |
+
+Entries marked **verify** are best-estimate formulas. Confirm them against a known mass before relying on them.
+
+### Linkages
+
+| Code | Name | Formula |
+|------|------|---------|
+| o | phosphodiester (PO) | HPO~3~ |
+| s | phosphorothioate (PS) | HPSO~2~ |
+| u | PS stereochem variant | HPSO~2~ |
+
+### Conjugates and linkers
+
+| Code | Name | Attachment | Status |
+|------|------|-----------|--------|
+| none | no conjugate | — | — |
+| 5'-phosphate | 5'-phosphate cap | replace H | exact |
+| 3'-phosphate | 3'-phosphate cap | replace H | exact |
+| GalNAc | N-acetylgalactosamine (mono) | replace H | exact |
+| GalNAc3 | trivalent GalNAc cluster | replace H | verify |
+| cholesterol | cholesterol | replace H | exact |
+| C6 | aminohexyl linker | replace H | exact |
+| C12 | aminododecyl linker | replace H | exact |
+| TEG | tetraethylene glycol | replace H | exact |
+| FAM | fluorescein | replace H | verify |
+| Cy3 | Cy3 dye | replace H | verify |
+
+The `attach` field controls how the conjugate connects to the oligo terminus:
+
+- **`replace_H`** — removes one H from the terminal position (most linkers)
+- **`replace_OH`** — removes H~2~O (cyclic phosphate)
+- **`add`** — added as-is, no atom removal
+
+## Custom chemistry overrides
+
+If your oligo uses a modification not in the built-in dictionary, add it via the `custom_overrides` block in `run_custom_oligo.R`. Each override is a named list with a `formula` (either a compact named vector or a formula string) and an optional `name`.
+
+```{r custom-overrides}
+custom_overrides <- list(
+  # Custom base — formula as named vector
+  X = list(formula = c(C=6, H=7, N=5, O=1), name = "my modified base X"),
+
+  # Custom sugar — formula as string
+  Q = list(formula = "C10H20O7", name = "my 2'-mod sugar Q"),
+
+  # Override an existing entry with a confirmed formula
+  cEt = list(formula = "C7H12O4", name = "constrained ethyl (confirmed)"),
+
+  # Custom conjugate with attachment chemistry
+  myLinker = list(formula = c(C=12, H=24, N=2, O=4),
+                  name = "custom PEG linker",
+                  attach = "replace_H")
+)
+```
+
+After defining overrides, use your custom codes in the sequence just like any standard code. For example, `Gm-sXm-sQm-sCm-...` would use base X at position 2 and sugar Q at position 3.
+
+The `build_dictionary()` function merges your overrides with the built-in entries. If you override an existing code, your version replaces the original. If you add a new code, it extends the dictionary.
+
+# Pipeline parameters
+
+All parameters are set in the `PARAMS` list in `run_custom_oligo.R`:
+
+```{r params}
+PARAMS <- list(
+  oligo_name    = "my_oligo",       # appears in output filenames and labels
+  max_3p        = 10,                # max 3' exonuclease truncations
+  max_5p        = 10,                # max 5' exonuclease truncations
+  endo          = TRUE,              # include endonuclease internal fragments
+  min_frag_len  = 3,                 # minimum fragment length to keep (nucleotides)
+  z_range       = 3:12,              # charge states for envelopes
+  n_iso         = 5,                 # isotope peaks per charge state
+  max_oxid      = 6,                 # max PS->PO oxidation events
+  h_offset      = 0,                 # 0 = standard [M-zH]^z-; 3.0046 = ION337 WB
+  use_envipat   = TRUE,              # FALSE = built-in isotope calc (no dependency)
+  ppm_tol       = 10,                # MS1 matching tolerance (ppm)
+  adducts       = c("H","Na","K","NH4"),
+  output_prefix = "my_oligo_metabolite",
+  results_dir   = "/mnt/results"
+)
+```
+
+### Key parameters explained
+
+**`max_3p` / `max_5p`** — How deep the exonuclease truncation series goes. For a 20-mer with `max_3p = 10`, you get 10 truncations from the 3' end (19-mer down to 10-mer). Set to `n-1` for the full series.
+
+**`endo`** — Whether to generate endonuclease internal fragments. These represent cleavage at each internal phosphodiester/phosphorothioate bond, producing separate 5' and 3' fragments. For gapmers, you can set `endo_sites = "gap"` to only cleave within the DNA gap (where endonucleases preferentially cut).
+
+**`z_range`** — Charge states for the envelope calculation. Therapeutic oligos typically ionize at z = 3–12 under negative ESI. Narrowing this range speeds up the PRM list.
+
+**`max_oxid`** — Maximum number of PS-to-PO oxidation events to model. Each oxidation replaces one sulfur with one oxygen (-15.977 Da). For a fully PS oligo with 14 PS bonds, `max_oxid = 6` generates oxidation levels 0 through 6.
+
+**`h_offset`** — Offset applied to the neutral mass before charge-state calculation. The standard value `0` gives `[M - zH]^z-`. The ION337 reference workbook uses an empirical offset of 3.0046 Da (of unclear physical origin); set `h_offset = 3.0046` to reproduce those exact m/z values.
+
+**`use_envipat`** — enviPat provides accurate isotope distributions via convolution. If it is not installed or you want to avoid the dependency, set to `FALSE` for the built-in convolution engine (slower for large formulas but dependency-free).
+
+# Running the pipeline
+
+## Library generation mode (no MS data)
+
+This is the default. The pipeline generates the full theoretical library and outputs the workbook + report. Set `MS_FILE <- NULL` in the config.
+
+```{r run-library}
+# In run_custom_oligo.R, ensure:
+# MS_FILE <- NULL
+
+# Then from the command line:
+# Rscript run_custom_oligo.R
+```
+
+## MS matching mode
+
+To match acquired MS data against the theoretical library, point `MS_FILE` to an mzML file:
+
+```{r run-ms}
+MS_FILE <- "/path/to/data.mzML"
+```
+
+The pipeline will:
+
+1. Parse the mzML file (MS1 + MS2 spectra)
+2. Extract MS1 features
+3. Match each metabolite's theoretical m/z values (across charge states, adducts, and oxidation levels) against observed features at the specified ppm tolerance
+4. Score each match by mass error, isotope pattern fit (cosine similarity), and charge-envelope consistency
+5. For matched metabolites with MS2 spectra, confirm via McLuckey fragment ion matching and PS diagnostic ions
+6. Populate the MS Matching sheet in the workbook with scores
+
+For vendor raw files (Thermo `.raw`, Waters `.raw`, SCIEX `.wiff`), convert to mzML first using ProteoWizard msconvert. The pipeline will call msconvert automatically if it is on the system PATH; otherwise, convert externally.
+
+### Recommended MS acquisition
+
+For best results with this pipeline:
+
+- **Ionization:** negative ESI
+- **MS1:** Full scan, 120,000 resolution (Orbitrap), m/z 500–3000
+- **MS2:** PRM or DDA, 30,000 resolution, HCD normalized collision energy ~28
+- **Charge states:** include z = 3–12 in the inclusion list (exported by the pipeline)
+- **PRM inclusion list:** use the `precursor_mz` column from the PRM Inclusion List sheet
+
+# Output files
+
+The pipeline writes to the results directory:
+
+| File | Contents |
+|------|----------|
+| `<prefix>_library.xlsx` | 7-sheet Excel workbook |
+| `<prefix>_report.html` | Full HTML report with embedded plots |
+| `plot_charge_envelope.png` | Charge envelope distribution for parent |
+| `plot_isotope_pattern.png` | Theoretical isotope pattern at representative charge state |
+| `plot_truncation_series.png` | Mass vs. truncation length for 3'/5' series |
+| `plot_oxidation_series.png` | Mass shift vs. oxidation level |
+| `plot_fragment_map.png` | McLuckey fragment ion map (m/z vs. sequence position) |
+
+### Workbook sheets
+
+1. **Summary** — oligo specs, parent formula/mass, metabolite counts, parameters
+2. **Metabolite Library** — one row per metabolite: name, kind, length, sequence, formula, mono/avg mass, PS/PO counts
+3. **Charge Envelopes** — m/z values for each metabolite across charge states and adducts
+4. **PS Oxidation Series** — mass and m/z for each oxidation level (0 to max_oxid)
+5. **Fragment Ions** — McLuckey terminal + internal fragments with ion type, position, formula, m/z
+6. **PRM Inclusion List** — precursor m/z, charge, polarity, expected RT window for targeted acquisition
+7. **MS Matching** — matched features with scores (only populated when MS data is provided)
+
+# Command-line reference
+
+For `main_ION337.R` (standard chemistry only):
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--seq <string>` | ION337 | Sequence in any notation |
+| `--ms <file>` | none | MS data file (mzML or peak list) |
+| `--ms-type <type>` | ms1 | `ms1`, `ms2`, or `both` |
+| `--format <html\|pdf>` | html | Report format |
+| `--output <prefix>` | ION337_metabolite | Output filename prefix |
+| `--max-3p <int>` | 10 | Max 3' truncations |
+| `--max-5p <int>` | 10 | Max 5' truncations |
+| `--no-endo` | — | Exclude endonuclease fragments |
+| `--max-oxid <int>` | 6 | Max PS oxidation events |
+| `--z-min <int>` | 3 | Min charge state |
+| `--z-max <int>` | 12 | Max charge state |
+| `--ppm <float>` | 10 | MS1 mass tolerance |
+| `--adducts <string>` | H,Na,K,NH4 | Comma-separated adduct list |
+| `--h-offset <float>` | 0 | Envelope offset |
+| `--n-iso <int>` | 5 | Isotope peaks |
+| `--no-envipat` | — | Use built-in isotope calculation |
+| `--validate-wb <file>` | ION337 workbook | Reference workbook for validation |
+
+For custom chemistry, use `run_custom_oligo.R` instead — it does not accept CLI flags but reads all configuration from the CONFIG block at the top of the script.
+
+# Worked example: 16-mer gapmer ASO
+
+This example uses a 16-mer antisense gapmer with 2'-OMe wings (positions 1–5, 12–16), a DNA gap (positions 6–11), and all PS linkages.
+
+## Configuration
+
+```{r worked-config}
+# In run_custom_oligo.R:
+
+# Triplet notation — 2'OMe wings, DNA gap, all PS
+MY_TRIPLET <- "Gm-sTm-sCm-sTm-sCm-sTd-sCd-sTd-sCd-sTd-sTd-sCm-sTm-sCm-sTm-sGm"
+
+# No custom chemistry needed — all codes are standard
+custom_overrides <- list()
+
+# Parameters
+PARAMS <- list(
+  oligo_name    = "my_oligo",
+  max_3p        = 10,
+  max_5p        = 10,
+  endo          = TRUE,
+  z_range       = 3:12,
+  n_iso         = 5,
+  max_oxid      = 6,
+  h_offset      = 0,
+  use_envipat   = TRUE,
+  output_prefix = "my_oligo_metabolite"
+)
+
+MS_FILE <- NULL   # library generation mode
+```
+
+## Run
+
+```{r worked-run}
+# Rscript run_custom_oligo.R
+```
+
+## Results
+
+| Metric | Value |
+|--------|-------|
+| Sequence | G-T-C-T-C-T-C-T-C-T-T-C-T-C-T-G |
+| Sugars | m-m-m-m-m-d-d-d-d-d-d-m-m-m-m-m |
+| Formula | C~164~H~221~N~44~O~97~P~15~S~15~ |
+| Monoisotopic mass | 5302.5588 Da |
+| Average mass | 5306.2930 Da |
+| Metabolites | 47 (parent + 10 3' + 10 5' + 26 endo) |
+| Fragment ions | 276 (120 terminal + 156 internal) |
+| PRM entries | 3,052 |
+| m/z range | 104.57 – 1766.51 |
+
+# Worked example: GalNAc-conjugated siRNA with custom sugar
+
+This example shows a custom sugar and a 3' GalNAc conjugate — demonstrating the override mechanism.
+
+## Configuration
+
+```{r worked2-config}
+# Structured input — needed for conjugate
+MY_SPEC <- list(
+  bases    = c("A","C","G","U","A","G","U","C","A","C","G","U"),
+  sugars   = c("m","f","m","f","m","f","m","f","m","f","m","Q"),  # Q = custom sugar at 3' end
+  linkages = c("s","s","s","s","s","s","s","s","s","s","s", NA),
+  conj5    = "none",
+  conj3    = "GalNAc"
+)
+
+# Custom sugar Q — a hypothetical 2'-O-alkyl modification
+custom_overrides <- list(
+  Q = list(formula = c(C=10, H=20, O=7), name = "custom 2'-O-alkyl sugar")
+)
+
+PARAMS <- list(
+  oligo_name    = "siRNA_GalNAc",
+  max_3p        = 8,
+  max_5p        = 8,
+  endo          = TRUE,
+  z_range       = 3:10,
+  n_iso         = 5,
+  max_oxid      = 4,
+  output_prefix = "siRNA_GalNAc_metabolite"
+)
+
+MS_FILE <- NULL
+```
+
+## Run
+
+```{r worked2-run}
+# Rscript run_custom_oligo.R
+```
+
+The pipeline will build the dictionary with the custom sugar Q, parse the structured input, and generate the full library including the GalNAc conjugate mass on the parent (and its loss in 3' truncations, since the conjugate is on the 3' end).
+
+# Tips and caveats
+
+**Formula assembly convention.** The oligo formula is assembled as: sum of all bases + sum of all sugars + sum of all internal linkages - (2n-1) x H~2~O + conjugates. The (2n-1) water loss accounts for n glycosidic bonds (base-sugar) and (n-1) phosphodiester bonds. This convention is baked into `assemble_oligo_formula()` and validated to 0.002 ppm against the ION337 reference.
+
+**Custom formula accuracy.** When you add a custom override, the pipeline trusts your formula. There is no external validation gate for custom entries. If you have a known mass for the full oligo, compare it against the parent mass printed in Step 3 of the pipeline output to catch errors.
+
+**enviPat notes.** The enviPat package prints a harmless `NOTE: You are sure that is the mass of an electrone?` message to stderr during isotope calculation. This is cosmetic and does not affect results. Set `use_envipat = FALSE` to suppress it (at the cost of slower isotope calculation for large formulas).
+
+**PS oxidation.** Each PS-to-PO oxidation event replaces one sulfur with one oxygen, shifting the mass by -15.977 Da. The oxidation series generates all combinations from 0 to `max_oxid` oxidized PS bonds. For a fully PS 20-mer (19 PS bonds), `max_oxid = 6` gives 7 oxidation levels — typically sufficient since heavily oxidized species are low-abundance.
+
+**Gapmer endonuclease cleavage.** Endonucleases (S1, RNase) preferentially cleave within the DNA gap of gapmer ASOs. Set `endo_sites = "gap"` in the metabolite options to only generate endonuclease fragments at gap positions, reducing the library size for long gapmers.
+
+**Charge envelope offset.** The standard negative ESI envelope is `[M - zH]^z-` (each charge removes one proton). The ION337 reference workbook uses an empirical +3.0046 Da offset of unclear physical origin. If you are matching against data processed with that workbook's convention, set `h_offset = 3.0046`. For standard mass spectrometry, leave it at 0.
