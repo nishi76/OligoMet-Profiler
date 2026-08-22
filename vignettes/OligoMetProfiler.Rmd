@@ -648,13 +648,15 @@ available and falls back to a pure-R decoder otherwise.
 
 # The Shiny dashboard and CLI drivers
 
-The repository root (not the installed package) carries three
-ready-made entry points around the same engine:
+Three ready-made entry points wrap the same engine. The dashboard
+ships inside the installed package; the CLI drivers live in the
+repository root:
 
-* **`app.R`** -- a Shiny dashboard with sequence input, an editable
+* **`run_app()`** -- a Shiny dashboard with sequence input, an editable
   custom-chemistry table, full parameter control, optional MS upload,
   a four-plot summary, and workbook/report/PRM/acquisition-list
-  downloads. Launch with `shiny::runApp()` from a clone of the
+  downloads. Launch with `OligoMetProfiler::run_app()` from an
+  installed package, or `shiny::runApp(".")` from a clone of the
   repository.
 * **`run_custom_oligo.R`** -- the primary CLI template: copy it, edit
   the CONFIG block (sequence, overrides, parameters), and

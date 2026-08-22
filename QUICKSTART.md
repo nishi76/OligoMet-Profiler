@@ -4,20 +4,26 @@ From zero to a full theoretical metabolite library in about ten minutes.
 
 ## 1. Install and launch
 
-```r
-# One-time setup
-install.packages("shiny")
-# from a clone of this repository:
-source("install_packages.R")     # installs remaining dependencies
+Install the package from GitHub and launch the dashboard -- no clone
+needed:
 
-# Launch the dashboard
+```r
+# install.packages(c("remotes", "shiny", "DT", "shinyFiles"))
+remotes::install_github("nishi76/OligoMet-Profiler")
+OligoMetProfiler::run_app()
+```
+
+Or, from a clone of this repository:
+
+```r
+install.packages("shiny")
+source("install_packages.R")     # installs remaining dependencies
 shiny::runApp(".")
 ```
 
-Or install as a package and drive it from R directly:
+To drive the engine from R instead of the dashboard:
 
 ```r
-remotes::install_github("nishi76/OligoMet-Profiler")
 library(OligoMetProfiler)
 ```
 

@@ -28,13 +28,17 @@ package vignette, [vignettes/OligoMetProfiler.Rmd](vignettes/OligoMetProfiler.Rm
 
 ## Installation
 
-As an R package, straight from GitHub:
+As an R package, straight from GitHub -- the dashboard ships with it:
 
 ```r
-# install.packages("remotes")
+# install.packages(c("remotes", "shiny", "DT", "shinyFiles"))
 remotes::install_github("nishi76/OligoMet-Profiler")
-library(OligoMetProfiler)
+library(OligoMetProfiler)   # engine functions
+OligoMetProfiler::run_app() # launches the dashboard
 ```
+
+`run_app()` passes any extra arguments to `shiny::runApp()`, so
+`run_app(launch.browser = TRUE, port = 8080)` works as expected.
 
 Or clone the repository to use the Shiny dashboard and CLI drivers:
 
@@ -50,9 +54,10 @@ Or from the shell, once dependencies are installed:
 Rscript -e 'shiny::runApp(".", launch.browser = TRUE)'
 ```
 
-No path editing is required -- `shiny::runApp()` sets the working directory
-to this folder for the duration of the app, and every module locates its
-neighbours relative to that. The app opens with a generic 2'MOE/DNA gapmer
+No path editing is required in either case. From a clone, `shiny::runApp()`
+sets the working directory to this folder for the duration of the app and
+every module locates its neighbours relative to that; from an installed
+package, the app uses the functions in the package namespace. The app opens with a generic 2'MOE/DNA gapmer
 example loaded in the sequence box; paste in your own sequence, or use the
 "Load example" dropdown to load any of the four bundled reference drugs.
 Terminal conjugates travel with the example -- loading the GalNAc-siRNA
@@ -63,7 +68,9 @@ sets its 3' conjugate for you.
 | Path | Role |
 |---|---|
 | `DESCRIPTION`, `NAMESPACE` | R package metadata -- makes the whole engine installable via `remotes::install_github()`. |
-| `app.R` | Shiny dashboard -- sequence input, custom chemistry table, full parameter control, optional MS upload, 4-plot summary, Excel/report/PRM downloads. |
+| `inst/app/app.R` | Shiny dashboard -- sequence input, custom chemistry table, full parameter control, optional MS upload, 4-plot summary, Excel/report/PRM downloads. Ships inside the package; launch it with `OligoMetProfiler::run_app()`. |
+| `app.R` | Repository-root launcher, so `shiny::runApp(".")`, `shiny::runGitHub()`, and RStudio's "Run App" button work from a clone. Sources `inst/app/app.R`. |
+| `R/run_app.R` | `run_app()` -- launches the bundled dashboard from an installed package. |
 | `R/chemistry_dict.R` | Element table, formula arithmetic, and `STANDARD_DICT` -- the default chemistry dictionary (DNA/RNA/2'OMe/2'F/MOE/cEt/LNA sugars, PO/PS linkages, common conjugates) every module falls back to.  Also holds the four bundled reference drugs and the `validate_reference()` self-test. |
 | `R/oligo_io.R` | Sequence parsing (triplet / OligoDistiller / structured notation). |
 | `R/metabolites.R` | Theoretical metabolite library generation (truncations, endo fragments). |
@@ -122,7 +129,7 @@ optional custom chemistry overrides, parameters), and run:
 Rscript run_custom_oligo.R
 ```
 
-Or use the Shiny app (`app.R`) for an interactive session. The app's "Save
+Or use the Shiny app (`run_app()`) for an interactive session. The app's "Save
 to folder (optional)" field writes the workbook, report, PRM list, and
 acquisition method lists directly to a folder you choose, on top of the
 usual download buttons -- useful when running locally in RStudio/Rscript
@@ -296,7 +303,7 @@ optional -- the app runs without them, with reduced MS-import coverage.
 - No `testthat` suite -- the `tests/` scripts are console-output checks,
   not asserted unit tests.
 - Default parameters (charge range, oxidation cap, ppm tolerance, etc.) are
-  set independently in `app.R` and in the CLI driver, so changing a
+  set independently in `inst/app/app.R` and in the CLI driver, so changing a
   default in one place doesn't propagate to the other.
 
 ## Bibliography
