@@ -7,10 +7,10 @@
   }, error = function(e) NULL)
   if (!is.null(this)) dirname(dirname(this)) else ".."
 })
-source(file.path(.pkg_root, "chemistry_dict.R"))
-source(file.path(.pkg_root, "oligo_io.R"))
-source(file.path(.pkg_root, "metabolites.R"))
-source(file.path(.pkg_root, "mass_isotope.R"))
+source(file.path(.pkg_root, "R", "chemistry_dict.R"))
+source(file.path(.pkg_root, "R", "oligo_io.R"))
+source(file.path(.pkg_root, "R", "metabolites.R"))
+source(file.path(.pkg_root, "R", "mass_isotope.R"))
 
 sp <- parse_input(ION337_TRIPLET)
 mets <- generate_metabolites(sp, list(oligo_name = "ION337", endo = FALSE))

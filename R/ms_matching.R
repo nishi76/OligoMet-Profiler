@@ -29,13 +29,31 @@
 # =============================================================================
 
 ## ---- Python helper path ---------------------------------------------------
-.PY_DECODE <- file.path(dirname(sys.frame(1)$ofile %||% "."), "py_decode.py")
-# Fallback: try the current working directory (covers the case where this
-# file was pasted/sourced without a resolvable ofile, e.g. copy-paste into
-# an interactive session).
-if (!file.exists(.PY_DECODE)) {
-  p <- file.path(getwd(), "py_decode.py")
-  if (file.exists(p)) .PY_DECODE <- p
+# py_decode.py lives in inst/ (repo checkout) or at the package root once
+# installed (inst/ contents are promoted on install). Try, in order:
+#   1. <dir of this file>/../inst/py_decode.py  -- sourced from R/ in a checkout
+#   2. system.file() -- loaded from an installed OligoMetProfiler package
+#   3. the current working directory variants -- pasted/sourced interactively
+# The source-checkout candidate is captured eagerly (ofile is only
+# meaningful while source() is running); the rest are evaluated on each
+# call so an installed package resolves system.file() at run time, not at
+# install time (staged installs relocate the package after top-level code
+# has already run).
+.PY_DECODE_SRC_CANDIDATE <- local({
+  src_dir <- dirname(sys.frame(1)$ofile %||% ".")
+  file.path(dirname(src_dir), "inst", "py_decode.py")
+})
+
+.py_decode_path <- function() {
+  candidates <- c(
+    .PY_DECODE_SRC_CANDIDATE,
+    tryCatch(system.file("py_decode.py", package = "OligoMetProfiler"),
+             error = function(e) ""),
+    file.path(getwd(), "inst", "py_decode.py"),
+    file.path(getwd(), "py_decode.py")
+  )
+  hit <- candidates[nzchar(candidates) & file.exists(candidates)]
+  if (length(hit) > 0) hit[1] else candidates[1]
 }
 
 ## ---- Vendor raw bridge ----------------------------------------------------
@@ -196,7 +214,8 @@ parse_mzml <- function(file) {
 
 ## ---- Binary data decoder (Python helper) ----------------------------------
 .decode_binary <- function(b64, dtype = "64", is_zlib = TRUE) {
-  if (!file.exists(.PY_DECODE) || Sys.which("python3") == "") {
+  py_decode <- .py_decode_path()
+  if (!file.exists(py_decode) || Sys.which("python3") == "") {
     # Fallback: try R-only approach (may fail with zlib)
     raw <- xfun::base64_decode(b64)
     if (is_zlib) {
@@ -214,7 +233,7 @@ parse_mzml <- function(file) {
   } else {
     # Use Python helper (reliable for zlib + base64)
     tmp <- tempfile(fileext = ".txt")
-    system2("python3", args = c(.PY_DECODE, b64, dtype, "little"),
+    system2("python3", args = c(py_decode, b64, dtype, "little"),
             stdout = tmp, stderr = FALSE)
     vals <- scan(tmp, what = numeric(), quiet = TRUE)
     unlink(tmp)

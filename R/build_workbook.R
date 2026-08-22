@@ -12,6 +12,15 @@
 #   Sheet 7: Summary                — overview and validation
 #
 # Uses openxlsx for formatting (headers, column widths, freeze panes).
+#
+# Performance note: every sheet is assembled as a single data.frame and
+# written with ONE openxlsx::writeData() call, and cell-level styling is
+# limited to the header row plus a handful of accent cells. The base font
+# for all data cells comes from modifyBaseFont() in build_workbook(), so no
+# per-cell "normal" style is needed. An earlier version wrote row by row
+# and attached a style object to every data cell, which made saveWorkbook()
+# serialize hundreds of thousands of styled cells one at a time -- that is
+# what made the final Excel export take longer than the entire computation.
 # =============================================================================
 
 ## ---- Style definitions ----------------------------------------------------
@@ -39,6 +48,21 @@
   )
 }
 
+## ---- Shared sheet scaffolding ----------------------------------------------
+# Write custom header text on row 1, the data block below it (one call), and
+# apply the header style + column widths + freeze pane.
+.write_sheet <- function(wb, sheet, headers, df, styles, widths) {
+  openxlsx::writeData(wb, sheet, as.data.frame(t(headers)),
+                       startRow = 1, colNames = FALSE)
+  openxlsx::addStyle(wb, sheet, styles$header,
+                      rows = 1, cols = seq_along(headers), gridExpand = TRUE)
+  if (!is.null(df) && nrow(df) > 0) {
+    openxlsx::writeData(wb, sheet, df, startRow = 2, colNames = FALSE)
+  }
+  openxlsx::setColWidths(wb, sheet, cols = seq_along(widths), widths = widths)
+  openxlsx::freezePane(wb, sheet, firstActiveRow = 2)
+}
+
 ## ---- Sheet 1: Metabolite Library ------------------------------------------
 .build_metabolite_sheet <- function(wb, mets, dict, styles) {
   openxlsx::addWorksheet(wb, "Metabolite Library")
@@ -46,51 +70,51 @@
                "Linkages", "n_PS", "n_PO", "Conj_5", "Conj_3",
                "Formula", "Monoisotopic Mass (Da)", "Average Mass (Da)",
                "Modification", "Site")
-  openxlsx::writeData(wb, "Metabolite Library", as.data.frame(t(headers)),
-                       startRow = 1, colNames = FALSE)
-  openxlsx::addStyle(wb, "Metabolite Library", styles$header,
-                      rows = 1, cols = 1:length(headers), gridExpand = TRUE)
 
-  row <- 2
-  for (met in mets) {
+  rows <- lapply(mets, function(met) {
     info <- metabolite_mass_info(met, dict)
-    lk_str <- paste(ifelse(is.na(met$linkages), ".", met$linkages), collapse = "")
-    vals <- c(met$id, met$name, met$kind, met$n,
-              paste(met$bases, collapse = ""),
-              paste(met$sugars, collapse = ""),
-              lk_str, met$n_ps, met$n_po,
-              met$conj5, met$conj3,
-              info$formula_str,
-              round(info$mono_mass, 6),
-              round(info$avg_mass, 4),
-              met$modification,
-              ifelse(is.null(met$site) || is.na(met$site), "", met$site))
-    openxlsx::writeData(wb, "Metabolite Library", as.data.frame(t(vals)),
-                         startRow = row, colNames = FALSE)
-    st <- if (met$kind == "parent") styles$parent else styles$normal
-    openxlsx::addStyle(wb, "Metabolite Library", st,
-                        rows = row, cols = 1:length(headers), gridExpand = TRUE)
-    openxlsx::addStyle(wb, "Metabolite Library", styles$mono,
-                        rows = row, cols = 12, gridExpand = FALSE)
-    row <- row + 1
-  }
+    data.frame(
+      id = met$id, name = met$name, kind = met$kind, n = met$n,
+      bases = paste(met$bases, collapse = ""),
+      sugars = paste(met$sugars, collapse = ""),
+      linkages = paste(ifelse(is.na(met$linkages), ".", met$linkages),
+                       collapse = ""),
+      n_ps = met$n_ps, n_po = met$n_po,
+      conj5 = met$conj5, conj3 = met$conj3,
+      formula = info$formula_str,
+      mono_mass = round(info$mono_mass, 6),
+      avg_mass = round(info$avg_mass, 4),
+      modification = met$modification,
+      site = ifelse(is.null(met$site) || is.na(met$site), "", met$site),
+      stringsAsFactors = FALSE)
+  })
+  df <- do.call(rbind, rows)
 
-  # Column widths
   widths <- c(6, 22, 12, 6, 18, 16, 16, 6, 6, 10, 10, 28, 18, 16, 28, 6)
-  openxlsx::setColWidths(wb, "Metabolite Library", cols = 1:length(widths),
-                          widths = widths)
-  openxlsx::freezePane(wb, "Metabolite Library", firstActiveRow = 2)
+  .write_sheet(wb, "Metabolite Library", headers, df, styles, widths)
+
+  # Accent styling: highlight parent rows, monospace the formula column.
+  parent_rows <- which(vapply(mets, function(m) m$kind == "parent",
+                              logical(1))) + 1
+  if (length(parent_rows) > 0) {
+    openxlsx::addStyle(wb, "Metabolite Library", styles$parent,
+                        rows = parent_rows, cols = seq_along(headers),
+                        gridExpand = TRUE)
+  }
+  openxlsx::addStyle(wb, "Metabolite Library", styles$mono,
+                      rows = seq_len(nrow(df)) + 1, cols = 12,
+                      gridExpand = TRUE)
 }
 
 ## ---- Sheet 2: Charge Envelopes --------------------------------------------
-# This is the most expensive sheet to build: one isotope-pattern calculation
-# per (metabolite, PS-oxidation level) -- see compute_envelope(). If a
-# progress_utils.R tracker is supplied (console_tracker), progress is shown
-# as a live in-place updating bar with a step-local ETA (progress_tick());
-# otherwise falls back to a plain text line every 10 metabolites so this
-# still works if progress_utils.R hasn't been sourced. `progress()` is a
-# separate, optional callback used by the Shiny app to nudge its own
-# browser-side progress bar; both can be supplied at once.
+# This is the most expensive sheet to compute: one isotope-pattern
+# calculation per (metabolite, PS-oxidation level) -- see compute_envelope().
+# If a progress_utils.R tracker is supplied (console_tracker), progress is
+# shown as a live in-place updating bar with a step-local ETA
+# (progress_tick()); otherwise falls back to a plain text line every 10
+# metabolites so this still works if progress_utils.R hasn't been sourced.
+# `progress()` is a separate, optional callback used by the Shiny app to
+# nudge its own browser-side progress bar; both can be supplied at once.
 .build_envelope_sheet <- function(wb, mets, dict, styles,
                                    z_range, n_iso, max_oxid, h_offset,
                                    use_envipat, progress = NULL,
@@ -98,20 +122,17 @@
   openxlsx::addWorksheet(wb, "Charge Envelopes")
   headers <- c("Met ID", "Met Name", "k_Oxid", "Formula", "z", "iso",
                "m/z", "Abundance", "Monoisotopic Mass (Da)")
-  openxlsx::writeData(wb, "Charge Envelopes", as.data.frame(t(headers)),
-                       startRow = 1, colNames = FALSE)
-  openxlsx::addStyle(wb, "Charge Envelopes", styles$header,
-                      rows = 1, cols = 1:length(headers), gridExpand = TRUE)
 
-  row <- 2
   n_mets <- length(mets)
   t0 <- Sys.time()
   use_tick <- !is.null(console_tracker) && exists("progress_tick")
+  chunks <- vector("list", n_mets)
   for (i in seq_along(mets)) {
     met <- mets[[i]]
     env <- compute_envelope(met, z_range = z_range, n_iso = n_iso,
                              max_oxid = max_oxid, h_offset = h_offset,
                              use_envipat = use_envipat, dict = dict)
+    if (!is.null(env) && nrow(env) > 0) chunks[[i]] <- env
     if (use_tick) {
       progress_tick(console_tracker, i, n_mets, "Charge envelopes")
       if (!is.null(progress) && (i %% 10 == 0 || i == n_mets)) {
@@ -124,21 +145,20 @@
       cat(" ", msg, "\n")
       if (!is.null(progress)) progress(msg)
     }
-    if (nrow(env) == 0) next
-    openxlsx::writeData(wb, "Charge Envelopes", env,
-                         startRow = row, colNames = FALSE)
-    n_rows <- nrow(env)
-    openxlsx::addStyle(wb, "Charge Envelopes", styles$normal,
-                        rows = row:(row + n_rows - 1),
-                        cols = 1:length(headers), gridExpand = TRUE)
-    row <- row + n_rows
   }
   if (use_tick && exists("progress_tick_end")) progress_tick_end()
 
+  df <- do.call(rbind, chunks)
+  if (!is.null(df) && nrow(df) > 0) {
+    # Column order must match the header row above (an earlier version
+    # wrote compute_envelope()'s native order, which put z under the
+    # "Formula" header and shifted every column after it).
+    df <- df[, c("met_id", "met_name", "k_oxid", "formula", "z", "iso",
+                 "mz", "abundance", "mono_mass")]
+  }
+
   widths <- c(6, 22, 8, 28, 5, 5, 14, 12, 18)
-  openxlsx::setColWidths(wb, "Charge Envelopes", cols = 1:length(widths),
-                          widths = widths)
-  openxlsx::freezePane(wb, "Charge Envelopes", firstActiveRow = 2)
+  .write_sheet(wb, "Charge Envelopes", headers, df, styles, widths)
 }
 
 ## ---- Sheet 3: PS Oxidation Series -----------------------------------------
@@ -146,40 +166,34 @@
                                     h_offset) {
   openxlsx::addWorksheet(wb, "PS Oxidation Series")
   headers <- c("Met ID", "Met Name", "k_Oxid", "Formula",
-               "Monoisotopic Mass (Da)", "Average Mass (Da)")
-  # Add m/z columns for each charge state
-  z_cols <- paste0("z=", z_range)
-  headers <- c(headers, z_cols)
+               "Monoisotopic Mass (Da)", "Average Mass (Da)",
+               paste0("z=", z_range))
 
-  openxlsx::writeData(wb, "PS Oxidation Series", as.data.frame(t(headers)),
-                       startRow = 1, colNames = FALSE)
-  openxlsx::addStyle(wb, "PS Oxidation Series", styles$header,
-                      rows = 1, cols = 1:length(headers), gridExpand = TRUE)
-
-  row <- 2
-  for (met in mets) {
+  chunks <- lapply(mets, function(met) {
     series <- ps_oxidation_series(met, max_oxid = max_oxid, dict = dict)
-    for (k in 0:min(met$n_ps, max_oxid)) {
-      s <- series[series$k == k, ]
-      mz_vals <- sapply(z_range, function(z) {
-        round((s$mono_mass + h_offset - z * .PROTON) / z, 4)
-      })
-      vals <- c(met$id, met$name, k, s$formula_str,
-                round(s$mono_mass, 6), round(s$avg_mass, 4), mz_vals)
-      openxlsx::writeData(wb, "PS Oxidation Series", as.data.frame(t(vals)),
-                           startRow = row, colNames = FALSE)
-      openxlsx::addStyle(wb, "PS Oxidation Series", styles$normal,
-                          rows = row, cols = 1:length(headers), gridExpand = TRUE)
-      openxlsx::addStyle(wb, "PS Oxidation Series", styles$mono,
-                          rows = row, cols = 4, gridExpand = FALSE)
-      row <- row + 1
-    }
-  }
+    series <- series[series$k <= min(met$n_ps, max_oxid), , drop = FALSE]
+    mz <- vapply(z_range,
+                 function(z) round((series$mono_mass + h_offset - z * .PROTON) / z, 4),
+                 numeric(nrow(series)))
+    mz <- matrix(mz, nrow = nrow(series))
+    colnames(mz) <- paste0("z", z_range)
+    cbind(
+      data.frame(met_id = met$id, met_name = met$name, k = series$k,
+                 formula = series$formula_str,
+                 mono_mass = round(series$mono_mass, 6),
+                 avg_mass = round(series$avg_mass, 4),
+                 stringsAsFactors = FALSE),
+      as.data.frame(mz))
+  })
+  df <- do.call(rbind, chunks)
 
   widths <- c(6, 22, 8, 28, 18, 16, rep(12, length(z_range)))
-  openxlsx::setColWidths(wb, "PS Oxidation Series", cols = 1:length(widths),
-                          widths = widths)
-  openxlsx::freezePane(wb, "PS Oxidation Series", firstActiveRow = 2)
+  .write_sheet(wb, "PS Oxidation Series", headers, df, styles, widths)
+  if (!is.null(df) && nrow(df) > 0) {
+    openxlsx::addStyle(wb, "PS Oxidation Series", styles$mono,
+                        rows = seq_len(nrow(df)) + 1, cols = 4,
+                        gridExpand = TRUE)
+  }
 }
 
 ## ---- Sheet 4: Fragment Ions -----------------------------------------------
@@ -189,41 +203,37 @@
   headers <- c("Met ID", "Met Name", "Ion Type", "Direction", "Cleavage Site",
                "Fragment Length", "Formula", "Monoisotopic Mass (Da)",
                "Base Loss", "z", "m/z")
-  openxlsx::writeData(wb, "Fragment Ions", as.data.frame(t(headers)),
-                       startRow = 1, colNames = FALSE)
-  openxlsx::addStyle(wb, "Fragment Ions", styles$header,
-                      rows = 1, cols = 1:length(headers), gridExpand = TRUE)
 
-  row <- 2
-  for (met in mets) {
-    if (met$n < 3) next
+  chunks <- lapply(mets, function(met) {
+    if (met$n < 3) return(NULL)
     frags <- generate_fragments(met, dict, z_range = z_range)
     if (include_internal) {
       frags <- c(frags, generate_internal_fragments(met, dict, z_range = z_range))
     }
-    for (f in frags) {
-      for (z in z_range) {
-        mz <- (f$mono_mass - z * .PROTON) / z
-        vals <- c(f$met_id, met$name, f$ion_type, f$direction,
-                  f$cleavage_site, f$frag_length, f$formula,
-                  round(f$mono_mass, 4),
-                  ifelse(is.na(f$base_loss), "", f$base_loss),
-                  z, round(mz, 4))
-        openxlsx::writeData(wb, "Fragment Ions", as.data.frame(t(vals)),
-                             startRow = row, colNames = FALSE)
-        openxlsx::addStyle(wb, "Fragment Ions", styles$normal,
-                            rows = row, cols = 1:length(headers), gridExpand = TRUE)
-        openxlsx::addStyle(wb, "Fragment Ions", styles$mono,
-                            rows = row, cols = 7, gridExpand = FALSE)
-        row <- row + 1
-      }
-    }
-  }
+    if (length(frags) == 0) return(NULL)
+    base <- data.frame(
+      met_id = vapply(frags, function(f) as.character(f$met_id), character(1)),
+      met_name = met$name,
+      ion_type = vapply(frags, function(f) f$ion_type, character(1)),
+      direction = vapply(frags, function(f) f$direction, character(1)),
+      cleavage_site = vapply(frags, function(f) as.numeric(f$cleavage_site), numeric(1)),
+      frag_length = vapply(frags, function(f) as.numeric(f$frag_length), numeric(1)),
+      formula = vapply(frags, function(f) f$formula, character(1)),
+      mono_mass = round(vapply(frags, function(f) f$mono_mass, numeric(1)), 4),
+      base_loss = vapply(frags, function(f)
+        ifelse(is.na(f$base_loss), "", as.character(f$base_loss)), character(1)),
+      stringsAsFactors = FALSE)
+    # Expand: one row per (fragment, charge state).
+    idx <- rep(seq_len(nrow(base)), each = length(z_range))
+    out <- base[idx, , drop = FALSE]
+    out$z <- rep(z_range, times = nrow(base))
+    out$mz <- round((out$mono_mass - out$z * .PROTON) / out$z, 4)
+    out
+  })
+  df <- do.call(rbind, chunks)
 
   widths <- c(6, 22, 10, 10, 10, 10, 28, 18, 10, 5, 14)
-  openxlsx::setColWidths(wb, "Fragment Ions", cols = 1:length(widths),
-                          widths = widths)
-  openxlsx::freezePane(wb, "Fragment Ions", firstActiveRow = 2)
+  .write_sheet(wb, "Fragment Ions", headers, df, styles, widths)
 }
 
 ## ---- Sheet 5: PRM Inclusion List ------------------------------------------
@@ -239,8 +249,6 @@
                        startRow = 1, colNames = TRUE)
   openxlsx::addStyle(wb, "PRM Inclusion List", styles$header,
                       rows = 1, cols = 1:ncol(prm), gridExpand = TRUE)
-  openxlsx::addStyle(wb, "PRM Inclusion List", styles$normal,
-                      rows = 2:(nrow(prm) + 1), cols = 1:ncol(prm), gridExpand = TRUE)
   widths <- c(6, 22, 12, 5, 8, 5, 14, 12)
   openxlsx::setColWidths(wb, "PRM Inclusion List", cols = 1:length(widths),
                           widths = widths)

@@ -27,7 +27,7 @@
 # shiny::runApp() sets the working directory to the app folder for the
 # duration of the app, so "." resolves correctly in that case. This check
 # only guards against the rare case where neither method finds the modules.
-if (!file.exists(file.path(.module_dir, "chemistry_dict.R"))) {
+if (!file.exists(file.path(.module_dir, "R", "chemistry_dict.R"))) {
   stop("Cannot locate pipeline modules (chemistry_dict.R not found). ",
        "Run this app with shiny::runApp() pointed at the folder that ",
        "contains app.R, or set the working directory there first.")
@@ -38,16 +38,16 @@ if (!requireNamespace("DT", quietly = TRUE)) {
   install.packages("DT", repos = "https://cloud.r-project.org", quiet = TRUE)
 }
 
-source(file.path(.module_dir, "progress_utils.R"))
-source(file.path(.module_dir, "chemistry_dict.R"))
-source(file.path(.module_dir, "oligo_io.R"))
-source(file.path(.module_dir, "metabolites.R"))
-source(file.path(.module_dir, "mass_isotope.R"))
-source(file.path(.module_dir, "fragments.R"))
-source(file.path(.module_dir, "ms_matching.R"))
-source(file.path(.module_dir, "build_workbook.R"))
-source(file.path(.module_dir, "build_report.R"))
-source(file.path(.module_dir, "export_acquisition.R"))
+source(file.path(.module_dir, "R", "progress_utils.R"))
+source(file.path(.module_dir, "R", "chemistry_dict.R"))
+source(file.path(.module_dir, "R", "oligo_io.R"))
+source(file.path(.module_dir, "R", "metabolites.R"))
+source(file.path(.module_dir, "R", "mass_isotope.R"))
+source(file.path(.module_dir, "R", "fragments.R"))
+source(file.path(.module_dir, "R", "ms_matching.R"))
+source(file.path(.module_dir, "R", "build_workbook.R"))
+source(file.path(.module_dir, "R", "build_report.R"))
+source(file.path(.module_dir, "R", "export_acquisition.R"))
 
 library(shiny)
 library(DT)

@@ -8,14 +8,14 @@
   }, error = function(e) NULL)
   if (!is.null(this)) dirname(dirname(this)) else ".."
 })
-source(file.path(.pkg_root, "chemistry_dict.R"))
-source(file.path(.pkg_root, "oligo_io.R"))
-source(file.path(.pkg_root, "metabolites.R"))
-source(file.path(.pkg_root, "mass_isotope.R"))
-source(file.path(.pkg_root, "fragments.R"))
-source(file.path(.pkg_root, "ms_matching.R"))
-source(file.path(.pkg_root, "build_workbook.R"))
-source(file.path(.pkg_root, "build_report.R"))
+source(file.path(.pkg_root, "R", "chemistry_dict.R"))
+source(file.path(.pkg_root, "R", "oligo_io.R"))
+source(file.path(.pkg_root, "R", "metabolites.R"))
+source(file.path(.pkg_root, "R", "mass_isotope.R"))
+source(file.path(.pkg_root, "R", "fragments.R"))
+source(file.path(.pkg_root, "R", "ms_matching.R"))
+source(file.path(.pkg_root, "R", "build_workbook.R"))
+source(file.path(.pkg_root, "R", "build_report.R"))
 
 cat("==== Testing workbook + report generation ====\n\n")
 
@@ -45,8 +45,11 @@ wb_path <- build_workbook(spec, mets, ION337_DICT, validation,
 cat("Workbook:", wb_path, "\n")
 cat("File size:", file.size(wb_path), "bytes\n")
 
-# Copy to /mnt/results/
-results_path <- "/mnt/results/ION337_metabolite_library.xlsx"
+# Copy to the results dir (override with OLIGOMET_RESULTS_DIR; defaults to
+# a session temp dir so this runs on any machine)
+results_dir <- Sys.getenv("OLIGOMET_RESULTS_DIR", file.path(tempdir(), "results"))
+dir.create(results_dir, recursive = TRUE, showWarnings = FALSE)
+results_path <- file.path(results_dir, "ION337_metabolite_library.xlsx")
 file.copy(wb_path, results_path, overwrite = TRUE)
 # R's file.copy may produce 0-byte on S3 mount; use cp instead
 if (file.size(results_path) == 0) {
@@ -68,16 +71,18 @@ for (sh in names(wb)) {
 
 # ---- Build report ----
 cat("\n--- Building HTML report ---\n")
+plot_dir <- file.path(tempdir(), "plots")
+dir.create(plot_dir, recursive = TRUE, showWarnings = FALSE)
 report_path <- build_report(spec, mets, ION337_DICT, validation,
                              ms_results = NULL, ms_info = NULL, opts = opts,
                              output_file = "ION337_metabolite_report",
                              output_format = "html",
-                             plot_dir = "/workspace")
+                             plot_dir = plot_dir)
 cat("Report:", report_path, "\n")
 if (file.exists(report_path)) {
   cat("Report file size:", file.size(report_path), "bytes\n")
   # Copy to results
-  results_report <- "/mnt/results/ION337_metabolite_report.html"
+  results_report <- file.path(results_dir, "ION337_metabolite_report.html")
   file.copy(report_path, results_report, overwrite = TRUE)
   if (file.size(results_report) == 0) {
     system2("cp", args = c(report_path, results_report))
@@ -86,8 +91,8 @@ if (file.exists(report_path)) {
 }
 
 # Copy plots to results too
-for (f in list.files("/workspace", pattern = "^plot_.*\\.png$", full.names = TRUE)) {
-  dest <- file.path("/mnt/results", basename(f))
+for (f in list.files(plot_dir, pattern = "^plot_.*\\.png$", full.names = TRUE)) {
+  dest <- file.path(results_dir, basename(f))
   file.copy(f, dest, overwrite = TRUE)
   if (file.size(dest) == 0) system2("cp", args = c(f, dest))
 }

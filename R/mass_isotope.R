@@ -85,7 +85,10 @@ ps_oxidation_series <- function(met, max_oxid = 6, z_range = 3:12,
 ## ---- Isotope pattern calculation ------------------------------------------
 # Uses enviPat if available; falls back to built-in convolution.
 # Returns data.frame(mass, abundance) sorted by mass, truncated to top-N.
-.isotope_data <- NULL
+# Held in an environment (not a plain top-level variable) so it can be
+# filled lazily even when this file is loaded as a sealed package namespace,
+# where `<<-` on a top-level binding would fail with a locked-binding error.
+.isotope_data_env <- new.env(parent = emptyenv())
 
 # In-session memoization cache. isotope_mz_cluster() is called once per
 # charge state per adduct (see match_ms1()), but the underlying isotope
@@ -97,11 +100,11 @@ ps_oxidation_series <- function(met, max_oxid = 6, z_range = 3:12,
 .envipat_cache <- new.env(parent = emptyenv())
 
 .isotope_pattern_envipat <- function(formula_str, threshold = 1e-6, n_top = 15) {
-  if (is.null(.isotope_data)) {
+  if (is.null(.isotope_data_env$isotopes)) {
     if (!requireNamespace("enviPat", quietly = TRUE)) return(NULL)
     e <- new.env()
     data(isotopes, package = "enviPat", envir = e)
-    .isotope_data <<- e$isotopes
+    .isotope_data_env$isotopes <- e$isotopes
   }
 
   cache_key <- paste(formula_str, threshold, n_top, sep = "|")
@@ -126,7 +129,7 @@ ps_oxidation_series <- function(met, max_oxid = 6, z_range = 3:12,
   }, add = TRUE)
   res <- try(
     suppressMessages(suppressWarnings(
-      enviPat::isopattern(.isotope_data, formula_str,
+      enviPat::isopattern(.isotope_data_env$isotopes, formula_str,
                            threshold = threshold, plotit = FALSE,
                            charge = FALSE)
     )),
@@ -184,8 +187,17 @@ ps_oxidation_series <- function(met, max_oxid = 6, z_range = 3:12,
   df
 }
 
+# Memoization cache for the built-in convolution engine, mirroring
+# .envipat_cache above. Without it, the fallback path recomputed the same
+# full convolution once per charge state per adduct -- the dominant cost of
+# workbook/report builds on systems without enviPat installed.
+.builtin_iso_cache <- new.env(parent = emptyenv())
+
 .isotope_pattern_builtin <- function(formula_vec, threshold = 1e-7, n_top = 15) {
   f <- .as_formula(formula_vec)
+  cache_key <- paste(format_formula(f), threshold, n_top, sep = "|")
+  cached <- .builtin_iso_cache[[cache_key]]
+  if (!is.null(cached)) return(cached)
   pat <- data.frame(mass = 0, abundance = 1, stringsAsFactors = FALSE)
   for (el in names(f)) {
     cnt <- f[el]
@@ -206,7 +218,9 @@ ps_oxidation_series <- function(met, max_oxid = 6, z_range = 3:12,
     pat <- .convolve_patterns(pat, elpat, threshold)
   }
   pat <- pat[order(-pat$abundance), ]
-  head(pat, n_top)
+  out <- head(pat, n_top)
+  .builtin_iso_cache[[cache_key]] <- out
+  out
 }
 
 # Unified isotope pattern dispatcher.
@@ -301,15 +315,31 @@ compute_envelope <- function(met, z_range = 3:12, n_iso = 8,
   rows <- list()
   for (k in 0:kmax) {
     fv <- ps_oxid_formula(info$formula_vec, k)
+    # The isotope pattern depends only on the formula, never on the charge
+    # state -- compute the peak selection once per oxidation level and then
+    # derive m/z for every z from it (same selection rule as
+    # isotope_mz_cluster: monoisotopic peak always kept + top-(n_iso-1) by
+    # abundance, ordered by mass).
+    pat <- isotope_pattern(fv, n_top = max(n_iso * 3, 20),
+                           use_envipat = use_envipat)
+    if (is.null(pat) || nrow(pat) == 0) next
+    pat <- pat[order(pat$mass), ]
+    mono <- pat[1, , drop = FALSE]
+    rest <- pat[-1, , drop = FALSE]
+    rest <- head(rest[order(-rest$abundance), , drop = FALSE], n_iso - 1)
+    sel <- rbind(mono, rest)
+    sel <- sel[order(sel$mass), ]
+    n_pk <- nrow(sel)
+    k_mono <- formula_mass(fv, mono = TRUE)
+    k_formula <- format_formula(fv)
     for (z in z_range) {
-      cl <- isotope_mz_cluster(fv, z, n_top = n_iso, h_offset = h_offset,
-                               use_envipat = use_envipat)
-      if (is.null(cl)) next
       rows[[length(rows) + 1]] <- data.frame(
         met_id = met$id, met_name = met$name, k_oxid = k,
-        z = z, iso = cl$iso, mz = cl$mz, abundance = cl$abundance,
-        mono_mass = formula_mass(fv, mono = TRUE),
-        formula = format_formula(fv),
+        z = z, iso = seq_len(n_pk) - 1,
+        mz = (sel$mass + h_offset - z * .PROTON) / z,
+        abundance = sel$abundance,
+        mono_mass = k_mono,
+        formula = k_formula,
         stringsAsFactors = FALSE)
     }
   }

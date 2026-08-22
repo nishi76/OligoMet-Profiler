@@ -1,0 +1,48 @@
+Package: OligoMetProfiler
+Type: Package
+Title: Theoretical Metabolite Libraries, Charge Envelopes, and MS/MS
+    Fragment Ions for Therapeutic Oligonucleotides
+Version: 1.0.0
+Date: 2026-08-22
+Authors@R: person("Nishikant", "Wase",
+    email = "nishikant.wase@gmail.com",
+    role = c("aut", "cre"))
+Description: A general-purpose pipeline for in-silico metabolite
+    identification of therapeutic oligonucleotides (antisense
+    oligonucleotides, siRNA, and related modalities). Generates
+    theoretical metabolite libraries (3'/5' exonuclease truncations and
+    endonuclease internal fragments), molecular formulas, monoisotopic
+    and average masses, negative-ESI charge envelopes with adduct
+    variants, isotope patterns, phosphorothioate oxidation series,
+    McLuckey MS/MS fragment ions, and PRM inclusion lists for any
+    sequence built from DNA, RNA, 2'-O-methyl, 2'-fluoro, MOE, cEt, or
+    LNA chemistry with mixed PO/PS backbones -- plus fully custom
+    chemistry via dictionary overrides. Optionally matches the
+    theoretical library against uploaded mzML/mzXML or peak-list MS
+    data, exports a multi-sheet Excel workbook and HTML/PDF report, and
+    writes targeted mass lists formatted for the Thermo Orbitrap
+    Exploris Method Editor. A Shiny dashboard (app.R, in the repository
+    root) and command-line drivers wrap the same engine.
+License: MIT + file LICENSE
+URL: https://github.com/nishi76/OligoMet-Profiler
+BugReports: https://github.com/nishi76/OligoMet-Profiler/issues
+Encoding: UTF-8
+Depends: R (>= 4.1)
+Imports:
+    openxlsx,
+    ggplot2,
+    xml2,
+    xfun,
+    stats,
+    utils,
+    grDevices
+Suggests:
+    shiny,
+    DT,
+    bslib,
+    shinyFiles,
+    enviPat,
+    rmarkdown,
+    knitr
+VignetteBuilder: knitr
+RoxygenNote: 7.3.2

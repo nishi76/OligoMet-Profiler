@@ -7,9 +7,9 @@
   }, error = function(e) NULL)
   if (!is.null(this)) dirname(dirname(this)) else ".."
 })
-source(file.path(.pkg_root, "chemistry_dict.R"))
-source(file.path(.pkg_root, "oligo_io.R"))
-source(file.path(.pkg_root, "metabolites.R"))
+source(file.path(.pkg_root, "R", "chemistry_dict.R"))
+source(file.path(.pkg_root, "R", "oligo_io.R"))
+source(file.path(.pkg_root, "R", "metabolites.R"))
 
 library(openxlsx)
 REFERENCE_WORKBOOK <- Sys.getenv("ION337_WORKBOOK_PATH", file.path(.pkg_root, "tests", "ION337_Workbook.xlsx"))

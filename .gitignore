@@ -24,3 +24,8 @@ Thumbs.db
 
 # Shiny
 /rsconnect/
+
+# R package build artifacts
+*.tar.gz
+inst/doc/
+*.Rcheck/

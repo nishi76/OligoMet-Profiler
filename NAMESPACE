@@ -1,0 +1,6 @@
+# Export every top-level object that does not start with a dot. The
+# modules in R/ were written as source()-able files and expose their
+# public functions (parse_input, generate_metabolites, compute_envelope,
+# build_workbook, ...) plus reference data (STANDARD_DICT, ION337_*) by
+# simple naming convention: internal helpers are dot-prefixed.
+exportPattern("^[^.]")

@@ -12,9 +12,9 @@
 #   2. Custom chemistry overrides (add your own base/sugar/linkage/conjugate)
 #   3. All three input notations (triplet, OligoDistiller, structured)
 #
-# For the Shiny dashboard instead, see app.R. main_ION337.R reproduces the
-# published ION337 reference case specifically, useful mainly as a
-# self-test that the formula engine still matches a known mass.
+# For the Shiny dashboard instead, see app.R. To self-test that the
+# formula engine still matches a known mass, run validate_ION337() from R
+# or the validation scripts under tests/.
 # =============================================================================
 
 ## ---- Bootstrap: find modules and source them --------------------------------
@@ -25,22 +25,22 @@ script_dir <- tryCatch({
   if (length(file_arg) > 0) dirname(normalizePath(file_arg)) else "."
 }, error = function(e) ".")
 
-if (!file.exists(file.path(script_dir, "chemistry_dict.R"))) {
+if (!file.exists(file.path(script_dir, "R", "chemistry_dict.R"))) {
   stop("Cannot locate pipeline modules (chemistry_dict.R not found). ",
        "Run this script from the package root, e.g. ",
        "Rscript run_custom_oligo.R.")
 }
 
-source(file.path(script_dir, "progress_utils.R"))
-source(file.path(script_dir, "chemistry_dict.R"))
-source(file.path(script_dir, "oligo_io.R"))
-source(file.path(script_dir, "metabolites.R"))
-source(file.path(script_dir, "mass_isotope.R"))
-source(file.path(script_dir, "fragments.R"))
-source(file.path(script_dir, "ms_matching.R"))
-source(file.path(script_dir, "build_workbook.R"))
-source(file.path(script_dir, "build_report.R"))
-source(file.path(script_dir, "export_acquisition.R"))
+source(file.path(script_dir, "R", "progress_utils.R"))
+source(file.path(script_dir, "R", "chemistry_dict.R"))
+source(file.path(script_dir, "R", "oligo_io.R"))
+source(file.path(script_dir, "R", "metabolites.R"))
+source(file.path(script_dir, "R", "mass_isotope.R"))
+source(file.path(script_dir, "R", "fragments.R"))
+source(file.path(script_dir, "R", "ms_matching.R"))
+source(file.path(script_dir, "R", "build_workbook.R"))
+source(file.path(script_dir, "R", "build_report.R"))
+source(file.path(script_dir, "R", "export_acquisition.R"))
 
 ## ===========================================================================
 ## CONFIG -- edit this block for your oligonucleotide

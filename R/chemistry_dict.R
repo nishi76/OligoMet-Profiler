@@ -322,8 +322,9 @@ parse_triplet <- function(triplet, dict = STANDARD_DICT) {
 # ION337 is a published gapmer ASO used here purely as a known-mass reference
 # to sanity-check the formula engine above -- it is one example sequence
 # among any the pipeline can run, not a required input or a default target.
-# See run_custom_oligo.R to run the pipeline on your own sequence, and
-# main_ION337.R if you specifically want to reproduce this reference case.
+# See run_custom_oligo.R (repository root) to run the pipeline on your own
+# sequence; validate_ION337() below re-derives this reference case whenever
+# a regression check on the formula engine is needed.
 ION337_TRIPLET <- "Ge-uAn-sGn-sSn-sAn-sAn-sGn-sAn-sTn-sTn-sAn-sTn-sSn-sSn-sTn"
 ION337_TARGET_FORMULA <- "C196H270N72O105S14P14"
 ION337_TARGET_MASS    <- 6193.0417731619
