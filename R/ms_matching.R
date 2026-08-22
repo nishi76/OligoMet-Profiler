@@ -305,7 +305,7 @@ extract_ms1_features <- function(ms1_peaks, ppm = 10, min_intensity = 100) {
 #   z_range:    charge state range (default 3:12)
 #   adducts:    adduct types to check (default H, Na, K, NH4)
 #   max_oxid:   max PS->PO oxidation events (default 6)
-#   h_offset:   envelope offset (0 = standard, 3.0046 = ION337 workbook)
+#   h_offset:   envelope offset (0 = standard, 3.0046 = legacy workbook)
 match_ms1 <- function(mets, ms1_features, dict = STANDARD_DICT,
                        ppm_tol = 10, z_range = 3:12,
                        adducts = c("H", "Na", "K", "NH4"),

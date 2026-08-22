@@ -77,7 +77,7 @@ endo_cleave <- function(spec, i) {
 # Count PS vs PO bonds in a spec (for the oxidation-series dimension).
 count_linkages <- function(spec) {
   lk <- spec$linkages[!is.na(spec$linkages)]
-  n_ps <- sum(lk %in% c("s", "u"))     # 'u' is ION337 PS variant
+  n_ps <- sum(lk %in% c("s", "u"))     # 'u' is the PS stereochem variant
   n_po <- sum(lk == "o")
   list(n_ps = n_ps, n_po = n_po, n_bonds = length(lk))
 }
@@ -104,7 +104,7 @@ find_gap <- function(spec) {
 
 ## ---- Main generator --------------------------------------------------------
 # opts:
-#   oligo_name   : prefix for metabolite names (e.g. "ION337")
+#   oligo_name   : prefix for metabolite names (e.g. "inotersen")
 #   max_3p       : max 3' exonuclease truncations (default 10)
 #   max_5p       : max 5' exonuclease truncations (default 10)
 #   endo         : include endonuclease fragments? (default TRUE)

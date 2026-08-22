@@ -6,7 +6,7 @@
 # Conventions:
 #   * Negative ESI:  [M - zH]^z-   =>  m/z = (M + h_offset - z*mp) / z
 #     h_offset = 0  (standard, matches eluforsen/FMVS papers)
-#     h_offset = 3  (reproduces ION337 workbook's +3H neutral convention)
+#     h_offset = 3  (reproduces a legacy workbook's +3H neutral convention)
 #   * PS->PO oxidation: replace 1 S with 1 O per event  =>  -15.977156 Da
 #   * Adducts (negative mode, 1 cation substituting 1 H):
 #       +Na:  +21.981944 Da    +K:  +37.955882 Da    +NH4: +17.026549 Da
@@ -18,11 +18,13 @@
 .H2O_MASS <- 18.010564686       # monoisotopic water
 .PS_TO_PO_SHIFT <- .atomic_mass_mono[["S"]] - .atomic_mass_mono[["O"]]  # 15.977157
 
-# ION337 workbook envelope offset: the workbook's charge envelope uses a
-# neutral mass = [M] + 3.0046 Da (not 3*proton or 3*H_atom; a workbook-specific
-# quirk, consistent to +/-0.00002 Da across all 10 charge states z=3..12).
-# Default h_offset = 0 gives the standard [M-zH]^z- convention (eluforsen/FMVS).
-.ION337_WB_OFFSET <- 3.0046
+# Some legacy reference workbooks compute their charge envelope from a
+# neutral mass of [M] + 3.0046 Da (not 3*proton or 3*H_atom -- a
+# spreadsheet-specific quirk, consistent to +/-0.00002 Da across z=3..12).
+# Default h_offset = 0 gives the standard [M-zH]^z- convention
+# (eluforsen/FMVS). Set h_offset to this value only when reproducing m/z
+# values from a workbook that used that convention.
+.LEGACY_WB_OFFSET <- 3.0046
 
 # Adduct mass shifts (cation replaces one H on the backbone)
 .ADDUCT_SHIFT <- c(

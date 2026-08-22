@@ -26,9 +26,7 @@
   f = "f",   # 2'-fluoro
   d = "d",   # 2'-deoxy (DNA)
   r = "r",   # ribose (RNA)
-  e = "MOE", # 2'-O-methoxyethyl
-  a = "a",   # ION337 3'-terminal variant
-  n = "n"    # ION337 2'-mod sugar
+  e = "MOE"  # 2'-O-methoxyethyl
 )
 
 ## ---- Triplet parser (re-exported from chemistry_dict.R) --------------------

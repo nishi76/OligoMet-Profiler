@@ -67,37 +67,63 @@ Write one dash-separated token per nucleotide, 5'→3'. Each token is:
 The first (5') token has **no** linkage prefix — there is no incoming
 bond.
 
-### Worked example
+### Worked example: inotersen
 
-Your CoA says:
+Take a real one. Inotersen's published description reads:
 
-> 16-mer antisense oligonucleotide. Sequence: 5'-GTCTCTCTCTTCTCTG-3'.
-> Design: 5-6-5 gapmer; positions 1–5 and 12–16 are 2'-O-methyl,
-> positions 6–11 are 2'-deoxy. Backbone: full phosphorothioate.
-> No terminal conjugates.
+> 20-mer antisense oligonucleotide targeting the TTR 3'UTR (bases
+> 618-637). Sequence: 5'-TCTTGGTTACATGAAATCCC-3'. Design: 5-10-5
+> gapmer; positions 1-5 and 16-20 are 2'-MOE, positions 6-15 are
+> 2'-deoxy. Backbone: full phosphorothioate. All cytosines are
+> 5-methylcytosine. No terminal conjugates.
 
 Build it position by position:
 
-| Pos | Base | Sugar | Incoming linkage | Token |
-|----:|------|-------|------------------|-------|
-| 1 | G | 2'-OMe → `m` | (none, 5' end) | `Gm` |
-| 2 | T | 2'-OMe → `m` | PS → `s` | `sTm` |
-| ... | | | | |
-| 6 | T | DNA → `d` | PS → `s` | `sTd` |
-| ... | | | | |
-| 16 | G | 2'-OMe → `m` | PS → `s` | `sGm` |
+| Pos | Base | Base code | Sugar | Incoming linkage | Token |
+|----:|------|-----------|-------|------------------|-------|
+| 1 | T | `T` | 2'-MOE → `e` | (none, 5' end) | `Te` |
+| 2 | 5-Me-C | `S` | 2'-MOE → `e` | PS → `s` | `sSe` |
+| 3–5 | T, T, G | `T` `T` `G` | 2'-MOE → `e` | PS → `s` | `sTe-sTe-sGe` |
+| 6 | G | `G` | DNA → `d` (gap starts) | PS → `s` | `sGd` |
+| 7–15 | ...gap... | | DNA → `d` | PS → `s` | `sTd-sTd-sAd-sSd-...` |
+| 16 | A | `A` | 2'-MOE → `e` (wing resumes) | PS → `s` | `sAe` |
+| 17–20 | T, C, C, C | `T` `S` `S` `S` | 2'-MOE → `e` | PS → `s` | `sTe-sSe-sSe-sSe` |
 
-Join with dashes:
+Joined with dashes:
 
 ```
-Gm-sTm-sCm-sTm-sCm-sTd-sCd-sTd-sCd-sTd-sTd-sCm-sTm-sCm-sTm-sGm
+Te-sSe-sTe-sTe-sGe-sGd-sTd-sTd-sAd-sSd-sAd-sTd-sGd-sAd-sAd-sAe-sTe-sSe-sSe-sSe
 ```
 
-Paste that into the app's sequence box, or into the `--seq` flag /
-CONFIG block of the CLI drivers. Sanity checks the parser enforces:
-token count = oligo length; every token after the first starts with a
-linkage code; every code must exist in the dictionary (you get a clear
-error naming any unknown code).
+Paste that into the app's sequence box, or into the CONFIG block of the
+CLI driver. **How you know it's right:** the computed molecular formula
+should match the published one. For inotersen that is
+`C230H318N69O121P19S19`, average MW 7183.08 — and this pipeline
+reproduces it exactly. Run `validate_reference()` in R to see that check
+run against both inotersen and nusinersen.
+
+Sanity checks the parser enforces: token count = oligo length; every
+token after the first starts with a linkage code; every code must exist
+in the dictionary (you get a clear error naming any unknown code).
+
+### The four bundled examples
+
+Rather than typing them out, four approved drugs ship with the package —
+one per modality class — and are loadable from the app's "Load example"
+dropdown:
+
+| Modality | Drug | Constant | Chemistry |
+|---|---|---|---|
+| Antisense (SSO) | nusinersen | `NUSINERSEN_TRIPLET` | PS, uniform 2'-MOE, 5-methyl pyrimidines |
+| Antisense (gapmer) | inotersen | `INOTERSEN_TRIPLET` | PS, 5-10-5 2'-MOE/DNA gapmer |
+| siRNA (LNP) | patisiran (sense) | `PATISIRAN_SENSE_TRIPLET` | 2'-OMe/ribose, all-PO, dTdT overhang |
+| siRNA (GalNAc) | givosiran (sense) | `GIVOSIRAN_SENSE_TRIPLET` | 2'-OMe/2'-F, partial PS, 3' GalNAc |
+
+siRNA drugs are given as their **sense strand** — the pipeline profiles
+one strand at a time, so run each strand of a duplex separately. The
+GalNAc conjugate on givosiran is set through the `conj3` field (the app
+sets it for you when you load that example), because triplet notation
+has no conjugate field.
 
 ### Alternative notations (also accepted, auto-detected)
 
@@ -112,9 +138,12 @@ error naming any unknown code).
 
 ### Common pitfalls
 
-- **5-methylcytosine**: gapmer ASOs almost always use 5-Me-C in the
-  wings. If the CoA says so, use base code `S`, not `C` — the mass
-  differs by CH₂ (14.016 Da) per site, which is very noticeable.
+- **5-methylcytosine**: 2'-MOE antisense drugs almost always use 5-Me-C
+  at every cytosine. If the CoA says so, use base code `S`, not `C` —
+  the mass differs by CH₂ (14.016 Da) per site. In inotersen that is
+  five sites, so getting it wrong shifts the parent mass by 70 Da.
+- **5-methyluracil is thymine**: CoAs for MOE drugs often write `MeU` or
+  `5-Me-U`. That is the same nucleobase as thymine — use base code `T`.
 - **Linkage count**: *n* bases means *n−1* linkage codes. The parser
   puts the linkage on the *following* token.
 - **A modification you don't have a code for**: add it as a custom

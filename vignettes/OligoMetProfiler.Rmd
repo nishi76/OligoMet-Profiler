@@ -89,11 +89,15 @@ al.*, Anal Chem 2025) for McLuckey fragment annotation and isotope
 envelope fitting, and the FMVS automatic metabolite identification
 method (Ye *et al.*, J Chromatogr B 2025) for confirmation scoring.
 
-The published gapmer ASO **ION337** ships with the package as a worked,
-known-mass reference (validated to < 1 ppm against its literature
-formula) -- it is a self-test for the formula engine, not a default
-target. Every function in this vignette runs on any sequence you give
-it.
+Four approved oligonucleotide therapeutics ship with the package as
+worked examples, one per modality class in Takakusa *et al.* (2023):
+**nusinersen** (antisense SSO), **inotersen** (antisense gapmer),
+**patisiran** (siRNA delivered by lipid nanoparticle) and **givosiran**
+(GalNAc-conjugated siRNA). The two antisense examples double as the
+formula engine's regression anchors -- the pipeline reproduces their
+published free-acid molecular formulas exactly. They are illustrations,
+not default targets: every function in this vignette runs on any
+sequence you give it.
 
 # Installation
 
@@ -165,21 +169,53 @@ listing, or a BioPharma Finder sequence-editor export:
 
 To construct the triplet string, write one dash-separated token per
 position, 5' to 3', as `[incoming linkage][BASE][sugar]`, leaving the
-linkage prefix off the first token. For a CoA that reads
+linkage prefix off the first token.
 
-> 16-mer ASO, sequence 5'-GTCTCTCTCTTCTCTG-3', 5-6-5 gapmer
-> (positions 1-5 and 12-16 2'-O-methyl, 6-11 2'-deoxy), full
-> phosphorothioate backbone, no conjugates
+Take inotersen as a worked case. Its published description reads:
 
-the translation is: position 1 = `Gm` (no prefix), position 2 =
-`sTm` (PS bond in, base T, 2'-OMe), position 6 = `sTd` (DNA sugar
-starts the gap), ..., position 16 = `sGm`:
+> 20-mer antisense oligonucleotide targeting the TTR 3'UTR (bases
+> 618-637), sequence 5'-TCTTGGTTACATGAAATCCC-3'. A 5-10-5 gapmer:
+> positions 1-5 and 16-20 are 2'-MOE, positions 6-15 are 2'-deoxy.
+> Fully phosphorothioate backbone. All cytosines are 5-methylcytosine.
+
+Translating position by position:
+
+| Position | Base (from CoA) | Base code | Sugar | Incoming linkage | Token |
+|---:|---|---|---|---|---|
+| 1 | T | `T` | 2'-MOE -> `e` | (none, 5' end) | `Te` |
+| 2 | 5-Me-C | `S` | 2'-MOE -> `e` | PS -> `s` | `sSe` |
+| 6 | G | `G` | DNA -> `d` (gap starts) | PS -> `s` | `sGd` |
+| 16 | A | `A` | 2'-MOE -> `e` (wing resumes) | PS -> `s` | `sAe` |
+| 20 | 5-Me-C | `S` | 2'-MOE -> `e` | PS -> `s` | `sSe` |
+
+Joined up, that is the `INOTERSEN_TRIPLET` constant shipped with the
+package:
 
 ```{r coa-example}
-coa_seq <- "Gm-sTm-sCm-sTm-sCm-sTd-sCd-sTd-sCd-sTd-sTd-sCm-sTm-sCm-sTm-sGm"
-spec_coa <- parse_input(coa_seq)
+spec_coa <- parse_input(INOTERSEN_TRIPLET)
 spec_coa$n
+paste(spec_coa$bases, collapse = "")
+paste(spec_coa$sugars, collapse = "")
 ```
+
+The proof that the translation is right is the molecular formula: the
+assembled formula matches the one on the approved product labelling
+exactly.
+
+```{r coa-check}
+info_coa <- metabolite_mass_info(list(
+  bases = spec_coa$bases, sugars = spec_coa$sugars,
+  linkages = spec_coa$linkages, conj5 = "none", conj3 = "none"))
+info_coa$formula_str
+INOTERSEN_FORMULA            # published free-acid formula
+round(info_coa$avg_mass, 2)  # published average MW: 7183.08
+```
+
+Two traps are worth calling out, because both change the mass and
+neither is obvious from the letter sequence alone. Writing `C` instead
+of `S` for a 5-methylcytosine loses CH~2~ (14.016 Da) *per site* -- in
+inotersen that is five sites, a 70 Da error. And an *n*-mer has
+*n - 1* linkages, so the last token never carries an outgoing bond.
 
 The parser enforces the obvious sanity checks -- token count equals
 oligo length, every token after the first starts with a linkage code,
@@ -188,6 +224,54 @@ message. Modifications without a built-in code are added as custom
 overrides with their elemental formula (see *Custom chemistry
 overrides* below). The repository's `QUICKSTART.md`
 carries a condensed version of this guide with the full code tables.
+
+## The four bundled reference drugs
+
+One approved therapeutic per modality class ships with the package,
+covering the chemistries you are most likely to meet:
+
+```{r reference-table}
+do.call(rbind, lapply(REFERENCE_OLIGOS, function(r) data.frame(
+  drug = r$name, brand = r$brand, modality = r$modality,
+  nt = r$length, chemistry = r$chemistry, stringsAsFactors = FALSE)))
+```
+
+Each is available as a triplet string (`NUSINERSEN_TRIPLET`,
+`INOTERSEN_TRIPLET`, `PATISIRAN_SENSE_TRIPLET`,
+`GIVOSIRAN_SENSE_TRIPLET`) and through the `REFERENCE_OLIGOS` registry,
+which also carries the terminal conjugates that triplet notation cannot
+express:
+
+```{r reference-run}
+for (r in REFERENCE_OLIGOS) {
+  sp <- parse_input(r$triplet)
+  info <- metabolite_mass_info(list(
+    bases = sp$bases, sugars = sp$sugars, linkages = sp$linkages,
+    conj5 = r$conj5, conj3 = r$conj3))
+  cat(sprintf("%-26s %-20s %2d nt  %-38s %10.4f Da\n",
+              r$name, r$modality, sp$n, info$formula_str, info$mono_mass))
+}
+```
+
+Note what distinguishes each modality, since these are exactly the
+features that drive metabolite prediction:
+
+* **nusinersen** -- uniform 2'-MOE and a fully PS backbone. Sugar-modified
+  throughout, so it degrades by exonuclease nibbling from the termini
+  rather than internal cleavage.
+* **inotersen** -- a 5-10-5 gapmer, MOE wings around a DNA gap. The gap is
+  the endonuclease-susceptible region, so `endo_sites = "gap"` matches
+  its real biotransformation route.
+* **patisiran** (sense strand) -- an all-phosphodiester siRNA with a dTdT
+  overhang. No PS means no oxidation series to model (`max_oxid` has
+  nothing to act on).
+* **givosiran** (sense strand) -- alternating 2'-OMe/2'-F, PS only at the
+  two 5'-terminal linkages, and a trivalent GalNAc at the 3' end. The
+  conjugate rides on the parent and on 5' truncations, but is lost from
+  3' truncations that cut past it.
+
+Duplex drugs are given as their sense strand: this pipeline profiles one
+strand at a time, so run each strand of an siRNA separately.
 
 # Sequence input notations
 
@@ -317,18 +401,21 @@ validation gate -- so when a reference mass for the full-length oligo
 is available, compare it against the computed parent mass to catch
 transcription errors.
 
-## The ION337 reference self-test
+## The formula-engine self-test
 
-`validate_ION337()` re-derives the published ION337 formula and mass
-from its triplet string and reports the deviation. It is a regression
-check on the formula engine (run it after editing the dictionary), not
-a validation of whatever sequence you are analyzing:
+`validate_reference()` re-derives the molecular formulas of nusinersen
+and inotersen from their sequences and chemistry, and compares each
+against the free-acid formula on its approved product labelling.
+Between them they exercise MOE and DNA sugars, 5-methylcytosine and
+5-methyluracil bases, and a fully phosphorothioate backbone. It is a
+regression check on the formula engine (run it after editing the
+dictionary), not a validation of whatever sequence you are analyzing:
 
 ```{r ion337}
-v <- validate_ION337(verbose = FALSE)
-v$formula
-v$ok
-round(v$ppm, 4)   # deviation from the literature mass, ppm
+v <- validate_reference(verbose = FALSE)
+v$ok                       # TRUE only if both formulas reproduce exactly
+vapply(v$all, function(x) x$formula, "")
+vapply(v$all, function(x) round(x$ppm, 6), 0)   # deviation, ppm
 ```
 
 # Metabolite library generation
@@ -378,7 +465,8 @@ round(info$avg_mass, 4)
 The formula is assembled as: sum of bases + sum of sugars + sum of
 internal linkages - (2n - 1) H~2~O + conjugates, accounting for *n*
 glycosidic bonds and *n - 1* internucleotide bonds. This convention is
-validated to < 1 ppm against the ION337 literature mass.
+validated against the published molecular formulas of nusinersen and
+inotersen (0 ppm on both).
 
 ## Charge envelope
 
@@ -389,8 +477,9 @@ charge_envelope(info$mono_mass, z_range = 4:8)
 ```
 
 `h_offset` shifts the neutral mass before charging. Leave it at 0 for
-standard mass spectrometry; `3.0046` reproduces the empirical
-convention used by the ION337 reference workbook.
+standard mass spectrometry; a non-zero value exists only to reproduce
+legacy reference workbooks that computed their envelopes from an
+offset neutral mass.
 
 Adduct satellites replace one H with a cation; the shifts are exposed
 via `adduct_shift()`:
@@ -573,7 +662,7 @@ ready-made entry points around the same engine:
 
 For a formula-engine regression check from the command line, run the
 validation scripts in `tests/` (e.g.
-`Rscript tests/test_mass_isotope.R`) or call `validate_ION337()`
+`Rscript tests/test_mass_isotope.R`) or call `validate_reference()`
 directly from R.
 
 # Performance notes
@@ -599,8 +688,9 @@ directly from R.
   confirm against a known mass before quantitative use.
 * Custom overrides are trusted as given; validate the parent mass
   against a reference when one exists.
-* The `h_offset = 3.0046` convention exists only to reproduce the
-  ION337 reference workbook; use 0 for standard work.
+* The `h_offset = 3.0046` convention exists only to reproduce legacy
+  reference workbooks that used an offset neutral mass; use 0 for
+  standard work.
 * The repository's `tests/` scripts are console-output validation
   scripts, not asserted unit tests.
 
@@ -612,17 +702,56 @@ sessionInfo()
 
 # References {.unnumbered}
 
-* Lippens J.L. *et al.* SynONIM: a Synthetic Oligonucleotide
-  Nomenclature for Impurities and Modifications. *J Am Soc Mass
-  Spectrom* (2024).
-* Kim J. *et al.* Metabolite Profiling of the Antisense
-  Oligonucleotide Eluforsen Using Liquid Chromatography-Mass
-  Spectrometry. *Mol Ther Nucleic Acids* (2019).
-* Liu R. *et al.* OligoDistiller: untargeted profiling of therapeutic
-  oligonucleotide drugs and metabolites. *Anal Chem* (2025).
-* Ye X. *et al.* Automatic metabolite identification of antisense
-  oligonucleotides by full MS variable scanning. *J Chromatogr B*
-  (2025).
-* McLuckey S.A., Van Berkel G.J., Glish G.L. Tandem mass spectrometry
-  of small, multiply charged oligonucleotides. *J Am Soc Mass
-  Spectrom* (1992).
+## Methodology {.unnumbered}
+
+1. Lippens J.L. *et al.* SynONIM: a Synthetic Oligonucleotide
+   Nomenclature for Impurities and Modifications. *J Am Soc Mass
+   Spectrom* (2024).
+2. Kim J. *et al.* Metabolite Profiling of the Antisense
+   Oligonucleotide Eluforsen Using Liquid Chromatography-Mass
+   Spectrometry. *Mol Ther Nucleic Acids* (2019).
+3. Liu R. *et al.* OligoDistiller: untargeted profiling of therapeutic
+   oligonucleotide drugs and metabolites. *Anal Chem* (2025).
+4. Ye X. *et al.* Automatic metabolite identification of antisense
+   oligonucleotides by full MS variable scanning. *J Chromatogr B*
+   (2025).
+5. McLuckey S.A., Van Berkel G.J., Glish G.L. Tandem mass spectrometry
+   of small, multiply charged oligonucleotides. *J Am Soc Mass
+   Spectrom* 3:60-70 (1992).
+
+## Reference drugs and modality classification {.unnumbered}
+
+6. Takakusa H., Iwazaki N., Nishikawa M., Yoshida T., Obika S., Inoue T.
+   Drug Metabolism and Pharmacokinetics of Antisense Oligonucleotide
+   Therapeutics: Typical Profiles, Evaluation Approaches, and Points to
+   Consider Compared with Small Molecule Drugs. *Nucleic Acid
+   Therapeutics* 33(2):83-94 (2023). doi:10.1089/nat.2022.0054 --
+   source of the modality classification (Table 1) used for the four
+   bundled examples, and of the class-specific metabolism routes
+   (endonuclease-first for gapmers, exonuclease for SSOs).
+7. Egli M., Manoharan M. Chemistry, structure and function of approved
+   oligonucleotide therapeutics. *Nucleic Acids Research*
+   51(6):2529-2573 (2023). doi:10.1093/nar/gkad067 -- chemistry and
+   structural review of the approved oligonucleotide drugs.
+8. SPINRAZA (nusinersen) prescribing information, Biogen -- sequence,
+   2'-MOE/PS chemistry, and free-acid molecular formula
+   C~234~H~340~N~61~O~128~P~17~S~17~.
+9. TEGSEDI (inotersen) prescribing information, Akcea/Ionis -- 5-10-5
+   MOE gapmer design, TTR 3'UTR target sequence (bases 618-637), and
+   free-acid molecular formula C~230~H~318~N~69~O~121~P~19~S~19~
+   (average MW 7183.08).
+10. ONPATTRO (patisiran) prescribing information, Alnylam -- siRNA
+    duplex sequences, 2'-OMe modification pattern, dTdT overhangs, and
+    lipid-nanoparticle formulation.
+11. GIVLAARI (givosiran) prescribing information, Alnylam -- ESC-GalNAc
+    siRNA sequences, 2'-F/2'-OMe alternation, terminal phosphorothioate
+    placement, and the trivalent GalNAc (L96) 3' conjugate.
+
+## Instrument and software documentation {.unnumbered}
+
+12. Thermo Fisher Scientific. *BioPharma Finder 5.2 Oligonucleotide
+    Analysis User Guide* -- triplet sequence notation and terminal
+    modification codes.
+13. Thermo Fisher Scientific. *Orbitrap Exploris 120 Software Manual*,
+    "Targeted Inclusion -- Targeted Mass filter" -- mass-list column
+    layout used by the acquisition exports.

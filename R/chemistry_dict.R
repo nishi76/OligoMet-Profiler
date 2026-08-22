@@ -10,7 +10,7 @@
 #
 # Notation conventions supported (see oligo_io.R):
 #   * Triplet:        [linkage][base][sugar] per token, dash-separated
-#                     e.g. "Ge-uAn-sGn-sSn-...-sTn"  (5' token has no linkage prefix)
+#                     e.g. "Te-sSe-sAe-sSe-...-sGe"  (5' token has no linkage prefix)
 #                     Also accepts BioPharma Finder-style triplet notation,
 #                     e.g. "Ad-pTd-pCd-pAd" ('p' = phosphodiester, 's' =
 #                     phosphorothioate -- see LINKAGE_FORMULAS below).
@@ -103,8 +103,10 @@ formula_mass <- function(f, mono = TRUE) {
 # verify = TRUE marks formulas that are best-estimate and should be confirmed
 # against a known mass before relying on them.
 
-# Nucleobases (free base). 'S' is the ION337 code for 5-methylcytosine (m5C),
-# reverse-engineered from the ION337 formula and validated to 0 ppm.
+# Nucleobases (free base). 'S' is the single-letter code for
+# 5-methylcytosine (m5C), which appears at every cytosine position in most
+# 2'-MOE antisense drugs; 'T' doubles as 5-methyluracil, since the two are
+# the same nucleobase.
 BASE_FORMULAS <- list(
   A   = list(formula = c(C=5,H=5,N=5),            name = "adenine"),
   G   = list(formula = c(C=5,H=5,N=5,O=1),        name = "guanine"),
@@ -120,20 +122,16 @@ BASE_FORMULAS <- list(
   I   = list(formula = c(C=5,H=4,N=4,O=1),        name = "hypoxanthine (inosine base)")
 )
 
-# Sugars (free sugar moiety). Standard codes plus ION337 reverse-engineered codes.
-# ION337 'n' (C8H15NO6) and 'e' (C9H19NO8) are N-containing 2'-modified riboses
-# (likely 2'-O-aminoalkyl-PEG variants); 'a' (C7H12O7) is the 3'-terminal variant.
-# These three were derived exactly from the ION337 formula/variant diff and
-# reproduce C196H270N72O105S14P14 + 6193.0418 Da to 0 ppm.
+# Sugars (free sugar moiety). 'e' and 'MOE' are the same 2'-MOE sugar --
+# 'e' is the single-letter form used in triplet notation, 'MOE' the
+# spelled-out form; both resolve to C8H16O6.
 SUGAR_FORMULAS <- list(
   d   = list(formula = c(C=5,H=10,O=4),           name = "2'-deoxyribose (DNA)"),
   r   = list(formula = c(C=5,H=10,O=5),           name = "ribose (RNA)"),
   m   = list(formula = c(C=6,H=12,O=5),           name = "2'-O-methylribose"),
   f   = list(formula = c(C=5,H=9,F=1,O=4),        name = "2'-fluororibose"),
-  e   = list(formula = c(C=9,H=19,N=1,O=8),       name = "ION337 5'-terminal 2'-mod sugar (C9H19NO8)"),
-  n   = list(formula = c(C=8,H=15,N=1,O=6),       name = "ION337 2'-mod sugar (C8H15NO6)"),
-  a   = list(formula = c(C=7,H=12,O=7),           name = "ION337 3'-terminal sugar variant (C7H12O7)"),
-  MOE = list(formula = c(C=8,H=16,O=6),           name = "2'-O-methoxyethylribose (standard MOE)"),
+  e   = list(formula = c(C=8,H=16,O=6),           name = "2'-O-methoxyethylribose (MOE)"),
+  MOE = list(formula = c(C=8,H=16,O=6),           name = "2'-O-methoxyethylribose (MOE)"),
   cEt = list(formula = c(C=7,H=12,O=4),           name = "constrained ethyl (cEt)", verify = TRUE),
   LNA = list(formula = c(C=6,H=10,O=5),           name = "locked nucleic acid sugar", verify = TRUE),
   NH2 = list(formula = c(C=5,H=11,N=1,O=4),       name = "2'-amino-2'-deoxyribose")
@@ -153,7 +151,7 @@ LINKAGE_FORMULAS <- list(
   o  = list(formula = c(H=1,P=1,O=3),             name = "phosphodiester (PO)"),
   p  = list(formula = c(H=1,P=1,O=3),             name = "phosphodiester (PO) -- BioPharma Finder notation"),
   s  = list(formula = c(H=1,P=1,S=1,O=2),         name = "phosphorothioate (PS) -- also BioPharma Finder notation"),
-  u  = list(formula = c(H=1,P=1,S=1,O=2),         name = "ION337 linkage (PS, stereochem variant)"),
+  u  = list(formula = c(H=1,P=1,S=1,O=2),         name = "phosphorothioate (PS, stereochemistry variant)"),
   mp = list(formula = c(C=1,H=3,P=1,O=2),         name = "methylphosphonate", verify = TRUE)
 )
 
@@ -241,11 +239,8 @@ build_dictionary <- function(overrides = list()) {
 # run_custom_oligo.R.
 STANDARD_DICT <- build_dictionary()
 
-# Backward-compatible alias. The name predates this dictionary being used as
-# the general-purpose default for every sequence, not just the ION337
-# reference case -- kept so existing scripts/tests referencing ION337_DICT
-# keep working unchanged.
-ION337_DICT <- STANDARD_DICT
+# Backward-compatible alias for scripts written against the older name.
+REFERENCE_DICT <- STANDARD_DICT
 
 ## ---- Oligo formula assembly -------------------------------------------------
 # Given canonical per-position vectors (bases, sugars, linkages) and optional
@@ -304,13 +299,17 @@ parse_triplet <- function(triplet, dict = STANDARD_DICT) {
   for (i in seq_len(n)) {
     tk <- toks[i]
     ch1 <- substr(tk, 1, 1)
+    # The sugar is everything after the base letter, not just one
+    # character, so multi-character dictionary codes (MOE, cEt, LNA) work
+    # in triplet notation too -- e.g. "sTMOE", "AcEt". Single-letter codes
+    # (d, r, m, f, e) are unaffected.
     if (nchar(tk) >= 3 && ch1 %in% names(dict) &&
         dict[[ch1]]$kind == "linkage") {
       # prefix = incoming bond (i-1 -> i) = outgoing bond of position i-1
       if (i >= 2) linkages[i - 1] <- ch1
-      base <- substr(tk, 2, 2); sugar <- substr(tk, 3, 3)
+      base <- substr(tk, 2, 2); sugar <- substr(tk, 3, nchar(tk))
     } else {
-      base <- substr(tk, 1, 1); sugar <- substr(tk, 2, 2)
+      base <- substr(tk, 1, 1); sugar <- substr(tk, 2, nchar(tk))
     }
     bases[i] <- base; sugars[i] <- sugar
   }
@@ -318,40 +317,186 @@ parse_triplet <- function(triplet, dict = STANDARD_DICT) {
   list(bases = bases, sugars = sugars, linkages = linkages)
 }
 
-## ---- Reference example / self-test -----------------------------------------
-# ION337 is a published gapmer ASO used here purely as a known-mass reference
-# to sanity-check the formula engine above -- it is one example sequence
-# among any the pipeline can run, not a required input or a default target.
-# See run_custom_oligo.R (repository root) to run the pipeline on your own
-# sequence; validate_ION337() below re-derives this reference case whenever
-# a regression check on the formula engine is needed.
-ION337_TRIPLET <- "Ge-uAn-sGn-sSn-sAn-sAn-sGn-sAn-sTn-sTn-sAn-sTn-sSn-sSn-sTn"
-ION337_TARGET_FORMULA <- "C196H270N72O105S14P14"
-ION337_TARGET_MASS    <- 6193.0417731619
 
-validate_ION337 <- function(dict = STANDARD_DICT, verbose = TRUE) {
-  p <- parse_triplet(ION337_TRIPLET, dict)
-  f <- assemble_oligo_formula(p$bases, p$sugars, p$linkages, dict = dict)
-  got_formula <- format_formula(f)
-  got_mass <- formula_mass(f, mono = TRUE)
-  ppm <- abs(got_mass - ION337_TARGET_MASS) / ION337_TARGET_MASS * 1e6
-  # Compare by atom counts (order-independent), not by string.
-  want_vec <- parse_formula(ION337_TARGET_FORMULA)
-  ok_f <- all(f == want_vec)
-  ok_m <- ppm < 1
+## ---- Published reference examples ------------------------------------------
+# Four approved oligonucleotide therapeutics, one per major modality, used as
+# worked examples and as the known-mass anchor for the formula engine's
+# self-test. They are illustrations of the chemistry classes this pipeline
+# handles -- not default targets and not assumed inputs; run the pipeline on
+# whatever sequence you actually care about.
+#
+# Modality classification follows Takakusa et al. (2023), Nucleic Acid
+# Therapeutics 33:83-94, Table 1. Sequences and per-position modification
+# patterns are from the primary literature and regulatory filings cited on
+# each entry (see the Bibliography in README.md).
+#
+# Duplex drugs (patisiran, givosiran) are given as their SENSE strand: this
+# pipeline profiles one strand at a time, so run each strand separately.
+
+# --- Antisense SSO: nusinersen (SPINRAZA) ---
+# 18-mer, uniformly 2'-MOE, fully phosphorothioate, 5-methyl on every
+# pyrimidine (MeC = 5-methylcytosine -> base code S; MeU = 5-methyluracil,
+# i.e. the thymine base -> base code T).
+# Sequence 5'-UCACUUUCAUAAUGCUGG-3'.
+NUSINERSEN_TRIPLET <- paste0(
+  "Te-sSe-sAe-sSe-sTe-sTe-sTe-sSe-sAe-",
+  "sTe-sAe-sAe-sTe-sGe-sSe-sTe-sGe-sGe")
+# Published free-acid molecular formula (FDA/EMA product labelling; average
+# MW 7127.2 Da). One of the formula engine's two regression anchors.
+NUSINERSEN_FORMULA <- "C234H340N61O128P17S17"
+
+# --- Antisense gapmer: inotersen (TEGSEDI) ---
+# 20-mer 5-10-5 gapmer: 2'-MOE wings (positions 1-5, 16-20), DNA gap
+# (6-15), fully phosphorothioate, all cytosines 5-methyl.
+# Sequence 5'-TCTTGGTTACATGAAATCCC-3' (TTR 3'UTR, bases 618-637).
+INOTERSEN_TRIPLET <- paste0(
+  "Te-sSe-sTe-sTe-sGe-",
+  "sGd-sTd-sTd-sAd-sSd-sAd-sTd-sGd-sAd-sAd-",
+  "sAe-sTe-sSe-sSe-sSe")
+# Published free-acid molecular formula (TEGSEDI product labelling; average
+# MW 7183.08 Da). The engine's second regression anchor.
+INOTERSEN_FORMULA <- "C230H318N69O121P19S19"
+
+# --- siRNA (LNP): patisiran (ONPATTRO), sense strand ---
+# 21-mer, mixed ribose / 2'-O-methyl, all-phosphodiester backbone, dTdT
+# 3' overhang. Sequence 5'-GUAACCAAGAGUAUUCCAU-dTdT-3'.
+# (Antisense strand: 5'-AUGGAAUACUCUUGGUUAC-dTdT-3'.)
+PATISIRAN_SENSE_TRIPLET <- paste0(
+  "Gr-oUm-oAr-oAr-oCm-oCm-oAr-oAr-oGr-oAr-",
+  "oGr-oUm-oAr-oUm-oUm-oCm-oCm-oAr-oUm-oTd-oTd")
+
+# --- siRNA (GalNAc): givosiran (GIVLAARI), sense strand ---
+# 21-mer, alternating 2'-O-methyl / 2'-fluoro, phosphorothioate at the two
+# 5'-terminal linkages only (remainder phosphodiester), trivalent GalNAc
+# (L96) conjugated at the 3' terminus. Structured input is used here because
+# triplet notation carries no conjugate field.
+# Sequence 5'-CAGAAAGAGUGUCUCAUCUUA-(GalNAc3)-3'.
+GIVOSIRAN_SENSE_SPEC <- list(
+  bases    = c("C","A","G","A","A","A","G","A","G","U","G",
+               "U","C","U","C","A","U","C","U","U","A"),
+  sugars   = c("m","m","m","m","m","m","f","m","f","m","f",
+               "m","f","m","f","m","m","m","m","m","m"),
+  linkages = c("s","s", rep("o", 18), NA),
+  conj5    = "none",
+  conj3    = "GalNAc3"
+)
+
+# Triplet form of the givosiran sense strand, for the notation-based entry
+# points (the 3' GalNAc is carried separately in the registry below, since
+# triplet notation has no conjugate field).
+GIVOSIRAN_SENSE_TRIPLET <- paste0(
+  "Cm-sAm-sGm-oAm-oAm-oAm-oGf-oAm-oGf-oUm-",
+  "oGf-oUm-oCf-oUm-oCf-oAm-oUm-oCm-oUm-oUm-oAm")
+
+# Registry of the four examples, for the app's "Load example" dropdown and
+# for programmatic access. Each entry carries the modality label used by
+# Takakusa et al. (2023) Table 1, a triplet string, and the terminal
+# conjugates that triplet notation cannot express on its own.
+REFERENCE_OLIGOS <- list(
+  nusinersen = list(
+    name      = "nusinersen",
+    brand     = "SPINRAZA",
+    modality  = "Antisense (SSO)",
+    chemistry = "PS, uniform 2'-MOE, 5-methyl pyrimidines",
+    length    = 18,
+    triplet   = NUSINERSEN_TRIPLET,
+    conj5     = "none",
+    conj3     = "none",
+    formula   = NUSINERSEN_FORMULA),
+  inotersen = list(
+    name      = "inotersen",
+    brand     = "TEGSEDI",
+    modality  = "Antisense (gapmer)",
+    chemistry = "PS, 5-10-5 2'-MOE/DNA gapmer, 5-methylcytosine",
+    length    = 20,
+    triplet   = INOTERSEN_TRIPLET,
+    conj5     = "none",
+    conj3     = "none",
+    formula   = INOTERSEN_FORMULA),
+  patisiran = list(
+    name      = "patisiran (sense strand)",
+    brand     = "ONPATTRO",
+    modality  = "siRNA (LNP)",
+    chemistry = "2'-OMe / ribose, phosphodiester backbone, dTdT overhang",
+    length    = 21,
+    triplet   = PATISIRAN_SENSE_TRIPLET,
+    conj5     = "none",
+    conj3     = "none",
+    formula   = NA_character_),
+  givosiran = list(
+    name      = "givosiran (sense strand)",
+    brand     = "GIVLAARI",
+    modality  = "siRNA (GalNAc)",
+    chemistry = "2'-OMe / 2'-F, partial PS, 3' trivalent GalNAc",
+    length    = 21,
+    triplet   = GIVOSIRAN_SENSE_TRIPLET,
+    conj5     = "none",
+    conj3     = "GalNAc3",
+    formula   = NA_character_)
+)
+
+## ---- Formula engine self-test ----------------------------------------------
+# Re-derives the molecular formulas of two approved drugs -- nusinersen (an
+# all-MOE SSO) and inotersen (a MOE/DNA gapmer) -- from their sequences and
+# chemistry, and compares each against the published free-acid formula on
+# its product labelling. Between them they exercise MOE and DNA sugars,
+# 5-methylcytosine and 5-methyluracil bases, and a fully phosphorothioate
+# backbone.
+#
+# This is a regression check on the formula engine (run it after editing the
+# dictionary) -- it says nothing about whatever sequence you are actually
+# analyzing.
+.REFERENCE_ANCHORS <- list(
+  list(name = "nusinersen", desc = "18-mer PS/2'-MOE SSO",
+       triplet = NUSINERSEN_TRIPLET, formula = NUSINERSEN_FORMULA,
+       published_avg = 7127.2),
+  list(name = "inotersen",  desc = "20-mer PS 5-10-5 MOE/DNA gapmer",
+       triplet = INOTERSEN_TRIPLET,  formula = INOTERSEN_FORMULA,
+       published_avg = 7183.08)
+)
+
+validate_reference <- function(dict = STANDARD_DICT, verbose = TRUE) {
+  results <- lapply(.REFERENCE_ANCHORS, function(a) {
+    p <- parse_triplet(a$triplet, dict)
+    f <- assemble_oligo_formula(p$bases, p$sugars, p$linkages, dict = dict)
+    want_vec  <- parse_formula(a$formula)
+    want_mass <- formula_mass(want_vec, mono = TRUE)
+    got_mass  <- formula_mass(f, mono = TRUE)
+    ppm <- if (want_mass > 0) abs(got_mass - want_mass) / want_mass * 1e6 else NA_real_
+    # Compare by atom counts (order-independent), not by string.
+    ok_f <- all(f == want_vec)
+    ok_m <- !is.na(ppm) && ppm < 1
+    if (verbose) {
+      cat(sprintf("%s (%s)\n", a$name, a$desc),
+          "  bases        : ", paste(p$bases, collapse = ""), "\n",
+          "  sugars       : ", paste(p$sugars, collapse = "/"), "\n",
+          "  formula got  : ", format_formula(f), "\n",
+          "  formula want : ", a$formula, "  ", ifelse(ok_f, "OK", "MISMATCH"), "\n",
+          "  mono mass    : ", sprintf("%.6f Da", got_mass), "\n",
+          "  average mass : ", sprintf("%.2f", formula_mass(f, mono = FALSE)),
+          sprintf(" (published %.2f)", a$published_avg), "\n",
+          "  delta        : ", sprintf("%.6f Da (%.4f ppm)", got_mass - want_mass, ppm),
+          "  ", ifelse(ok_m, "OK (<1 ppm)", "FAIL"), "\n\n", sep = "")
+    }
+    list(name = a$name, formula = format_formula(f), formula_vec = f,
+         mass = got_mass, avg_mass = formula_mass(f, mono = FALSE),
+         ppm = ppm, ok = ok_f && ok_m, parsed = p)
+  })
+  names(results) <- vapply(.REFERENCE_ANCHORS, function(a) a$name, "")
+  all_ok <- all(vapply(results, function(r) isTRUE(r$ok), logical(1)))
   if (verbose) {
-    cat("ION337 reference self-test (sanity-checks the formula engine;\n",
-        "does not validate whatever sequence you're actually running)\n",
-        "  parsed bases : ", paste(p$bases, collapse = ""), "\n",
-        "  parsed sugars: ", paste(p$sugars, collapse = ""), "\n",
-        "  parsed links : ", paste(ifelse(is.na(p$linkages), ".", p$linkages), collapse = ""), "\n",
-        "  formula got : ", got_formula, "\n",
-        "  formula want: ", ION337_TARGET_FORMULA, "  ", ifelse(ok_f, "OK", "MISMATCH"), "\n",
-        "  mono mass   : ", sprintf("%.6f", got_mass), "\n",
-        "  want mass   : ", sprintf("%.6f", ION337_TARGET_MASS), "\n",
-        "  delta       : ", sprintf("%.6f Da (%.4f ppm)", got_mass - ION337_TARGET_MASS, ppm),
-        "  ", ifelse(ok_m, "OK (<1 ppm)", "FAIL"), "\n", sep = "")
+    cat("Formula-engine self-test: ",
+        if (all_ok) "PASS" else "FAIL",
+        " (", sum(vapply(results, function(r) isTRUE(r$ok), logical(1))),
+        "/", length(results), " published formulas reproduced)\n", sep = "")
   }
-  invisible(list(formula = got_formula, formula_vec = f, mass = got_mass,
-                 ppm = ppm, ok = ok_f && ok_m, parsed = p))
+  # Top-level fields describe the primary anchor, so callers that expect a
+  # single result (workbook validation panel, report) keep working -- but
+  # `ok` must report ALL anchors, so drop the primary anchor's own `ok`
+  # before appending rather than ending up with two `ok` entries, where
+  # `$ok` would silently return the first drug's flag instead of the
+  # overall verdict.
+  primary <- results[[1]]
+  primary$ok <- NULL
+  invisible(c(primary, list(ok = all_ok, all = results)))
 }

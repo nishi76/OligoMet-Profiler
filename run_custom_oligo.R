@@ -13,7 +13,7 @@
 #   3. All three input notations (triplet, OligoDistiller, structured)
 #
 # For the Shiny dashboard instead, see app.R. To self-test that the
-# formula engine still matches a known mass, run validate_ION337() from R
+# formula engine still matches a known mass, run validate_reference() from R
 # or the validation scripts under tests/.
 # =============================================================================
 
@@ -51,8 +51,8 @@ source(file.path(script_dir, "R", "export_acquisition.R"))
 #   First token has NO linkage prefix (5' terminal).
 #   Linkage prefix on token i = incoming bond (from position i-1).
 #   Bases:  A G C T U S(m5C) D(2,6-diaminopurine) I(inosine)
-#   Sugars: d(DNA) r(RNA) m(2'OMe) f(2'F) MOE e(n) n(n)
-#   Linkages: o(PO) s(PS) u(PS variant)
+#   Sugars: d(DNA) r(RNA) m(2'OMe) f(2'F) e or MOE (2'-MOE) cEt LNA
+#   Linkages: o or p (PO), s (PS), u (PS stereochem variant)
 #
 # Example: 20-mer gapmer ASO, 2'OMe wings (positions 1-5, 16-20),
 #          DNA gap (positions 6-15), all PS linkages.
@@ -110,7 +110,7 @@ PARAMS <- list(
   z_range        = 3:12,                # charge state range for envelopes
   n_iso          = 5,                   # isotope peaks per charge state
   max_oxid       = 6,                   # max PS->PO oxidation events
-  h_offset       = 0,                   # 0 = standard [M-zH]^z-; 3.0046 = ION337 WB
+  h_offset       = 0,                   # 0 = standard [M-zH]^z-; 3.0046 = legacy WB
   use_envipat    = TRUE,                # enviPat for isotopes (FALSE = built-in)
   ppm_tol        = 10,                  # MS1 matching tolerance (ppm)
   adducts        = c("H","Na","K","NH4"),

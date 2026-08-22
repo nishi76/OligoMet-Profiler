@@ -1,4 +1,4 @@
-# test_outputs.R -- test workbook + report generation for ION337
+# test_outputs.R -- test workbook + report generation for the inotersen reference case
 
 .pkg_root <- local({
   this <- tryCatch({
@@ -19,13 +19,13 @@ source(file.path(.pkg_root, "R", "build_report.R"))
 
 cat("==== Testing workbook + report generation ====\n\n")
 
-# Parse ION337
-spec <- parse_input(ION337_TRIPLET)
-validation <- validate_ION337(verbose = FALSE)
+# Parse the inotersen reference case
+spec <- parse_input(INOTERSEN_TRIPLET)
+validation <- validate_reference(verbose = FALSE)
 
 # Generate metabolites
 mets <- generate_metabolites(spec, opts = list(
-  oligo_name = "ION337", max_3p = 10, max_5p = 10, endo = TRUE,
+  oligo_name = "inotersen", max_3p = 10, max_5p = 10, endo = TRUE,
   endo_sites = "all", min_frag_len = 3))
 cat("Generated", length(mets), "metabolites\n")
 
@@ -39,9 +39,9 @@ opts <- list(
 
 # ---- Build workbook ----
 cat("\n--- Building Excel workbook ---\n")
-wb_path <- build_workbook(spec, mets, ION337_DICT, validation,
+wb_path <- build_workbook(spec, mets, STANDARD_DICT, validation,
                            ms_results = NULL, ms_info = NULL, opts = opts,
-                           output_file = "ION337_metabolite_library.xlsx")
+                           output_file = "inotersen_metabolite_library.xlsx")
 cat("Workbook:", wb_path, "\n")
 cat("File size:", file.size(wb_path), "bytes\n")
 
@@ -49,7 +49,7 @@ cat("File size:", file.size(wb_path), "bytes\n")
 # a session temp dir so this runs on any machine)
 results_dir <- Sys.getenv("OLIGOMET_RESULTS_DIR", file.path(tempdir(), "results"))
 dir.create(results_dir, recursive = TRUE, showWarnings = FALSE)
-results_path <- file.path(results_dir, "ION337_metabolite_library.xlsx")
+results_path <- file.path(results_dir, "inotersen_metabolite_library.xlsx")
 file.copy(wb_path, results_path, overwrite = TRUE)
 # R's file.copy may produce 0-byte on S3 mount; use cp instead
 if (file.size(results_path) == 0) {
@@ -73,16 +73,16 @@ for (sh in names(wb)) {
 cat("\n--- Building HTML report ---\n")
 plot_dir <- file.path(tempdir(), "plots")
 dir.create(plot_dir, recursive = TRUE, showWarnings = FALSE)
-report_path <- build_report(spec, mets, ION337_DICT, validation,
+report_path <- build_report(spec, mets, STANDARD_DICT, validation,
                              ms_results = NULL, ms_info = NULL, opts = opts,
-                             output_file = "ION337_metabolite_report",
+                             output_file = "inotersen_metabolite_report",
                              output_format = "html",
                              plot_dir = plot_dir)
 cat("Report:", report_path, "\n")
 if (file.exists(report_path)) {
   cat("Report file size:", file.size(report_path), "bytes\n")
   # Copy to results
-  results_report <- file.path(results_dir, "ION337_metabolite_report.html")
+  results_report <- file.path(results_dir, "inotersen_metabolite_report.html")
   file.copy(report_path, results_report, overwrite = TRUE)
   if (file.size(results_report) == 0) {
     system2("cp", args = c(report_path, results_report))

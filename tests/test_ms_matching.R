@@ -1,5 +1,5 @@
 # test_ms_matching.R -- validate MS import + matching module
-# Uses synthetic MS1 features and MS2 peaks derived from ION337 library
+# Uses synthetic MS1 features and MS2 peaks derived from the inotersen library
 
 .pkg_root <- local({
   this <- tryCatch({
@@ -22,10 +22,10 @@ cat("==== MS matching validation ====\n\n")
 msc <- find_msconvert()
 cat("msconvert available:", !is.na(msc), "\n")
 
-# Parse ION337 and generate metabolite library
-spec <- parse_input(ION337_TRIPLET)
+# Parse the inotersen reference case and generate metabolite library
+spec <- parse_input(INOTERSEN_TRIPLET)
 mets <- generate_metabolites(spec, opts = list(
-  oligo_name = "ION337", max_3p = 5, max_5p = 5, endo = FALSE))
+  oligo_name = "inotersen", max_3p = 5, max_5p = 5, endo = FALSE))
 cat("Generated", length(mets), "metabolites\n\n")
 
 # ---- Create synthetic MS1 features from theoretical m/z values ----

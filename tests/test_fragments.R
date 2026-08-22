@@ -23,9 +23,9 @@ source(file.path(.pkg_root, "R", "fragments.R"))
 
 cat("==== Fragment ion validation ====\n\n")
 
-# Parse ION337 and get parent metabolite
-spec <- parse_input(ION337_TRIPLET)
-mets <- generate_metabolites(spec, opts = list(oligo_name = "ION337", max_3p = 0, max_5p = 0, endo = FALSE))
+# Parse the inotersen reference case and get parent metabolite
+spec <- parse_input(INOTERSEN_TRIPLET)
+mets <- generate_metabolites(spec, opts = list(oligo_name = "inotersen", max_3p = 0, max_5p = 0, endo = FALSE))
 parent <- mets[[1]]
 parent_info <- metabolite_mass_info(parent)
 M <- parent_info$mono_mass
@@ -93,7 +93,7 @@ faB <- get_frag(frags, "a-B", 5)
 if (!is.null(fa) && !is.null(faB)) {
   diff <- fa$mono_mass - faB$mono_mass
   base5 <- parent$bases[5]
-  base_mass <- formula_mass(ION337_DICT[[base5]]$formula, mono = TRUE)
+  base_mass <- formula_mass(STANDARD_DICT[[base5]]$formula, mono = TRUE)
   cat(sprintf("  a_5 mass = %.4f, a-B_5 mass = %.4f, diff = %.4f\n", fa$mono_mass, faB$mono_mass, diff))
   cat(sprintf("  Expected diff = base(%s) - H2O = %.4f - %.4f = %.4f\n",
               base5, base_mass, h2o_mass, base_mass - h2o_mass))

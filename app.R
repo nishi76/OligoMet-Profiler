@@ -53,14 +53,22 @@ library(shiny)
 library(DT)
 
 ## ---- Example sequences (illustrative, not the assumed input) --------------
-# Two worked examples: a generic gapmer built entirely from standard
-# dictionary codes, and the ION337 reference sequence (validated to <1 ppm
-# against a published mass -- see chemistry_dict.R). Neither is required;
-# paste any sequence into the box below.
-.EXAMPLE_SEQS <- list(
-  "Generic 2'MOE/DNA gapmer" =
-    "Gm-sTm-sCm-sTm-sCm-sTd-sCd-sTd-sCd-sTd-sTd-sCm-sTm-sCm-sTm-sGm",
-  "ION337 reference (validated)" = ION337_TRIPLET
+# A generic gapmer built entirely from standard dictionary codes, plus four
+# approved oligonucleotide therapeutics -- one per modality class in
+# Takakusa et al. (2023) Table 1. The two antisense examples reproduce
+# their published molecular formulas exactly (see validate_reference() in
+# chemistry_dict.R). None is required; paste any sequence into the box.
+# Duplex drugs are given as their sense strand -- run each strand
+# separately.
+.EXAMPLE_SEQS <- c(
+  list("Generic 2'MOE/DNA gapmer" = list(
+    seq = "Gm-sTm-sCm-sTm-sCm-sTd-sCd-sTd-sCd-sTd-sTd-sCm-sTm-sCm-sTm-sGm",
+    conj5 = "none", conj3 = "none")),
+  setNames(
+    lapply(REFERENCE_OLIGOS, function(r)
+      list(seq = r$triplet, conj5 = r$conj5, conj3 = r$conj3)),
+    vapply(REFERENCE_OLIGOS,
+           function(r) sprintf("%s - %s", r$modality, r$name), ""))
 )
 
 ## ---- Conjugate options -----------------------------------------------------
@@ -110,8 +118,8 @@ ui <- fluidPage(
       tags$div(class = "sidebar-section",
         tags$h5("Input"),
         textAreaInput("seq", "Sequence (triplet or OligoDistiller)",
-                      value = .EXAMPLE_SEQS[[1]], rows = 3,
-                      placeholder = "e.g. Ge-uAn-sGn-sSn-... or OH-Am*-Gm*-...-OH"),
+                      value = .EXAMPLE_SEQS[[1]]$seq, rows = 3,
+                      placeholder = "e.g. Te-sSe-sAe-sSe-... or OH-Am*-Gm*-...-OH"),
         fluidRow(
           column(8, selectInput("example_seq", NULL,
                     choices = c("Choose an example..." = "", names(.EXAMPLE_SEQS)),
@@ -333,11 +341,18 @@ server <- function(input, output, session) {
   ## ---- Custom chemistry table ----------------------------------------------
   custom_chem_data <- reactiveVal(.custom_chem_init)
 
-  # Load a selected example sequence into the input box
+  # Load a selected example sequence into the input box. Terminal
+  # conjugates travel with the example (triplet notation can't express
+  # them), so the conjugate dropdowns are updated alongside the sequence --
+  # otherwise loading the GalNAc-siRNA example would silently drop its
+  # GalNAc and compute the wrong parent mass.
   observeEvent(input$load_example, {
     sel <- input$example_seq
     if (nzchar(sel) && sel %in% names(.EXAMPLE_SEQS)) {
-      updateTextAreaInput(session, "seq", value = .EXAMPLE_SEQS[[sel]])
+      ex <- .EXAMPLE_SEQS[[sel]]
+      updateTextAreaInput(session, "seq", value = ex$seq)
+      updateSelectInput(session, "conj5", selected = ex$conj5 %||% "none")
+      updateSelectInput(session, "conj3", selected = ex$conj3 %||% "none")
     }
   })
 

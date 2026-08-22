@@ -11,11 +11,15 @@ dashboard and a CLI driver on top.
 Grounded in SynONIM (Lippens et al., JASMS 2024), the Eluforsen metabolite
 profiling study (Kim et al., Mol Ther Nucleic Acids 2019), OligoDistiller
 (Liu et al., Anal Chem 2025), and the FMVS automatic metabolite ID method
-(Ye et al., J Chromatogr B 2025). The published ION337 gapmer is bundled as
-a known-mass reference for the formula-engine self-test
-(`validate_ION337()`, cross-checked against a reference workbook in
-`tests/`) -- it is not a default target or an assumed input; run the
-pipeline on any sequence.
+(Ye et al., J Chromatogr B 2025). Four approved oligonucleotide
+therapeutics are bundled as worked examples, one per modality class in
+Takakusa et al. (2023) -- **nusinersen** (antisense SSO), **inotersen**
+(antisense gapmer), **patisiran** (siRNA in LNP) and **givosiran**
+(GalNAc-siRNA). The two antisense examples double as the formula
+engine's regression anchors: the pipeline reproduces their published
+free-acid molecular formulas exactly (`validate_reference()`). They are
+illustrations, not default targets -- run the pipeline on any sequence.
+See the [Bibliography](#bibliography) for sources.
 
 **New here?** Start with [QUICKSTART.md](QUICKSTART.md) -- it walks
 through reading your Certificate of Analysis / synthesis documentation and
@@ -50,8 +54,9 @@ No path editing is required -- `shiny::runApp()` sets the working directory
 to this folder for the duration of the app, and every module locates its
 neighbours relative to that. The app opens with a generic 2'MOE/DNA gapmer
 example loaded in the sequence box; paste in your own sequence, or use the
-"Load example" dropdown to switch between that generic example and the
-ION337 reference case.
+"Load example" dropdown to load any of the four bundled reference drugs.
+Terminal conjugates travel with the example -- loading the GalNAc-siRNA
+sets its 3' conjugate for you.
 
 ## What's in here
 
@@ -59,7 +64,7 @@ ION337 reference case.
 |---|---|
 | `DESCRIPTION`, `NAMESPACE` | R package metadata -- makes the whole engine installable via `remotes::install_github()`. |
 | `app.R` | Shiny dashboard -- sequence input, custom chemistry table, full parameter control, optional MS upload, 4-plot summary, Excel/report/PRM downloads. |
-| `R/chemistry_dict.R` | Element table, formula arithmetic, and `STANDARD_DICT` -- the default chemistry dictionary (DNA/RNA/2'OMe/2'F/MOE/cEt/LNA sugars, PO/PS linkages, common conjugates) every module falls back to. Also holds the ION337 reference example and `validate_ION337()` self-test. |
+| `R/chemistry_dict.R` | Element table, formula arithmetic, and `STANDARD_DICT` -- the default chemistry dictionary (DNA/RNA/2'OMe/2'F/MOE/cEt/LNA sugars, PO/PS linkages, common conjugates) every module falls back to.  Also holds the four bundled reference drugs and the `validate_reference()` self-test. |
 | `R/oligo_io.R` | Sequence parsing (triplet / OligoDistiller / structured notation). |
 | `R/metabolites.R` | Theoretical metabolite library generation (truncations, endo fragments). |
 | `R/mass_isotope.R` | Mass, charge envelope, isotope pattern, PS oxidation series. |
@@ -74,6 +79,39 @@ ION337 reference case.
 | `tests/` | Validation scripts (print-based, not testthat -- see note below). |
 | `QUICKSTART.md` | From CoA/synthesis documentation to a valid input string, plus the fastest path to a first run. |
 | `vignettes/OligoMetProfiler.Rmd` | Full package vignette: input notations, chemistry dictionary and overrides, library generation, masses/envelopes/isotopes, fragment ions, workbook/report/acquisition exports, MS matching. |
+
+## Bundled reference examples
+
+Four approved oligonucleotide therapeutics ship with the package, one per
+modality class in Takakusa et al. (2023) Table 1. They are selectable from
+the app's "Load example" dropdown and available programmatically as
+constants and through the `REFERENCE_OLIGOS` registry:
+
+| Modality | Drug (brand) | nt | Chemistry | Constant |
+|---|---|---:|---|---|
+| Antisense (SSO) | nusinersen (SPINRAZA) | 18 | PS, uniform 2'-MOE, 5-methyl pyrimidines | `NUSINERSEN_TRIPLET` |
+| Antisense (gapmer) | inotersen (TEGSEDI) | 20 | PS, 5-10-5 2'-MOE/DNA gapmer, 5-methyl-C | `INOTERSEN_TRIPLET` |
+| siRNA (LNP) | patisiran (ONPATTRO) | 21 | 2'-OMe/ribose, all-PO backbone, dTdT overhang | `PATISIRAN_SENSE_TRIPLET` |
+| siRNA (GalNAc) | givosiran (GIVLAARI) | 21 | 2'-OMe/2'-F, partial PS, 3' trivalent GalNAc | `GIVOSIRAN_SENSE_TRIPLET` |
+
+siRNA entries are the **sense strand** -- this pipeline profiles one strand
+at a time, so run each strand of a duplex separately. Givosiran's GalNAc is
+carried in the registry's `conj3` field, since triplet notation has no
+conjugate field (`GIVOSIRAN_SENSE_SPEC` gives the equivalent structured
+form).
+
+```r
+library(OligoMetProfiler)
+spec <- parse_input(INOTERSEN_TRIPLET)
+mets <- generate_metabolites(spec, opts = list(oligo_name = "inotersen",
+                                               endo = TRUE, endo_sites = "gap"))
+```
+
+Each modality stresses a different part of the pipeline: gapmers cleave
+endonucleolytically in the DNA gap, sugar-modified SSOs degrade from the
+termini by exonuclease, the all-PO siRNA has no PS oxidation series to
+model, and the GalNAc conjugate is retained on 5' truncations but lost from
+3' truncations that cut past it.
 
 ## Running the pipeline on your own sequence
 
@@ -105,12 +143,20 @@ build_workbook(spec, mets, opts = list(z_range = 3:12, max_oxid = 6),
 
 ## Validating the formula engine
 
-The chemistry engine is anchored to a published, known-mass reference
-case (the ION337 gapmer, < 1 ppm). To re-run that regression check:
+The chemistry engine is anchored to two approved drugs whose free-acid
+molecular formulas appear on their product labelling. It reproduces both
+exactly (0 ppm):
+
+| Drug | Chemistry exercised | Published formula | Avg MW |
+|---|---|---|---|
+| nusinersen | uniform 2'-MOE, full PS, 5-methyl pyrimidines | C234H340N61O128P17S17 | 7127.2 |
+| inotersen | 5-10-5 MOE/DNA gapmer, full PS, 5-methyl-C | C230H318N69O121P19S19 | 7183.08 |
+
+To re-run that regression check:
 
 ```r
 library(OligoMetProfiler)   # or source the R/ modules from a clone
-validate_ION337()
+validate_reference()
 ```
 
 And from the shell, the validation scripts:
@@ -123,16 +169,11 @@ Rscript tests/test_ms_matching.R
 Rscript tests/test_outputs.R
 ```
 
-These print computed values and comparisons to the console rather than
-asserting pass/fail -- read the output rather than the exit code. Three
-scripts (`test_mass_isotope.R`, `validate_vs_workbook.R`,
-`inspect_workbook.R`) additionally cross-check against a reference
-workbook, `ION337_Workbook.xlsx`, which is **not** distributed with this
-package. Drop a copy into `tests/` or point to it with:
-
-```bash
-ION337_WORKBOOK_PATH=/path/to/ION337_Workbook.xlsx Rscript tests/validate_vs_workbook.R
-```
+Most of these print computed values to the console rather than asserting
+pass/fail -- read the output rather than the exit code. `test_mass_isotope.R`
+is the exception: it stops with an error if the formula engine no longer
+reproduces the published molecular formulas, or if the charge envelope
+stops being self-consistent across charge states.
 
 ## BioPharma Finder compatibility
 
@@ -257,6 +298,58 @@ optional -- the app runs without them, with reduced MS-import coverage.
 - Default parameters (charge range, oxidation cap, ppm tolerance, etc.) are
   set independently in `app.R` and in the CLI driver, so changing a
   default in one place doesn't propagate to the other.
+
+## Bibliography
+
+### Methodology
+
+1. Lippens J.L. *et al.* SynONIM: a Synthetic Oligonucleotide Nomenclature
+   for Impurities and Modifications. *J Am Soc Mass Spectrom* (2024).
+2. Kim J. *et al.* Metabolite Profiling of the Antisense Oligonucleotide
+   Eluforsen Using Liquid Chromatography-Mass Spectrometry. *Mol Ther
+   Nucleic Acids* (2019).
+3. Liu R. *et al.* OligoDistiller: untargeted profiling of therapeutic
+   oligonucleotide drugs and metabolites. *Anal Chem* (2025).
+4. Ye X. *et al.* Automatic metabolite identification of antisense
+   oligonucleotides by full MS variable scanning. *J Chromatogr B* (2025).
+5. McLuckey S.A., Van Berkel G.J., Glish G.L. Tandem mass spectrometry of
+   small, multiply charged oligonucleotides. *J Am Soc Mass Spectrom*
+   3:60-70 (1992). -- fragment ion nomenclature (a/a-B/b/c/w/x/y/z).
+
+### Reference drugs and modality classification
+
+6. Takakusa H., Iwazaki N., Nishikawa M., Yoshida T., Obika S., Inoue T.
+   Drug Metabolism and Pharmacokinetics of Antisense Oligonucleotide
+   Therapeutics: Typical Profiles, Evaluation Approaches, and Points to
+   Consider Compared with Small Molecule Drugs. *Nucleic Acid Therapeutics*
+   33(2):83-94 (2023). [doi:10.1089/nat.2022.0054](https://doi.org/10.1089/nat.2022.0054)
+   -- source of the modality classification (Table 1) used for the four
+   bundled examples, and of the class-specific metabolism routes.
+7. Egli M., Manoharan M. Chemistry, structure and function of approved
+   oligonucleotide therapeutics. *Nucleic Acids Research* 51(6):2529-2573
+   (2023). [doi:10.1093/nar/gkad067](https://doi.org/10.1093/nar/gkad067)
+   -- chemistry and structural review of the approved oligonucleotide drugs.
+8. SPINRAZA (nusinersen) prescribing information, Biogen -- 18-mer sequence,
+   uniform 2'-MOE/PS chemistry with 5-methyl pyrimidines, and free-acid
+   molecular formula C234H340N61O128P17S17.
+9. TEGSEDI (inotersen) prescribing information, Akcea Therapeutics / Ionis
+   Pharmaceuticals -- 5-10-5 MOE gapmer design, TTR 3'UTR target sequence
+   (bases 618-637), and free-acid molecular formula C230H318N69O121P19S19
+   (average MW 7183.08).
+10. ONPATTRO (patisiran) prescribing information, Alnylam Pharmaceuticals --
+    siRNA duplex sequences, per-position 2'-OMe pattern, dTdT overhangs, and
+    lipid-nanoparticle formulation.
+11. GIVLAARI (givosiran) prescribing information, Alnylam Pharmaceuticals --
+    ESC-GalNAc siRNA sequences, 2'-F/2'-OMe alternation, terminal
+    phosphorothioate placement, and the trivalent GalNAc (L96) 3' conjugate.
+
+### Instrument and software documentation
+
+12. Thermo Fisher Scientific. *BioPharma Finder 5.2 Oligonucleotide Analysis
+    User Guide* -- triplet sequence notation and terminal modification codes.
+13. Thermo Fisher Scientific. *Orbitrap Exploris 120 Software Manual*,
+    "Targeted Inclusion -- Targeted Mass filter" -- the mass-list column
+    layout used by the acquisition exports.
 
 ## License
 

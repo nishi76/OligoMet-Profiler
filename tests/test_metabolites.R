@@ -1,4 +1,4 @@
-# test_metabolites.R -- validate metabolites.R against ION337
+# test_metabolites.R -- validate metabolites.R against the inotersen reference case
 .pkg_root <- local({
   this <- tryCatch({
     args <- commandArgs(trailingOnly = FALSE)
@@ -11,8 +11,8 @@ source(file.path(.pkg_root, "R", "chemistry_dict.R"))
 source(file.path(.pkg_root, "R", "oligo_io.R"))
 source(file.path(.pkg_root, "R", "metabolites.R"))
 
-sp <- parse_input(ION337_TRIPLET)
-mets <- generate_metabolites(sp, list(oligo_name = "ION337", endo = FALSE))
+sp <- parse_input(INOTERSEN_TRIPLET)
+mets <- generate_metabolites(sp, list(oligo_name = "inotersen", endo = FALSE))
 tab <- metabolite_table(mets)
 
 cat("=== Metabolite count ===\n")
