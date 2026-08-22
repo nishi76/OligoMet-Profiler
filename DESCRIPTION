@@ -2,7 +2,7 @@ Package: OligoMetProfiler
 Type: Package
 Title: Theoretical Metabolite Libraries, Charge Envelopes, and MS/MS
     Fragment Ions for Therapeutic Oligonucleotides
-Version: 1.1.0
+Version: 1.0.0
 Date: 2026-08-22
 Authors@R: person("Nishikant", "Wase",
     email = "nishikant.wase@gmail.com",
