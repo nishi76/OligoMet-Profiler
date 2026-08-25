@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "locale": "en_US.UTF-8",
+  "platform": "4.4.0",
+  "metadata": {
+    "appmode": "shiny",
+    "entrypoint": "app.R",
+    "displayName": "OligoMet Profiler",
+    "contentTitle": "OligoMet Profiler - Theoretical Oligonucleotide Metabolite Libraries",
+    "contentDescription": "A Shiny application for generating theoretical metabolite libraries, charge envelopes, isotope patterns, MS/MS fragment ions, and PRM inclusion lists for therapeutic oligonucleotides.",
+    "contentUrl": "https://github.com/nishi76/OligoMet-Profiler",
+    "contentCategory": "application"
+  },
+  "files": {
+    "app.R": {
+      "checksum": "ac0f7b701066f24669e8357016b0dfba5223a44e"
+    },
+    "inst/app/app.R": {
+      "checksum": "db4cc980cea57d3d6a41addc61c74005c3e713ba"
+    },
+    "DESCRIPTION": {
+      "checksum": "e81ed63ea831e8aee6362284be02148b086117f3"
+    },
+    "NAMESPACE": {
+      "checksum": ""
+    },
+    "R/about.R": {
+      "checksum": ""
+    },
+    "R/chemistry_dict.R": {
+      "checksum": ""
+    },
+    "R/oligo_io.R": {
+      "checksum": ""
+    },
+    "R/metabolites.R": {
+      "checksum": ""
+    },
+    "R/mass_isotope.R": {
+      "checksum": ""
+    },
+    "R/fragments.R": {
+      "checksum": ""
+    },
+    "R/ms_matching.R": {
+      "checksum": ""
+    },
+    "R/build_workbook.R": {
+      "checksum": ""
+    },
+    "R/build_report.R": {
+      "checksum": ""
+    },
+    "R/export_acquisition.R": {
+      "checksum": ""
+    },
+    "R/export_spectral.R": {
+      "checksum": ""
+    },
+    "R/progress_utils.R": {
+      "checksum": ""
+    },
+    "inst/help/QUICKSTART.md": {
+      "checksum": ""
+    },
+    "inst/help/SEQUENCE_GUIDE.md": {
+      "checksum": ""
+    },
+    "inst/help/MODIFICATIONS.md": {
+      "checksum": ""
+    },
+    "README.md": {
+      "checksum": "16e4fa8551a26dc372b57fef1decef5c2801d320"
+    },
+    "LICENSE.md": {
+      "checksum": ""
+    },
+    "DISCLAIMER.md": {
+      "checksum": ""
+    }
+  },
+  "packages": {
+    "description": "Package dependencies for OligoMet Profiler",
+    "dependencies": {
+      "openxlsx": {
+        "version": "*"
+      },
+      "ggplot2": {
+        "version": "*"
+      },
+      "xml2": {
+        "version": "*"
+      },
+      "xfun": {
+        "version": "*"
+      },
+      "shiny": {
+        "version": "*"
+      },
+      "DT": {
+        "version": "*"
+      },
+      "bslib": {
+        "version": "*"
+      },
+      "shinyFiles": {
+        "version": "*"
+      },
+      "markdown": {
+        "version": "*",
+        "optional": true
+      },
+      "enviPat": {
+        "version": "*",
+        "optional": true
+      },
+      "rmarkdown": {
+        "version": "*",
+        "optional": true
+      },
+      "knitr": {
+        "version": "*",
+        "optional": true
+      }
+    }
+  },
+  "deployment": {
+    "rVersion": "4.4.0",
+    "deploymentType": "shiny",
+    "environment": {
+      "R_PACKAGE_LIBRARY": "/usr/local/lib/R/site-library"
+    },
+    "notes": "OligoMet Profiler requires R 4.1+. Optional packages (enviPat, rmarkdown) will enhance functionality but are not required."
+  }
+}
