@@ -4,12 +4,7 @@
   "platform": "4.4.0",
   "metadata": {
     "appmode": "shiny",
-    "entrypoint": "app.R",
-    "displayName": "OligoMet Profiler",
-    "contentTitle": "OligoMet Profiler - Theoretical Oligonucleotide Metabolite Libraries",
-    "contentDescription": "A Shiny application for generating theoretical metabolite libraries, charge envelopes, isotope patterns, MS/MS fragment ions, and PRM inclusion lists for therapeutic oligonucleotides",
-    "contentUrl": "https://github.com/nishi76/OligoMet-Profiler",
-    "contentCategory": "application"
+    "entrypoint": "app.R"
   },
   "files": {
     "app.R": {
@@ -17,12 +12,6 @@
     },
     "inst/app/app.R": {
       "checksum": "db4cc980cea57d3d6a41addc61c74005c3e713ba"
-    },
-    "DESCRIPTION": {
-      "checksum": "e81ed63ea831e8aee6362284be02148b086117f3"
-    },
-    "NAMESPACE": {
-      "checksum": ""
     },
     "R/about.R": {
       "checksum": ""
@@ -69,67 +58,73 @@
     "inst/help/MODIFICATIONS.md": {
       "checksum": ""
     },
-    "README.md": {
-      "checksum": "16e4fa8551a26dc372b57fef1decef5c2801d320"
+    "DESCRIPTION": {
+      "checksum": "e81ed63ea831e8aee6362284be02148b086117f3"
     },
-    "LICENSE.md": {
-      "checksum": ""
-    },
-    "DISCLAIMER.md": {
+    "NAMESPACE": {
       "checksum": ""
     }
   },
-  "packages": {
-    "description": "Package dependencies for OligoMet Profiler",
-    "dependencies": {
-      "openxlsx": {
-        "version": "*"
-      },
-      "ggplot2": {
-        "version": "*"
-      },
-      "xml2": {
-        "version": "*"
-      },
-      "xfun": {
-        "version": "*"
-      },
-      "shiny": {
-        "version": "*"
-      },
-      "DT": {
-        "version": "*"
-      },
-      "bslib": {
-        "version": "*"
-      },
-      "shinyFiles": {
-        "version": "*"
-      },
-      "markdown": {
-        "version": "*",
-        "optional": true
-      },
-      "enviPat": {
-        "version": "*",
-        "optional": true
-      },
-      "rmarkdown": {
-        "version": "*",
-        "optional": true
-      },
-      "knitr": {
-        "version": "*",
-        "optional": true
-      }
-    }
-  },
-  "deployment": {
-    "rVersion": "4.4.0",
-    "deploymentType": "shiny",
-    "environment": {
-      "R_PACKAGE_LIBRARY": "/usr/local/lib/R/site-library"
+  "packages": [
+    {
+      "name": "shiny",
+      "version": "1.8.0",
+      "source": "cran"
     },
-    "notes": "OligoMet Profiler requires R 4.1+. Optional packages (enviPat, rmarkdown) will enhance functionality but are not required."
-  }
+    {
+      "name": "DT",
+      "version": "0.30",
+      "source": "cran"
+    },
+    {
+      "name": "ggplot2",
+      "version": "3.4.4",
+      "source": "cran"
+    },
+    {
+      "name": "openxlsx",
+      "version": "4.2.5.2",
+      "source": "cran"
+    },
+    {
+      "name": "xml2",
+      "version": "1.3.5",
+      "source": "cran"
+    },
+    {
+      "name": "xfun",
+      "version": "0.40",
+      "source": "cran"
+    },
+    {
+      "name": "bslib",
+      "version": "0.6.1",
+      "source": "cran"
+    },
+    {
+      "name": "shinyFiles",
+      "version": "0.9.3",
+      "source": "cran"
+    },
+    {
+      "name": "rmarkdown",
+      "version": "2.25",
+      "source": "cran"
+    },
+    {
+      "name": "knitr",
+      "version": "1.44",
+      "source": "cran"
+    },
+    {
+      "name": "markdown",
+      "version": "1.10",
+      "source": "cran"
+    },
+    {
+      "name": "enviPat",
+      "version": "3.7",
+      "source": "cran"
+    }
+  ]
 }
