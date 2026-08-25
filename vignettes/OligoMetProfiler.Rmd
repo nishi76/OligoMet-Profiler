@@ -95,8 +95,7 @@ al.*, Anal Chem 2025) for McLuckey fragment annotation and isotope
 envelope fitting, and the FMVS automatic metabolite identification
 method (Ye *et al.*, J Chromatogr B 2025) for confirmation scoring.
 
-Four approved oligonucleotide therapeutics ship with the package as
-worked examples, one per modality class in Takakusa *et al.* (2023):
+Four approved oligonucleotide therapeutics are added as working examples, one per modality class in Takakusa *et al.* (2023):
 **nusinersen** (antisense SSO), **inotersen** (antisense gapmer),
 **patisiran** (siRNA delivered by lipid nanoparticle) and **givosiran**
 (GalNAc-conjugated siRNA). The two antisense examples double as the
