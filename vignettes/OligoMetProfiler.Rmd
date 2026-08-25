@@ -3,7 +3,7 @@ title: "OligoMet Profiler: In-Silico Metabolite Identification for Therapeutic O
 author:
 - name: Nishikant Wase, PhD
   email: nishikant.wase@gmail.com
-  affiliation: Author and developer
+  affiliation: Research Scientist, Thermo Fisher Scientific (author and developer)
 date: "`r Sys.Date()`"
 package: OligoMetProfiler
 output:
@@ -844,9 +844,9 @@ sessionInfo()
 
 # Author, disclosure and disclaimer
 
-**Nishikant Wase, PhD** -- author and developer
-(nishikant.wase@gmail.com). Designed, written and maintained by the
-author; released under the MIT licence.
+**Nishikant Wase, PhD** -- author and developer; Research Scientist,
+Thermo Fisher Scientific (nishikant.wase@gmail.com). Designed, written
+and maintained by the author; released under the MIT licence.
 
 **Research use only.** OligoMetProfiler is a research tool. It is not a
 medical device and is not intended or validated for diagnostic use,
@@ -870,11 +870,16 @@ materials, or an erroneous scientific conclusion -- arising from or in
 connection with the software or its use. The user is solely responsible
 for verifying fitness for their purpose and for validating every result.
 
-**No affiliation or endorsement.** The author is not affiliated with, and
-this package is not endorsed by, any instrument vendor, software vendor
-or pharmaceutical company named in it. Product and drug names are used
-for identification and interoperability only and remain the trademarks
-of their owners.
+**Affiliation and disclosure.** The author is employed as a Research
+Scientist at Thermo Fisher Scientific, disclosed here because the
+package interoperates with Thermo Fisher products (BioPharma Finder
+notation, Orbitrap Exploris mass lists). OligoMetProfiler is an
+independent personal project, not a Thermo Fisher Scientific product,
+and has not been supplied, reviewed, supported, endorsed or approved by
+Thermo Fisher Scientific or any other company; all interoperability is
+implemented from publicly documented formats only. Product and drug
+names are used for identification and interoperability only and remain
+the trademarks of their owners. Views and outputs are the author's own.
 
 ```{r about, eval = FALSE}
 oligomet_about()   # prints this statement in the console

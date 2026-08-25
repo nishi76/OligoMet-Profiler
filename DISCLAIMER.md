@@ -3,6 +3,7 @@
 ## Author
 
 **Nishikant Wase, PhD** — author and developer
+Research Scientist, Thermo Fisher Scientific
 <nishikant.wase@gmail.com>
 <https://github.com/nishi76/OligoMet-Profiler>
 
@@ -92,21 +93,35 @@ produces before relying on it.
 
 ---
 
-## No affiliation or endorsement
+## Affiliation and conflict-of-interest disclosure
 
-The author is not affiliated with, and this software is neither endorsed
-nor sponsored by, any instrument vendor, software vendor or
-pharmaceutical company named anywhere in this package.
+The author is employed as a **Research Scientist at Thermo Fisher
+Scientific**. This is disclosed because the package interoperates with
+Thermo Fisher products — it reads and writes BioPharma Finder sequence
+notation and exports mass lists for the Orbitrap Exploris Method Editor.
 
-Product, instrument, software and drug names are used solely for
+**OligoMetProfiler is an independent personal project.** It is not a
+Thermo Fisher Scientific product. It has not been supplied, reviewed,
+supported, endorsed or approved by Thermo Fisher Scientific, and no
+company has reviewed or approved its content. All interoperability with
+third-party software and instruments is implemented from publicly
+documented formats only; no proprietary or internal information is used.
+
+## No endorsement, and trademarks
+
+Nothing in this package implies endorsement or sponsorship by any
+instrument vendor, software vendor or pharmaceutical company named in
+it. Product, instrument, software and drug names are used solely for
 identification and interoperability, and remain the trademarks or
-registered trademarks of their respective owners. The bundled reference
-drugs (nusinersen, inotersen, patisiran, givosiran) are worked examples
-compiled from published literature and public regulatory filings; they
-are not supplied, reviewed or approved by their manufacturers.
+registered trademarks of their respective owners.
 
-Views and outputs are the author's own and do not represent those of any
-employer or institution.
+The bundled reference drugs (nusinersen, inotersen, patisiran,
+givosiran) are worked examples compiled from published literature and
+public regulatory filings; they are not supplied, reviewed or approved
+by their manufacturers.
+
+All views and outputs are the author's own and do not represent Thermo
+Fisher Scientific or any other employer or institution.
 
 ---
 

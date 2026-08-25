@@ -486,6 +486,7 @@ optional -- the app runs without them, with reduced MS-import coverage.
 ## Author
 
 **Nishikant Wase, PhD** -- author and developer
+Research Scientist, Thermo Fisher Scientific
 <nishikant.wase@gmail.com>
 
 Designed, written and maintained by the author. If this software
@@ -522,12 +523,24 @@ connection with this software or its use. The user is solely responsible
 for verifying that it is fit for their purpose and for validating every
 result it produces.
 
-**No affiliation or endorsement.** The author is not affiliated with, and
-this software is not endorsed by, any instrument vendor, software vendor
-or pharmaceutical company named in this package. Product and drug names
-are used for identification and interoperability only and remain the
-trademarks of their owners. The bundled reference drugs are worked
-examples from published literature and public regulatory filings.
+**Affiliation and disclosure.** The author is employed as a Research
+Scientist at Thermo Fisher Scientific. This is disclosed because the
+package interoperates with Thermo Fisher products -- BioPharma Finder
+sequence notation and Orbitrap Exploris method-editor mass lists.
+OligoMetProfiler is an independent personal project: it is not a Thermo
+Fisher Scientific product and has not been supplied, reviewed,
+supported, endorsed or approved by Thermo Fisher Scientific or any other
+company. All interoperability is implemented from publicly documented
+formats only.
+
+**No endorsement, and trademarks.** Nothing here implies endorsement by
+any instrument vendor, software vendor or pharmaceutical company named
+in the package. Product and drug names are used for identification and
+interoperability only and remain the trademarks of their owners. The
+bundled reference drugs are worked examples from published literature
+and public regulatory filings. All views and outputs are the author's
+own and do not represent Thermo Fisher Scientific or any other employer
+or institution.
 
 The full statement is in [DISCLAIMER.md](DISCLAIMER.md). It also appears
 in the dashboard, and travels inside the generated report, workbook and

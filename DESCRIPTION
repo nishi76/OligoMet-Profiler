@@ -7,7 +7,9 @@ Date: 2026-08-22
 Authors@R: person("Nishikant", "Wase",
     email = "nishikant.wase@gmail.com",
     role = c("aut", "cre", "cph"),
-    comment = "Author and developer")
+    comment = "Author and developer; Research Scientist, Thermo Fisher
+    Scientific. An independent personal project, not a Thermo Fisher
+    Scientific product.")
 Description: A general-purpose pipeline for in-silico metabolite
     identification of therapeutic oligonucleotides (antisense
     oligonucleotides, siRNA, and related modalities). This pipeline generates

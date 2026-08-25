@@ -17,6 +17,8 @@
 # or the validation scripts under tests/.
 #
 # Author and developer: Nishikant Wase, PhD <nishikant.wase@gmail.com>
+# Research Scientist, Thermo Fisher Scientific. An independent personal
+# project, not a Thermo Fisher Scientific product.
 # https://github.com/nishi76/OligoMet-Profiler -- MIT licence.
 #
 # FOR RESEARCH USE ONLY. Not for diagnostic, clinical, or regulatory

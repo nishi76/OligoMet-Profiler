@@ -210,5 +210,7 @@ and MS2 confirmation scores.
 ---
 
 *OligoMetProfiler -- Nishikant Wase, PhD (nishikant.wase@gmail.com),
-author and developer. MIT licence. Research use only; see DISCLAIMER.md
-for the full disclosure statement.*
+author and developer; Research Scientist, Thermo Fisher Scientific. An
+independent personal project, not a Thermo Fisher Scientific product.
+MIT licence. Research use only; see DISCLAIMER.md for the full
+disclosure statement.*

@@ -17,6 +17,8 @@
 OLIGOMET_AUTHOR <- "Nishikant Wase, PhD"
 OLIGOMET_AUTHOR_EMAIL <- "nishikant.wase@gmail.com"
 OLIGOMET_AUTHOR_ROLE <- "Author and developer"
+OLIGOMET_AUTHOR_TITLE <- "Research Scientist"
+OLIGOMET_AUTHOR_AFFILIATION <- "Thermo Fisher Scientific"
 OLIGOMET_URL <- "https://github.com/nishi76/OligoMet-Profiler"
 
 # "Nishikant Wase, PhD <nishikant.wase@gmail.com>"
@@ -72,17 +74,25 @@ OLIGOMET_DISCLAIMER <- c(
     "the software is fit for their intended purpose and for validating ",
     "every result it produces."),
   paste0(
-    "No affiliation or endorsement. The author is not affiliated with, and ",
-    "this software is not endorsed by, any instrument vendor, software ",
-    "vendor or pharmaceutical company named anywhere in this package. ",
-    "Product, instrument and drug names are used for identification and ",
-    "interoperability only and remain the trademarks of their respective ",
-    "owners. The bundled reference drugs are worked examples drawn from ",
-    "published literature and public regulatory filings; they are not ",
-    "supplied, reviewed or approved by their manufacturers."),
+    "Affiliation and disclosure. The author is employed as a ",
+    OLIGOMET_AUTHOR_TITLE, " at ", OLIGOMET_AUTHOR_AFFILIATION, ". ",
+    "OligoMetProfiler is an independent personal project: it is not a ",
+    OLIGOMET_AUTHOR_AFFILIATION, " product, and it has not been supplied, ",
+    "reviewed, supported, endorsed or approved by ",
+    OLIGOMET_AUTHOR_AFFILIATION, " or by any other company. Where the ",
+    "package interoperates with third-party software and instruments -- ",
+    "including BioPharma Finder sequence notation and Orbitrap Exploris ",
+    "method-editor mass lists -- it does so on the basis of publicly ",
+    "documented formats only."),
   paste0(
-    "Opinions and outputs are the author's own and do not represent any ",
-    "employer or institution.")
+    "No endorsement, and trademarks. Product, instrument, software and drug ",
+    "names are used solely for identification and interoperability, and ",
+    "remain the trademarks of their respective owners. The bundled ",
+    "reference drugs are worked examples compiled from published literature ",
+    "and public regulatory filings; they are not supplied, reviewed or ",
+    "approved by their manufacturers. All views and outputs are the ",
+    "author's own and do not represent ", OLIGOMET_AUTHOR_AFFILIATION,
+    " or any other employer or institution.")
 )
 
 ## ---- Convenience -------------------------------------------------------------
@@ -93,6 +103,7 @@ oligomet_about <- function(width = 76) {
                   error = function(e) "(source)")
   cat("OligoMetProfiler ", ver, "\n", sep = "")
   cat(OLIGOMET_AUTHOR_ROLE, ": ", oligomet_author_line(), "\n", sep = "")
+  cat(OLIGOMET_AUTHOR_TITLE, ", ", OLIGOMET_AUTHOR_AFFILIATION, "\n", sep = "")
   cat(OLIGOMET_URL, "\n\n", sep = "")
   cat("DISCLAIMER\n")
   for (p in OLIGOMET_DISCLAIMER) {

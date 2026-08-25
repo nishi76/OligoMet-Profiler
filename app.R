@@ -1,13 +1,14 @@
 # =============================================================================
 # app.R -- OligoMet Profiler (repository-root launcher)
-# 
-# Author: Nishikant Wase, PhD 
-# email: nishikant.wase@gmail.com
-# Research Scientist
-# Thermofisher Scientific
-# 
-# 
-# 
+#
+# Author and developer: Nishikant Wase, PhD <nishikant.wase@gmail.com>
+# Research Scientist, Thermo Fisher Scientific. An independent personal
+# project, not a Thermo Fisher Scientific product.
+#
+# FOR RESEARCH USE ONLY. Not for diagnostic, clinical, or regulatory
+# submission use. Provided without warranty; the author accepts no
+# liability for its use. See DISCLAIMER.md, or run oligomet_about().
+#
 # The dashboard itself lives in inst/app/app.R so that it ships with the
 # installed package; installed users launch it with
 # OligoMetProfiler::run_app(). This file keeps the repository root working
