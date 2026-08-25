@@ -295,10 +295,12 @@ sequence entry takes the same three lines you prepared in section 4.
 
 ## 9. Where to go next
 
-- [QUICKSTART.md](../QUICKSTART.md) -- running the pipeline once you have a
+- [QUICKSTART.md](QUICKSTART.md) -- running the pipeline once you have a
   sequence
-- [README.md](../README.md) -- what the outputs contain, and the CLI drivers
-- The vignette (`vignettes/OligoMetProfiler.Rmd`) -- the chemistry and the
+- [MODIFICATIONS.md](MODIFICATIONS.md) -- every modification the dictionary
+  knows, its mass difference, and how to add one it does not
+- [README.md](../../README.md) -- what the outputs contain, and the CLI drivers
+- The vignette (`vignettes/OligoMetProfiler.Rmd` in the repository) -- the chemistry and the
   literature the mass calculations are grounded in
 
 ### Sources

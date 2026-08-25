@@ -125,6 +125,17 @@ BASE_FORMULAS <- list(
 # Sugars (free sugar moiety). 'e' and 'MOE' are the same 2'-MOE sugar --
 # 'e' is the single-letter form used in triplet notation, 'MOE' the
 # spelled-out form; both resolve to C8H16O6.
+# All sugar residues follow one rule: take the parent sugar as its free
+# form (ribose C5H10O5, 2'-deoxyribose C5H10O4) and substitute. A 2'-O-R
+# ether is ribose with the 2'-OH hydrogen replaced by R, i.e.
+# C5H9O5 + R -- which is where MOE (R = C3H7O), NMA (R = C3H6NO),
+# allyl (R = C3H5) and aminopropyl (R = C3H8N) all come from. A bridged
+# sugar adds the bridge and loses 2 H for the two new bonds (LNA = ribose
+# + CH2 - H2; ENA = ribose + C2H4 - H2).
+#
+# Each residue below is anchored on a nucleoside whose formula is known
+# independently -- see test_modifications.R, which rebuilds the nucleoside
+# as base + sugar - H2O and checks it.
 SUGAR_FORMULAS <- list(
   d   = list(formula = c(C=5,H=10,O=4),           name = "2'-deoxyribose (DNA)"),
   r   = list(formula = c(C=5,H=10,O=5),           name = "ribose (RNA)"),
@@ -134,7 +145,44 @@ SUGAR_FORMULAS <- list(
   MOE = list(formula = c(C=8,H=16,O=6),           name = "2'-O-methoxyethylribose (MOE)"),
   cEt = list(formula = c(C=7,H=12,O=4),           name = "constrained ethyl (cEt)", verify = TRUE),
   LNA = list(formula = c(C=6,H=10,O=5),           name = "locked nucleic acid sugar", verify = TRUE),
-  NH2 = list(formula = c(C=5,H=11,N=1,O=4),       name = "2'-amino-2'-deoxyribose")
+  NH2 = list(formula = c(C=5,H=11,N=1,O=4),       name = "2'-amino-2'-deoxyribose"),
+
+  # --- Second-generation and next-generation sugar modifications ---
+  # 2'-O-NMA: 2'-O-[2-(methylamino)-2-oxoethyl], the amide-containing
+  # MOE successor (Prakash et al., J Med Chem 2008; Ionis). Substituent
+  # -CH2-C(=O)-NH-CH3 = C3H6NO, so it is exactly N-H heavier than MOE
+  # (+12.9953 Da per residue). MOE-like affinity, better metabolic
+  # stability.
+  NMA = list(formula = c(C=8,H=15,N=1,O=6),       name = "2'-O-NMA (2'-O-[2-(methylamino)-2-oxoethyl])"),
+
+  # UNA: the C2'-C3' bond of ribose is absent, giving an acyclic
+  # (2',3'-seco) residue -- ribose + H2, so +2.0157 Da vs RNA. A duplex
+  # destabilizer, used positionally to blunt siRNA off-target effects.
+  UNA = list(formula = c(C=5,H=12,O=5),           name = "unlocked nucleic acid (UNA, 2',3'-seco-ribose)"),
+
+  # GNA: the sugar is replaced outright by a three-carbon glycerol unit.
+  # Much lighter than ribose (-46.0055 Da).
+  GNA = list(formula = c(C=3,H=8,O=3),            name = "glycol nucleic acid (GNA, glycerol backbone)"),
+
+  # ENA: 2'-O,4'-C-ethylene bridge -- LNA's methylene bridge with one
+  # more CH2 (+14.0157 Da vs LNA).
+  ENA = list(formula = c(C=7,H=12,O=5),           name = "2'-O,4'-C-ethylene bridged (ENA)", verify = TRUE),
+
+  # 2'-O-allyl and 2'-O-aminopropyl: earlier 2'-O-alkyl chemistries,
+  # still common in probes and in aptamers.
+  allyl = list(formula = c(C=8,H=14,O=5),         name = "2'-O-allylribose"),
+  AP    = list(formula = c(C=8,H=17,N=1,O=5),     name = "2'-O-aminopropylribose", verify = TRUE),
+
+  # FANA: 2'-deoxy-2'-fluoro-ARABINOnucleic acid. Same atoms as 2'-F
+  # ribo ('f'), opposite 2' stereochemistry -- so it is exactly isobaric
+  # and MS cannot tell the two apart. Separate code so a sequence can be
+  # recorded correctly even though the mass is identical.
+  FANA = list(formula = c(C=5,H=9,F=1,O=4),       name = "2'-deoxy-2'-fluoroarabinose (FANA; isobaric with 'f')"),
+
+  # N3'->P5' phosphoramidate backbones: the 3'-OH is a 3'-NH2, so the
+  # change lives in the sugar and the linkage stays an ordinary 'o'/'s'.
+  # Deoxyribose with 3'-OH -> 3'-NH2: -O +NH, i.e. -0.9840 Da.
+  NP = list(formula = c(C=5,H=11,N=1,O=3),        name = "3'-amino-2',3'-dideoxyribose (N3'->P5' phosphoramidate)")
 )
 
 # Internucleotide linkages (bridge residue added per internal bond).
@@ -147,12 +195,58 @@ SUGAR_FORMULAS <- list(
 # Source: Thermo BioPharma Finder 5.2 Oligonucleotide Analysis User Guide,
 # "Manually create a new oligonucleotide sequence" and "Modification
 # notation" topics.
+# Every linkage below is the PO bridge with its single non-bridging -OH
+# swapped for something else: bridge = HPO3 - OH + X. That is where PS
+# (X = SH), methylphosphonate (X = CH3), phosphonoacetate (X = CH2COOH)
+# and mesyl phosphoramidate (X = NHSO2CH3) all come from.
 LINKAGE_FORMULAS <- list(
   o  = list(formula = c(H=1,P=1,O=3),             name = "phosphodiester (PO)"),
   p  = list(formula = c(H=1,P=1,O=3),             name = "phosphodiester (PO) -- BioPharma Finder notation"),
   s  = list(formula = c(H=1,P=1,S=1,O=2),         name = "phosphorothioate (PS) -- also BioPharma Finder notation"),
   u  = list(formula = c(H=1,P=1,S=1,O=2),         name = "phosphorothioate (PS, stereochemistry variant)"),
-  mp = list(formula = c(C=1,H=3,P=1,O=2),         name = "methylphosphonate", verify = TRUE)
+  mp = list(formula = c(C=1,H=3,P=1,O=2),         name = "methylphosphonate", verify = TRUE),
+
+  # --- Next-generation backbone chemistries ---
+  # Mesyl phosphoramidate ("mu", msPA): -O-P(=O)(NH-SO2-CH3)-O-, the
+  # Stetsenko chemistry now used in RNase H ASOs for high nuclease
+  # resistance without PS's protein binding. X = NHSO2CH3, so
+  # +76.9936 Da vs PO and +61.0164 Da vs PS.
+  msp = list(formula = c(C=1,H=4,N=1,O=4,P=1,S=1),
+             name = "mesyl phosphoramidate (msPA)", verify = TRUE),
+
+  # Phosphonoacetate (PACE): -O-P(=O)(CH2COOH)-O-. X = CH2COOH,
+  # +42.0106 Da vs PO. thioPACE is PACE with the P=O replaced by P=S,
+  # a further +15.9772 Da.
+  pace  = list(formula = c(C=2,H=3,O=4,P=1),
+               name = "phosphonoacetate (PACE)", verify = TRUE),
+  tpace = list(formula = c(C=2,H=3,O=3,P=1,S=1),
+               name = "thiophosphonoacetate (thioPACE)", verify = TRUE),
+
+  # Phosphoryl guanidine (PGO): X is a guanidine residue in place of the
+  # -OH, giving an electrically neutral backbone. Two variants are in
+  # common use and they are NOT the same mass -- 'pgo' is the
+  # 1,3-dimethylimidazolidin-2-imine (cyclic) group, 'tmg' the
+  # tetramethylguanidine (acyclic) group, which is H2 heavier. Check
+  # which one your synthesis used.
+  pgo = list(formula = c(C=5,H=10,N=3,O=2,P=1),
+             name = "phosphoryl guanidine (1,3-dimethylimidazolidin-2-imine variant)",
+             verify = TRUE),
+  tmg = list(formula = c(C=5,H=12,N=3,O=2,P=1),
+             name = "phosphoryl guanidine (tetramethylguanidine, Tmg variant)",
+             verify = TRUE),
+
+  # Alkyl phosphonates. Same swap, X = the alkyl group: neutral linkages
+  # used at siRNA positions 6-7 from the 5' end to blunt off-target
+  # activity, and in ASOs to steer RNase H1 cleavage. 'mp' (methyl,
+  # X = CH3) is above; these are the larger members of the same series.
+  prp = list(formula = c(C=3,H=7,O=2,P=1),
+             name = "propyl phosphonate", verify = TRUE),
+  ibu = list(formula = c(C=4,H=9,O=2,P=1),
+             name = "isobutyl phosphonate (iBu)", verify = TRUE),
+  chx = list(formula = c(C=6,H=11,O=2,P=1),
+             name = "cyclohexyl phosphonate (cHex)", verify = TRUE),
+  mop = list(formula = c(C=4,H=9,O=3,P=1),
+             name = "methoxypropyl phosphonate (MOP)", verify = TRUE)
 )
 
 # Terminal conjugates / linkers / caps. These are added as residues; the
@@ -193,7 +287,26 @@ CONJUGATE_FORMULAS <- list(
   cAU_cap       = list(formula = c(C=31,H=43,N=12,O=28,P=5), name = "5'-cAU cap analog (BioPharma Finder 'u')", attach = "replace_H", verify = TRUE),
   ARCA_cap      = list(formula = c(C=22,H=32,N=10,O=21,P=4), name = "5'-ARCA cap analog (BioPharma Finder 'r')", attach = "replace_H", verify = TRUE),
   mCAP          = list(formula = c(C=21,H=30,N=10,O=21,P=4), name = "5'-mCAP cap analog (BioPharma Finder 'c')", attach = "replace_H", verify = TRUE),
-  GalNAc3_triantennary = list(formula = c(C=78,H=140,N=11,O=34,P=1), name = "3'-triantennary GalNAc (BioPharma Finder 'g'; distinct from GalNAc3 above)", attach = "replace_H", verify = TRUE)
+  GalNAc3_triantennary = list(formula = c(C=78,H=140,N=11,O=34,P=1), name = "3'-triantennary GalNAc (BioPharma Finder 'g'; distinct from GalNAc3 above)", attach = "replace_H", verify = TRUE),
+
+  # -- Fatty acid conjugates ------------------------------------------------
+  # Lipid conjugation lets a gapmer ride serum albumin, which lengthens
+  # circulation time and shifts biodistribution. Chain lengths from C14 to
+  # C22 are in use, attached at the 5' end, the 3' end, or internally.
+  #
+  # Formulas are the FREE fatty acid with attach = "replace_OH", which
+  # subtracts H2O -- the ester condensation onto a terminal hydroxyl. The
+  # net addition is therefore the acyl group: palmitoyl +238.2297,
+  # myristoyl +210.1984, stearoyl +266.2610, docosanoyl +322.3236 Da.
+  #
+  # If your construct puts a cleavable linker between the lipid and the
+  # oligo -- a d(TCA) phosphodiester linker is common -- that linker is
+  # not included here. Add its three nucleotides to the sequence itself,
+  # or fold its mass into a custom conjugate entry.
+  myristoyl  = list(formula = c(C=14,H=28,O=2), name = "myristic acid (C14:0) conjugate",   attach = "replace_OH"),
+  palmitoyl  = list(formula = c(C=16,H=32,O=2), name = "palmitic acid (C16:0) conjugate",   attach = "replace_OH"),
+  stearoyl   = list(formula = c(C=18,H=36,O=2), name = "stearic acid (C18:0) conjugate",    attach = "replace_OH"),
+  docosanoyl = list(formula = c(C=22,H=44,O=2), name = "docosanoic acid (C22:0) conjugate", attach = "replace_OH")
 )
 
 ## ---- Dictionary assembly / override ----------------------------------------
@@ -296,22 +409,40 @@ parse_triplet <- function(triplet, dict = STANDARD_DICT) {
   n <- length(toks)
   bases <- sugars <- character(n)
   linkages <- rep(NA_character_, n)
+
+  # Linkage codes are not all one character (mp, msp, pace, tpace, pgo),
+  # so the prefix is matched against the dictionary's linkage codes
+  # longest-first rather than by taking substr(tk, 1, 1). Longest-first
+  # matters: "pgoAd" starts with both "p" and "pgo", and only "pgo"
+  # leaves a parseable base+sugar behind. A match must leave at least two
+  # characters (one base, one sugar) or it is not a prefix at all.
+  link_codes <- names(dict)[vapply(dict, function(e)
+    identical(e$kind, "linkage"), logical(1))]
+  link_codes <- link_codes[order(-nchar(link_codes))]
+
   for (i in seq_len(n)) {
     tk <- toks[i]
-    ch1 <- substr(tk, 1, 1)
-    # The sugar is everything after the base letter, not just one
-    # character, so multi-character dictionary codes (MOE, cEt, LNA) work
-    # in triplet notation too -- e.g. "sTMOE", "AcEt". Single-letter codes
-    # (d, r, m, f, e) are unaffected.
-    if (nchar(tk) >= 3 && ch1 %in% names(dict) &&
-        dict[[ch1]]$kind == "linkage") {
-      # prefix = incoming bond (i-1 -> i) = outgoing bond of position i-1
-      if (i >= 2) linkages[i - 1] <- ch1
-      base <- substr(tk, 2, 2); sugar <- substr(tk, 3, nchar(tk))
-    } else {
-      base <- substr(tk, 1, 1); sugar <- substr(tk, 2, nchar(tk))
+    prefix <- NA_character_
+    # The 5' token has no incoming bond, so it never carries a prefix.
+    if (i >= 2) {
+      for (lc in link_codes) {
+        if (startsWith(tk, lc) && nchar(tk) - nchar(lc) >= 2) {
+          prefix <- lc
+          break
+        }
+      }
     }
-    bases[i] <- base; sugars[i] <- sugar
+    if (!is.na(prefix)) {
+      # prefix = incoming bond (i-1 -> i) = outgoing bond of position i-1
+      linkages[i - 1] <- prefix
+      tk <- substr(tk, nchar(prefix) + 1, nchar(tk))
+    }
+    # The sugar is everything after the base letter, not just one
+    # character, so multi-character dictionary codes (MOE, cEt, LNA, NMA)
+    # work in triplet notation too -- e.g. "sTMOE", "AcEt". Single-letter
+    # codes (d, r, m, f, e) are unaffected.
+    bases[i] <- substr(tk, 1, 1)
+    sugars[i] <- substr(tk, 2, nchar(tk))
   }
   linkages[n] <- NA_character_
   list(bases = bases, sugars = sugars, linkages = linkages)

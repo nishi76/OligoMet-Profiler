@@ -25,8 +25,10 @@ Description: A general-purpose pipeline for in-silico metabolite
     theoretical library against uploaded mzML/mzXML or peak-list MS
     data, exports a multi-sheet Excel workbook and HTML/PDF report, and
     writes targeted mass lists formatted for the Thermo Orbitrap
-    Exploris Method Editor. A Shiny dashboard (launched with
-    run_app()) and command-line drivers wrap the same engine.
+    Exploris Method Editor. Exports theoretical MS1 and MS2 spectral
+    libraries as MGF and MSP. A Shiny dashboard (launched with
+    run_app(), with the user guides built in) and command-line drivers
+    wrap the same engine.
 License: MIT + file LICENSE
 URL: https://github.com/nishi76/OligoMet-Profiler
 BugReports: https://github.com/nishi76/OligoMet-Profiler/issues
@@ -45,6 +47,7 @@ Suggests:
     DT,
     bslib,
     shinyFiles,
+    markdown,
     enviPat,
     rmarkdown,
     knitr

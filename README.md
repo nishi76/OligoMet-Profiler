@@ -21,7 +21,7 @@ free-acid molecular formulas exactly (`validate_reference()`). They are
 illustrations, not default targets -- run the pipeline on any sequence.
 See the [Bibliography](#bibliography) for sources.
 
-**New here?** Start with [QUICKSTART.md](QUICKSTART.md) -- it walks
+**New here?** Start with [QUICKSTART.md](inst/help/QUICKSTART.md) -- it walks
 through reading your Certificate of Analysis / synthesis documentation and
 constructing a valid input string. The full workflow documentation is the
 package vignette, [vignettes/OligoMetProfiler.Rmd](vignettes/OligoMetProfiler.Rmd).
@@ -63,6 +63,11 @@ example loaded in the sequence box; paste in your own sequence, or use the
 Terminal conjugates travel with the example -- loading the GalNAc-siRNA
 sets its 3' conjugate for you.
 
+The dashboard carries its own documentation: a **Help & guides** panel
+on the front page renders the quick start, the sequence guide and the
+modification reference in three tabs, so an installed user never has to
+go looking for them.
+
 If you would rather not assemble triplet notation by hand, the **Manual
 sequence entry** panel in the middle of the dashboard takes the three
 lines a chemical analysis file gives you directly -- bases, sugars and
@@ -74,7 +79,7 @@ linkages -- and builds the sequence for you:
 | Sugars | `eeeeeeeeeeeeeeeeee` (or just `e` for all positions) |
 | Linkages | `sssssssssssssssss` (or just `s`) |
 
-[docs/SEQUENCE_GUIDE.md](docs/SEQUENCE_GUIDE.md) walks a first-time user
+[SEQUENCE_GUIDE.md](inst/help/SEQUENCE_GUIDE.md) walks a first-time user
 through reading those three lines off a chemical analysis file, and
 through exporting the same sequence as a BioPharma Finder FASTA.
 
@@ -86,7 +91,7 @@ through exporting the same sequence as a BioPharma Finder FASTA.
 | `inst/app/app.R` | Shiny dashboard -- sequence input, custom chemistry table, full parameter control, optional MS upload, 4-plot summary, Excel/report/PRM downloads. Ships inside the package; launch it with `OligoMetProfiler::run_app()`. |
 | `app.R` | Repository-root launcher, so `shiny::runApp(".")`, `shiny::runGitHub()`, and RStudio's "Run App" button work from a clone. Sources `inst/app/app.R`. |
 | `R/run_app.R` | `run_app()` -- launches the bundled dashboard from an installed package. |
-| `R/chemistry_dict.R` | Element table, formula arithmetic, and `STANDARD_DICT` -- the default chemistry dictionary (DNA/RNA/2'OMe/2'F/MOE/cEt/LNA sugars, PO/PS linkages, common conjugates) every module falls back to.  Also holds the four bundled reference drugs and the `validate_reference()` self-test. |
+| `R/chemistry_dict.R` | Element table, formula arithmetic, and `STANDARD_DICT` -- the default chemistry dictionary (DNA/RNA/2'OMe/2'F/MOE/NMA/UNA/GNA/LNA/ENA/cEt sugars; PO/PS, alkyl phosphonate, PACE, mesyl phosphoramidate and phosphoryl guanidine linkages; GalNAc, lipid and fatty acid conjugates) every module falls back to.  Also holds the four bundled reference drugs and the `validate_reference()` self-test. |
 | `R/oligo_io.R` | Sequence parsing (triplet / OligoDistiller / structured / three-line bases-sugars-linkages notation), plus BioPharma Finder FASTA export. |
 | `R/metabolites.R` | Theoretical metabolite library generation (truncations, endo fragments). |
 | `R/mass_isotope.R` | Mass, charge envelope, isotope pattern, PS oxidation series. |
@@ -100,8 +105,10 @@ through exporting the same sequence as a BioPharma Finder FASTA.
 | `inst/py_decode.py` | Python helper for mzML base64/zlib binary decoding, called via `system2()`. Falls back to a pure-R decoder automatically if python3 is not on PATH. |
 | `run_custom_oligo.R` | **Primary CLI entry point.** Template driver for any sequence -- copy it, edit the CONFIG block (sequence, chemistry overrides, parameters), and run. Works with standard chemistry out of the box. |
 | `tests/` | Validation scripts (print-based, not testthat -- see note below). |
-| `QUICKSTART.md` | From CoA/synthesis documentation to a valid input string, plus the fastest path to a first run. |
-| `docs/SEQUENCE_GUIDE.md` | **Start here if you are new to oligo work.** Reading a chemical analysis file, writing the bases/sugars/linkages lines, and preparing a BioPharma Finder input, with a worked example. |
+| `inst/help/QUICKSTART.md` | From CoA/synthesis documentation to a valid input string, plus the fastest path to a first run. |
+| `inst/help/SEQUENCE_GUIDE.md` | **Start here if you are new to oligo work.** Reading a chemical analysis file, writing the bases/sugars/linkages lines, and preparing a BioPharma Finder input, with a worked example. |
+| `inst/help/MODIFICATIONS.md` | Every sugar, backbone and conjugate chemistry the dictionary knows, with per-position mass differences and how to add one it does not. |
+| `inst/help/` | These three guides ship inside the package, so the dashboard's Help panel can render them for installed users too. |
 | `vignettes/OligoMetProfiler.Rmd` | Full package vignette: input notations, chemistry dictionary and overrides, library generation, masses/envelopes/isotopes, fragment ions, workbook/report/acquisition exports, MS matching. |
 
 ## Bundled reference examples
@@ -231,7 +238,47 @@ under a different code needs renaming or adding there; and **terminal
 conjugates** have nowhere to live in triplet notation, so the export
 writes them into the header as a reminder and you set them as terminus
 modifications yourself. See
-[docs/SEQUENCE_GUIDE.md](docs/SEQUENCE_GUIDE.md) section 7.
+[SEQUENCE_GUIDE.md](inst/help/SEQUENCE_GUIDE.md) section 7.
+
+## Modification coverage
+
+The dictionary covers the chemistries used in approved and clinical
+oligonucleotide therapeutics, plus the next-generation ones now in
+development:
+
+| Class | Codes |
+|---|---|
+| Sugars | `d` `r` `m` `f` `FANA` `e`/`MOE` **`NMA`** `allyl` `AP` `NH2` `UNA` `GNA` `LNA` `ENA` `cEt` `NP` |
+| Backbones | `o`/`p` `s`/`u` `mp` `prp` `ibu` `chx` `mop` `pace` `tpace` **`msp`** `pgo` `tmg` |
+| Conjugates | GalNAc (mono/trivalent/triantennary), cholesterol, C6/C12, TEG, FAM, Cy3, phosphate and thiophosphate caps, cap analogs, fatty acids (`myristoyl` `palmitoyl` `stearoyl` `docosanoyl`) |
+
+A few worth calling out, because their mass differences are the ones
+people most often need:
+
+- **2'-O-NMA** (2'-O-[2-(methylamino)-2-oxoethyl]) is **+12.9953 Da per
+  position vs MOE** -- an amide where MOE has an ether.
+- **Mesyl phosphoramidate** (msPA) is **+61.0164 Da per bond vs PS**.
+- **Phosphoryl guanidine** comes in two variants that differ by
+  2.0157 Da per bond (`pgo` cyclic, `tmg` tetramethyl) -- check which
+  one your synthesis used before assigning anything.
+- **FANA** is exactly isobaric with 2'-F ribo; MS cannot distinguish
+  them, and the separate code exists only to keep the sequence record
+  correct.
+- **UNA** and **GNA** are duplex destabilizers used positionally in
+  siRNA, at +2.0157 and −58.0055 Da vs RNA.
+
+[inst/help/MODIFICATIONS.md](inst/help/MODIFICATIONS.md) is the full
+reference: every code, its residue formula, its mass difference from the
+parent chemistry, how to enter it, and how to add one the dictionary
+does not have. `tests/test_modifications.R` recomputes every number in
+it and anchors each sugar against an independently known nucleoside
+formula.
+
+Morpholino (PMO), PNA and boranophosphate are deliberately absent --
+the first two do not decompose into base/sugar/linkage residues, and
+boranophosphate needs boron added to the element table (with its
+isotope abundances, not just a mass). The guide explains what to do
+about each.
 
 ## Orbitrap Exploris acquisition method export
 

@@ -222,7 +222,7 @@ oligo length, every token after the first starts with a linkage code,
 and any code missing from the dictionary is named in the error
 message. Modifications without a built-in code are added as custom
 overrides with their elemental formula (see *Custom chemistry
-overrides* below). The repository's `QUICKSTART.md`
+overrides* below). The package's `inst/help/QUICKSTART.md`
 carries a condensed version of this guide with the full code tables.
 
 ## The four bundled reference drugs
@@ -346,7 +346,8 @@ Finder's Sequence Manager:
 cat(format_biopharma_fasta(spec_3l, name = "nusinersen"))
 ```
 
-See `docs/SEQUENCE_GUIDE.md` for a walkthrough aimed at readers who have
+See `inst/help/SEQUENCE_GUIDE.md` (or the dashboard's Help panel) for a
+walkthrough aimed at readers who have
 not worked with oligonucleotide notation before.
 
 ## Structured input
@@ -389,21 +390,36 @@ Bases: `A` (adenine), `G` (guanine), `C` (cytosine), `T` (thymine),
 `I` (hypoxanthine/inosine).
 
 Sugars: `d` (2'-deoxyribose), `r` (ribose), `m` (2'-O-methylribose),
-`f` (2'-fluororibose), `e`/`MOE` (2'-O-methoxyethylribose), `NH2`
-(2'-amino-2'-deoxyribose), `cEt` (constrained ethyl), `LNA` (locked
-nucleic acid).
+`f` (2'-fluororibose), `FANA` (2'-F arabino; isobaric with `f`),
+`e`/`MOE` (2'-O-methoxyethyl), `NMA` (2'-O-[2-(methylamino)-2-oxoethyl]),
+`allyl` (2'-O-allyl), `AP` (2'-O-aminopropyl), `NH2`
+(2'-amino-2'-deoxyribose), `UNA` (unlocked, 2',3'-seco), `GNA` (glycol
+nucleic acid), `LNA`, `ENA` (2'-O,4'-C-ethylene), `cEt` (constrained
+ethyl), `NP` (3'-amino, for N3'->P5' phosphoramidate backbones).
 
 Linkages: `o`/`p` (phosphodiester), `s` (phosphorothioate), `u`
-(PS stereochemistry variant).
+(PS stereochemistry variant), the alkyl phosphonates `mp` (methyl),
+`prp` (propyl), `ibu` (isobutyl), `chx` (cyclohexyl) and `mop`
+(methoxypropyl), `pace`/`tpace` (phosphonoacetate and its thio
+analog), `msp` (mesyl phosphoramidate), and `pgo`/`tmg` (the two
+phosphoryl guanidine variants -- they differ by 2.0157 Da per bond, so
+check which one you have).
 
 Conjugates: 5'/3'-phosphate caps, GalNAc (mono and trivalent cluster),
-cholesterol, C6/C12 amino linkers, TEG, FAM, Cy3, plus the BioPharma
+cholesterol, C6/C12 amino linkers, TEG, FAM, Cy3, the fatty acids
+`myristoyl`/`palmitoyl`/`stearoyl`/`docosanoyl`, plus the BioPharma
 Finder 5.2 terminal-modification set (biotin, cAG/cAU/ARCA/mCAP cap
 analogs, triantennary GalNAc).
 
-Entries flagged `verify = TRUE` (e.g. `cEt`, `LNA`, `GalNAc3`, dye
-conjugates) carry best-estimate formulas -- confirm them against a
-known mass before relying on them, or override them (next section).
+`inst/help/MODIFICATIONS.md` -- the Modifications tab of the
+dashboard's Help panel -- lists every one of these with its residue
+formula and its per-position mass difference from the parent chemistry,
+and explains how to add a modification the dictionary does not have.
+
+Entries flagged `verify = TRUE` (e.g. `cEt`, `LNA`, `ENA`, `msp`,
+`pgo`, `GalNAc3`, dye conjugates) carry best-estimate formulas --
+confirm them against a known mass before relying on them, or override
+them (next section).
 
 ## Custom chemistry overrides
 

@@ -106,25 +106,52 @@ parse_structured <- function(spec, dict = STANDARD_DICT) {
 # vector of n is also accepted -- the trailing entry is the 3'-terminal
 # "bond", which does not exist and is dropped -- because sequence tables
 # often carry a placeholder there.
-.tokenize_codes <- function(x, field) {
+.tokenize_codes <- function(x, field, dict = STANDARD_DICT, kind = NULL) {
   if (length(x) > 1) return(as.character(x))
   s <- trimws(as.character(x))
   if (!nzchar(s)) stop("The ", field, " field is empty")
+
   if (grepl("[ ,/|-]", s)) {
     toks <- strsplit(s, "[ ,/|-]+")[[1]]
-    toks <- toks[nzchar(toks)]
-  } else {
-    toks <- strsplit(s, "")[[1]]
+    return(toks[nzchar(toks)])
+  }
+
+  # A separator-free string is normally one code per character ("eeee"),
+  # but a multi-character code written on its own to mean "every position"
+  # would be shredded by that ("NMA" -> N, M, A). Check the dictionary
+  # first: if the whole field is itself a valid code of the right kind,
+  # it is a single code and the caller recycles it.
+  if (!is.null(kind) && .is_code(s, dict, kind)) return(s)
+
+  toks <- strsplit(s, "")[[1]]
+
+  # If splitting produced codes the dictionary does not know, the user
+  # most likely meant multi-character codes and forgot the separators.
+  # Say so here rather than letting validate_spec() report a bare
+  # "Unknown sugar code 'M'" that gives no hint about the real mistake.
+  if (!is.null(kind)) {
+    bad <- unique(toks[!vapply(toks, .is_code, logical(1), dict, kind)])
+    if (length(bad) > 0)
+      stop("In the ", field, " field, '", s, "' was read as one code per ",
+           "character, and ", paste0("'", bad, "'", collapse = ", "),
+           " is not a known ", kind, " code. Multi-character codes need a ",
+           "separator -- write \"MOE-MOE-d-d\" or \"MOE,MOE,d,d\" -- or ",
+           "give a single code to apply it to every position.")
   }
   toks
+}
+
+.is_code <- function(code, dict, kind) {
+  e <- dict[[code]]
+  !is.null(e) && (is.null(e$kind) || identical(e$kind, kind))
 }
 
 parse_three_line <- function(bases, sugars, linkages,
                              conj5 = "none", conj3 = "none",
                              dict = STANDARD_DICT) {
-  b <- .tokenize_codes(bases, "bases")
-  s <- .tokenize_codes(sugars, "sugars")
-  l <- .tokenize_codes(linkages, "linkages")
+  b <- .tokenize_codes(bases, "bases", dict, "base")
+  s <- .tokenize_codes(sugars, "sugars", dict, "sugar")
+  l <- .tokenize_codes(linkages, "linkages", dict, "linkage")
   n <- length(b)
   if (n < 2) stop("Need at least 2 bases; got ", n)
 

@@ -89,13 +89,16 @@ library(DT)
 )
 
 ## ---- Conjugate options -----------------------------------------------------
+.fatty_acid_choices <- c("myristoyl", "palmitoyl", "stearoyl", "docosanoyl")
 .conj5_choices <- c("none", "5'-phosphate", "5'-thiophosphate", "biotin",
                     "cAG_cap", "cAU_cap", "ARCA_cap", "mCAP",
                     "GalNAc", "GalNAc3",
-                    "cholesterol", "C6", "C12", "TEG", "FAM", "Cy3")
+                    "cholesterol", "C6", "C12", "TEG", "FAM", "Cy3",
+                    .fatty_acid_choices)
 .conj3_choices <- c("none", "3'-phosphate", "3'-cyclophos", "3'-thiophosphate",
                     "GalNAc", "GalNAc3", "GalNAc3_triantennary",
-                    "cholesterol", "C6", "C12", "TEG", "FAM", "Cy3")
+                    "cholesterol", "C6", "C12", "TEG", "FAM", "Cy3",
+                    .fatty_acid_choices)
 
 ## ---- Custom chemistry table initial data -----------------------------------
 .custom_chem_init <- data.frame(
@@ -125,6 +128,44 @@ library(DT)
     overrides[[code]] <- entry
   }
   overrides
+}
+
+## ---- Help documents ---------------------------------------------------------
+# The guides live in inst/help/, which means they resolve two ways: through
+# system.file() when the package is installed, and relative to the checkout
+# root when the app is run from a clone (where .module_dir is set and the
+# package may not be installed at all).
+.help_file <- function(name) {
+  candidates <- character(0)
+  if (!is.null(.module_dir))
+    candidates <- c(candidates, file.path(.module_dir, "inst", "help", name))
+  p <- tryCatch(system.file("help", name, package = "OligoMetProfiler"),
+                error = function(e) "")
+  if (nzchar(p)) candidates <- c(candidates, p)
+  # Running the app directly out of inst/app/ in a checkout.
+  candidates <- c(candidates, file.path("..", "help", name))
+  found <- candidates[file.exists(candidates)]
+  if (length(found) == 0) NULL else found[1]
+}
+
+# Render one guide, degrading to a link rather than an error: markdown is a
+# Suggests-level dependency and the file is missing in an odd layout.
+.help_ui <- function(name) {
+  path <- .help_file(name)
+  url <- paste0("https://github.com/nishi76/OligoMet-Profiler/blob/main/inst/help/",
+                name)
+  fallback <- function(why) {
+    tags$div(class = "help-doc",
+      tags$p(why),
+      tags$p(tags$a(href = url, target = "_blank", rel = "noopener",
+                    paste("Read", name, "on GitHub"))))
+  }
+  if (is.null(path))
+    return(fallback(paste0("Could not find ", name, " in this installation.")))
+  if (!requireNamespace("markdown", quietly = TRUE))
+    return(fallback(paste0("Rendering the guides in-app needs the 'markdown' ",
+                           "package -- install.packages(\"markdown\").")))
+  tags$div(class = "help-doc", withMathJax(includeMarkdown(path)))
 }
 
 ## =============================================================================
@@ -159,6 +200,27 @@ ui <- fluidPage(
         .man-err { color: #a3231b; font-size: 13px; }
         .man-seq { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
                    font-size: 12px; word-break: break-all; }
+        .help-panel { border: 1px solid #dee2e6; border-radius: 6px;
+                      margin-bottom: 14px; background: #fff; }
+        .help-panel > summary { cursor: pointer; padding: 10px 16px;
+                                font-weight: 600; color: #2c3e50;
+                                list-style: revert; }
+        .help-panel[open] > summary { border-bottom: 1px solid #dee2e6; }
+        .help-body { padding: 10px 16px 4px; }
+        .help-doc { max-height: 60vh; overflow-y: auto; padding: 12px 4px 0;
+                    font-size: 13px; }
+        .help-doc h1 { font-size: 20px; }
+        .help-doc h2 { font-size: 17px; margin-top: 18px; }
+        .help-doc h3 { font-size: 15px; margin-top: 14px; }
+        .help-doc table { font-size: 12px; margin-bottom: 12px;
+                          border-collapse: collapse; }
+        .help-doc th, .help-doc td { border: 1px solid #dee2e6;
+                                     padding: 3px 8px; }
+        .help-doc pre { background: #f8f9fa; border: 1px solid #e9ecef;
+                        border-radius: 4px; padding: 8px; font-size: 12px;
+                        overflow-x: auto; }
+        .help-doc code { font-size: 12px; }
+        .help-doc img { max-width: 100%; }
       "))),
 
       ## -- Input section --
@@ -296,7 +358,7 @@ ui <- fluidPage(
       ## The other way in: instead of assembling triplet notation by hand in
       ## the sidebar, type the three lines a chemical analysis file (or a
       ## BioPharma Finder sequence entry) already gives you, and let the app
-      ## assemble the triplet. See docs/SEQUENCE_GUIDE.md.
+      ## assemble the triplet. See inst/help/SEQUENCE_GUIDE.md.
       tags$div(class = "manual-entry",
         tags$h5("Manual sequence entry"),
         tags$p(class = "hint",
@@ -307,13 +369,10 @@ ui <- fluidPage(
                "(\"e\" = all MOE, \"s\" = all phosphorothioate). Separate ",
                "multi-character codes with commas or dashes ",
                "(\"MOE-MOE-d-d\"). Submit fills in the sequence box on the ",
-               "left; then click Run Pipeline. New to this? ",
-               tags$a(href = paste0("https://github.com/nishi76/OligoMet-Profiler",
-                                    "/blob/main/docs/SEQUENCE_GUIDE.md"),
-                      target = "_blank", rel = "noopener",
-                      "Read the sequence guide"),
-               " -- it walks through reading a chemical analysis file and ",
-               "filling in these three fields."),
+               "left; then click Run Pipeline. New to this? Open ",
+               tags$strong("Help & guides"), " below -- the sequence guide ",
+               "walks through reading a chemical analysis file and filling ",
+               "in these three fields."),
         fluidRow(
           column(4, textInput("man_bases", "Bases (5'->3')", value = "",
                               placeholder = "TSASTTTSATAATGSTGG")),
@@ -333,6 +392,23 @@ ui <- fluidPage(
                                    class = "btn-outline-secondary w-100"))
         ),
         htmlOutput("man_feedback")
+      ),
+
+      ## -- Help & guides -----------------------------------------------------
+      ## The three guides render straight from inst/help/, so they are
+      ## available to installed users, not just to people with a checkout.
+      ## Collapsed by default: they are long, and the dashboard should not
+      ## open on a wall of documentation.
+      tags$details(class = "help-panel",
+        tags$summary("Help & guides"),
+        tags$div(class = "help-body",
+          tabsetPanel(
+            id = "help_tabs",
+            tabPanel("Quick start",     uiOutput("help_quickstart")),
+            tabPanel("Sequence guide",  uiOutput("help_sequence")),
+            tabPanel("Modifications",   uiOutput("help_modifications"))
+          )
+        )
       ),
 
       ## Status / log
@@ -463,7 +539,7 @@ server <- function(input, output, session) {
   man_spec <- reactiveVal(NULL)
 
   observeEvent(input$man_example, {
-    # The 18-mer worked example from docs/SEQUENCE_GUIDE.md (nusinersen:
+    # The 18-mer worked example from inst/help/SEQUENCE_GUIDE.md (nusinersen:
     # uniform 2'-MOE, fully phosphorothioate, 5-methyl-C written as S).
     updateTextInput(session, "man_bases", value = "TSASTTTSATAATGSTGG")
     updateTextInput(session, "man_sugars", value = "eeeeeeeeeeeeeeeeee")
@@ -618,6 +694,13 @@ server <- function(input, output, session) {
       custom_chem_data(d)
     }
   })
+
+  ## ---- Help documents ------------------------------------------------------
+  # Rendered lazily on first view and then cached by Shiny, so the markdown
+  # is not converted on every page load of a collapsed panel.
+  output$help_quickstart    <- renderUI(.help_ui("QUICKSTART.md"))
+  output$help_sequence      <- renderUI(.help_ui("SEQUENCE_GUIDE.md"))
+  output$help_modifications <- renderUI(.help_ui("MODIFICATIONS.md"))
 
   ## ---- Status output -------------------------------------------------------
   output$status <- renderText({ rv$status_text })

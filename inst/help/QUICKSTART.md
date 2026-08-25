@@ -83,7 +83,7 @@ with the formula and mass it computed. From R, the same thing:
 spec <- parse_three_line("TSASTTTSATAATGSTGG", "e", "s")
 ```
 
-Never done this before? [docs/SEQUENCE_GUIDE.md](docs/SEQUENCE_GUIDE.md)
+Never done this before? [SEQUENCE_GUIDE.md](SEQUENCE_GUIDE.md)
 walks through it slowly, with a worked example and the mistakes people
 actually make.
 
