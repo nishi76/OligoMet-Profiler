@@ -12,29 +12,26 @@ and PRM inclusion lists for any therapeutic oligonucleotide -- DNA, RNA,
 2'OMe, 2'F, MOE, cEt, LNA, mixed PO/PS backbones, and custom chemistry via
 dictionary overrides -- with optional matching against uploaded MS data.
 Ships as an installable R package (`OligoMetProfiler`) with a Shiny
-dashboard and a CLI driver on top.
+dashboard.
 
-Grounded in SynONIM (Lippens et al., JASMS 2024), the Eluforsen metabolite
+Background information is obtained from published work SynONIM (Lippens et al., JASMS 2024), the Eluforsen metabolite
 profiling study (Kim et al., Mol Ther Nucleic Acids 2019), OligoDistiller
 (Liu et al., Anal Chem 2025), and the FMVS automatic metabolite ID method
 (Ye et al., J Chromatogr B 2025). Four approved oligonucleotide
-therapeutics are bundled as worked examples, one per modality class in
+therapeutics are bundled as working examples, one per modality class in
 Takakusa et al. (2023) -- **nusinersen** (antisense SSO), **inotersen**
 (antisense gapmer), **patisiran** (siRNA in LNP) and **givosiran**
-(GalNAc-siRNA). The two antisense examples double as the formula
-engine's regression anchors: the pipeline reproduces their published
-free-acid molecular formulas exactly (`validate_reference()`). They are
-illustrations, not default targets -- run the pipeline on any sequence.
+(GalNAc-siRNA). They are illustrations, not default targets -- run the pipeline on any sequence.
 See the [Bibliography](#bibliography) for sources.
 
-**New here?** Start with [QUICKSTART.md](inst/help/QUICKSTART.md) -- it walks
-through reading your Certificate of Analysis / synthesis documentation and
+**New here?** Start with [QUICKSTART.md](inst/help/QUICKSTART.md) -- This document will helps user 
+through reading Certificate of Analysis / synthesis documentation and
 constructing a valid input string. The full workflow documentation is the
 package vignette, [vignettes/OligoMetProfiler.Rmd](vignettes/OligoMetProfiler.Rmd).
 
 ## Installation
 
-As an R package, straight from GitHub -- the dashboard ships with it:
+As an R package, straight from GitHub:
 
 ```r
 # install.packages(c("remotes", "shiny", "DT", "shinyFiles"))
@@ -42,10 +39,6 @@ remotes::install_github("nishi76/OligoMet-Profiler")
 library(OligoMetProfiler)   # engine functions
 OligoMetProfiler::run_app() # launches the dashboard
 ```
-
-`run_app()` passes any extra arguments to `shiny::runApp()`, so
-`run_app(launch.browser = TRUE, port = 8080)` works as expected.
-
 Or clone the repository to use the Shiny dashboard and CLI drivers:
 
 ```r
@@ -60,24 +53,13 @@ Or from the shell, once dependencies are installed:
 Rscript -e 'shiny::runApp(".", launch.browser = TRUE)'
 ```
 
-No path editing is required in either case. From a clone, `shiny::runApp()`
-sets the working directory to this folder for the duration of the app and
-every module locates its neighbours relative to that; from an installed
-package, the app uses the functions in the package namespace. The app opens with a generic 2'MOE/DNA gapmer
-example loaded in the sequence box; paste in your own sequence, or use the
-"Load example" dropdown to load any of the four bundled reference drugs.
-Terminal conjugates travel with the example -- loading the GalNAc-siRNA
-sets its 3' conjugate for you.
-
 The dashboard carries its own documentation: a **Help & guides** panel
-on the front page renders the quick start, the sequence guide and the
-modification reference in three tabs, so an installed user never has to
-go looking for them.
+on the front page quick start, the sequence guide and the
+modification reference.
 
-If you would rather not assemble triplet notation by hand, the **Manual
-sequence entry** panel in the middle of the dashboard takes the three
-lines a chemical analysis file gives you directly -- bases, sugars and
-linkages -- and builds the sequence for you:
+If the user do not want to assemble triplet notation by hand, the **Manual
+sequence entry** panel in the middle of the dashboard takes information provided by the chemical analysis file  -- bases, sugars and
+linkages -- and it will build the sequence for you:
 
 | Field | Example |
 |---|---|
@@ -88,34 +70,6 @@ linkages -- and builds the sequence for you:
 [SEQUENCE_GUIDE.md](inst/help/SEQUENCE_GUIDE.md) walks a first-time user
 through reading those three lines off a chemical analysis file, and
 through exporting the same sequence as a BioPharma Finder FASTA.
-
-## What's in here
-
-| Path | Role |
-|---|---|
-| `DESCRIPTION`, `NAMESPACE` | R package metadata -- makes the whole engine installable via `remotes::install_github()`. |
-| `inst/app/app.R` | Shiny dashboard -- sequence input, custom chemistry table, full parameter control, optional MS upload, 4-plot summary, Excel/report/PRM downloads. Ships inside the package; launch it with `OligoMetProfiler::run_app()`. |
-| `app.R` | Repository-root launcher, so `shiny::runApp(".")`, `shiny::runGitHub()`, and RStudio's "Run App" button work from a clone. Sources `inst/app/app.R`. |
-| `R/run_app.R` | `run_app()` -- launches the bundled dashboard from an installed package. |
-| `R/chemistry_dict.R` | Element table, formula arithmetic, and `STANDARD_DICT` -- the default chemistry dictionary (DNA/RNA/2'OMe/2'F/MOE/NMA/UNA/GNA/LNA/ENA/cEt sugars; PO/PS, alkyl phosphonate, PACE, mesyl phosphoramidate and phosphoryl guanidine linkages; GalNAc, lipid and fatty acid conjugates) every module falls back to.  Also holds the four bundled reference drugs and the `validate_reference()` self-test. |
-| `R/oligo_io.R` | Sequence parsing (triplet / OligoDistiller / structured / three-line bases-sugars-linkages notation), plus BioPharma Finder FASTA export. |
-| `R/metabolites.R` | Theoretical metabolite library generation (truncations, endo fragments). |
-| `R/mass_isotope.R` | Mass, charge envelope, isotope pattern, PS oxidation series. |
-| `R/fragments.R` | McLuckey MS/MS fragment ions, matching, confirmation scoring. |
-| `R/ms_matching.R` | mzML/mzXML/peak-list import and MS1/MS2 matching. |
-| `R/build_workbook.R` | 7-sheet Excel workbook export. |
-| `R/build_report.R` | Plots and HTML/PDF report export. |
-| `R/export_acquisition.R` | Thermo Orbitrap Exploris MS1 inclusion / MS2 PRM target list export, plus a fragment-ion reference table (see "Orbitrap Exploris acquisition method export" below). |
-| `R/export_spectral.R` | Theoretical MS1 and MS2 spectral libraries as MGF and MSP (see "Spectral library export" below). |
-| `R/progress_utils.R` | Console progress bar with elapsed time and adaptive ETA (see "Console progress reporting" below). |
-| `inst/py_decode.py` | Python helper for mzML base64/zlib binary decoding, called via `system2()`. Falls back to a pure-R decoder automatically if python3 is not on PATH. |
-| `run_custom_oligo.R` | **Primary CLI entry point.** Template driver for any sequence -- copy it, edit the CONFIG block (sequence, chemistry overrides, parameters), and run. Works with standard chemistry out of the box. |
-| `tests/` | Validation scripts (print-based, not testthat -- see note below). |
-| `inst/help/QUICKSTART.md` | From CoA/synthesis documentation to a valid input string, plus the fastest path to a first run. |
-| `inst/help/SEQUENCE_GUIDE.md` | **Start here if you are new to oligo work.** Reading a chemical analysis file, writing the bases/sugars/linkages lines, and preparing a BioPharma Finder input, with a worked example. |
-| `inst/help/MODIFICATIONS.md` | Every sugar, backbone and conjugate chemistry the dictionary knows, with per-position mass differences and how to add one it does not. |
-| `inst/help/` | These three guides ship inside the package, so the dashboard's Help panel can render them for installed users too. |
-| `vignettes/OligoMetProfiler.Rmd` | Full package vignette: input notations, chemistry dictionary and overrides, library generation, masses/envelopes/isotopes, fragment ions, workbook/report/acquisition exports, MS matching. |
 
 ## Bundled reference examples
 
@@ -150,68 +104,6 @@ termini by exonuclease, the all-PO siRNA has no PS oxidation series to
 model, and the GalNAc conjugate is retained on 5' truncations but lost from
 3' truncations that cut past it.
 
-## Running the pipeline on your own sequence
-
-Copy `run_custom_oligo.R`, edit the `CONFIG` block at the top (sequence,
-optional custom chemistry overrides, parameters), and run:
-
-```bash
-Rscript run_custom_oligo.R
-```
-
-Or use the Shiny app (`run_app()`) for an interactive session. The app's "Save
-to folder (optional)" field writes the workbook, report, PRM list, and
-acquisition method lists directly to a folder you choose, on top of the
-usual download buttons -- useful when running locally in RStudio/Rscript
-rather than through a browser-hosted deployment. "Browse..." opens an
-in-app folder picker (via the `shinyFiles` package) that browses the
-filesystem of the machine R is running on -- your own machine, in the
-local setup above.
-
-Or drive the engine directly from R after installing the package:
-
-```r
-library(OligoMetProfiler)
-spec <- parse_input("Gm-sTm-sCm-sTm-sCm-sTd-sCd-sTd-sCd-sTd-sTd-sCm-sTm-sCm-sTm-sGm")
-mets <- generate_metabolites(spec, opts = list(max_3p = 10, max_5p = 10, endo = TRUE))
-build_workbook(spec, mets, opts = list(z_range = 3:12, max_oxid = 6),
-               output_dir = ".")
-```
-
-## Validating the formula engine
-
-The chemistry engine is anchored to two approved drugs whose free-acid
-molecular formulas appear on their product labelling. It reproduces both
-exactly (0 ppm):
-
-| Drug | Chemistry exercised | Published formula | Avg MW |
-|---|---|---|---|
-| nusinersen | uniform 2'-MOE, full PS, 5-methyl pyrimidines | C234H340N61O128P17S17 | 7127.2 |
-| inotersen | 5-10-5 MOE/DNA gapmer, full PS, 5-methyl-C | C230H318N69O121P19S19 | 7183.08 |
-
-To re-run that regression check:
-
-```r
-library(OligoMetProfiler)   # or source the R/ modules from a clone
-validate_reference()
-```
-
-And from the shell, the validation scripts:
-
-```bash
-Rscript tests/test_metabolites.R
-Rscript tests/test_mass_isotope.R
-Rscript tests/test_fragments.R
-Rscript tests/test_ms_matching.R
-Rscript tests/test_outputs.R
-```
-
-Most of these print computed values to the console rather than asserting
-pass/fail -- read the output rather than the exit code. `test_mass_isotope.R`
-is the exception: it stops with an error if the formula engine no longer
-reproduces the published molecular formulas, or if the charge envelope
-stops being self-consistent across charge states.
-
 ## BioPharma Finder compatibility
 
 Triplet sequences copied from Thermo BioPharma Finder's sequence editor
@@ -220,13 +112,11 @@ phosphodiester linkage, matching BPF's own notation, alongside this
 pipeline's original `o`. `s` (phosphorothioate) already matched BPF's
 convention. BPF's 5'/3' terminal modification codes (biotin, cAG/cAU/ARCA/
 mCAP cap analogs, triantennary GalNAc) are available from the conjugate
-dropdowns in the app (or `conj5`/`conj3` in the CLI drivers) under
+dropdowns in the app under
 descriptive names rather than BPF's own single-letter codes, since those
 letters (`a`, `u`, `r`, `c`) already mean specific sugars or linkages in
 this dictionary. Their formulas come straight from the BioPharma Finder
-5.2 Oligonucleotide Analysis User Guide's "Modification notation" topic
-and are flagged for verification (`verify = TRUE` in `chemistry_dict.R`)
-until checked against a real BPF-computed mass.
+5.2 Oligonucleotide Analysis User Guide's "Modification notation" topic.
 
 Going the other way, `format_biopharma_fasta()` -- the app's **BPF
 FASTA** button -- writes the current sequence as a FASTA record for
@@ -288,11 +178,11 @@ about each.
 
 ## Orbitrap Exploris acquisition method export
 
-The app and `run_custom_oligo.R` both export targeted mass lists formatted
+The app export targeted mass lists formatted
 for the Orbitrap Exploris Method Editor's Targeted Mass filter (Mass List
 Type "m/z & z", Time Mode "Start/End Time" -- select that when importing,
 or "Unscheduled" if you'd rather ignore the time columns). Column layout
-follows the Orbitrap Exploris 120 Software Manual's "Targeted Inclusion --
+follows the Orbitrap Exploris 240 Software Manual's "Targeted Inclusion --
 Targeted Mass filter" topic exactly: `Compound, Formula, Adduct, m/z, z,
 Intensity Threshold, t start (min), t stop (min), HCD Collision Energies
 (%), Maximum Injection Time (ms)`.
@@ -343,43 +233,6 @@ export_spectral_libraries(mets, dict, out_dir = "results", prefix = "my_oligo")
   plus w-a/w-b/w-d internal ions) at the requested fragment charges, each
   annotated in the MSP (`w4^2-`, `a-B5^1-`, `w-a(3,8)^1-`).
 
-**One caveat, and it matters.** This pipeline has no fragment-intensity
-model, so every MS2 peak is written at a flat intensity of 100. Match on
-*m/z*; do not run intensity-weighted dot-product or cosine scoring
-against the MS2 libraries, because with flat intensities that score
-reduces to a function of peak count. The MS1 libraries carry genuine
-isotope abundances and are not subject to this caveat.
-
-Both builders cap their output (`max_spectra`) since a full metabolite
-library across a wide charge envelope runs to thousands of spectra: at
-default settings a 51-metabolite library produces ~3,400 MS1 spectra and
-~200 MS2 spectra (about 20 seconds each to build, a few MB on disk).
-
-## Console progress reporting
-
-Every entry point (`run_custom_oligo.R` and the Shiny app's R console
-output) prints a weighted, multi-step progress bar as it runs:
-
-```
-[#########---------------] 38%  Step 5/11: Generating McLuckey MS/MS fragment ions
-  elapsed 12s | ETA (remaining) 19s
-```
-
-Plus a live in-place updating sub-bar during the Charge Envelopes sheet
-specifically, since that step dominates runtime:
-
-```
-  [############----] 75%  Charge envelopes (44/58)  step elapsed 31s  step ETA 10s
-```
-
-The ETA is adaptive, not a fixed prediction -- each step is given a rough
-starting weight (`R/progress_utils.R`; the workbook step is weighted
-heaviest since it's the actual bottleneck), and after every completed step
-the tracker recomputes "time per unit of weight" from what's actually
-elapsed so far and applies that to the remaining weight. So the estimate
-tightens up as the run progresses rather than trusting the initial guesses
-for the whole run. A final line reports total elapsed time once the
-pipeline finishes.
 
 ## Performance
 
@@ -506,26 +359,20 @@ scope of this software and is at the user's own risk.
 
 **Everything it reports is a prediction.** Metabolite libraries,
 formulas, masses, envelopes, isotope patterns, fragment ions, target
-lists and spectral libraries are computed from a chemistry dictionary and
-a set of assumptions about oligonucleotide metabolism and fragmentation.
-They are not measurements, and a mass match is a hypothesis rather than
-an identification. Confirm every assignment experimentally. Note in
-particular that formulas flagged `verify = TRUE` are unverified best
-estimates, and that the MS2 spectral libraries carry placeholder
-intensities.
+lists and spectral libraries are computed from a chemistry dictionary.
+Confirm every assignment experimentally.
 
 **No warranty, no liability.** This software is provided "as is",
 without warranty of any kind, express or implied, under the MIT licence.
 In no event shall the author be liable for any claim, damages or other
-liability -- including any loss of data, wasted instrument time or
-materials, or erroneous scientific conclusion -- arising from or in
-connection with this software or its use. The user is solely responsible
+liability including any loss of data, wasted instrument time or
+materials, or erroneous scientific conclusion arising from this software or its use. The user is solely responsible
 for verifying that it is fit for their purpose and for validating every
 result it produces.
 
 **Affiliation and disclosure.** The author is employed as a Research
 Scientist at Thermo Fisher Scientific. This is disclosed because the
-package interoperates with Thermo Fisher products -- BioPharma Finder
+package interoperates with Thermo Fisher products BioPharma Finder
 sequence notation and Orbitrap Exploris method-editor mass lists.
 OligoMetProfiler is an independent personal project: it is not a Thermo
 Fisher Scientific product and has not been supplied, reviewed,
@@ -537,14 +384,12 @@ formats only.
 any instrument vendor, software vendor or pharmaceutical company named
 in the package. Product and drug names are used for identification and
 interoperability only and remain the trademarks of their owners. The
-bundled reference drugs are worked examples from published literature
+bundled reference drugs are working examples from published literature
 and public regulatory filings. All views and outputs are the author's
 own and do not represent Thermo Fisher Scientific or any other employer
 or institution.
 
-The full statement is in [DISCLAIMER.md](DISCLAIMER.md). It also appears
-in the dashboard, and travels inside the generated report, workbook and
-spectral libraries. From R: `oligomet_about()`.
+The full statement is in [DISCLAIMER.md](DISCLAIMER.md). From R: `oligomet_about()`.
 
 ## License
 
