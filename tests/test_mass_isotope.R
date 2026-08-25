@@ -36,6 +36,38 @@ print(charge_envelope(info$mono_mass, 5:12, h_offset = 0), digits = 6)
 cat("\n=== 4. Isotope pattern (parent, top 8) ===\n")
 print(isotope_pattern(info$formula_str, n_top = 8), digits = 6)
 
+# Two invariants that hold for any correct isotope engine:
+#   (a) no isotopologue is lighter than the monoisotopic mass, and
+#   (b) the monoisotopic peak is in the pattern when enough peaks are asked
+#       for. isotope_pattern() returns the top-N *by abundance*, and for a
+#       7 kDa oligo the monoisotopic peak is not the tallest -- at n_top=8 it
+#       legitimately falls outside the set, so this asks for a generous 60.
+# Together these catch an engine that raises the per-atom pattern to the
+# wrong convolution power: the built-in fallback once returned ~15571 Da for
+# this 7178 Da molecule, and every m/z derived from it (envelope sheet,
+# isotope plot, MS1 isotope fit, spectral libraries) was wrong on any
+# machine without enviPat installed.
+.iso_check <- function(formula_vec, mono, label) {
+  for (engine in c(TRUE, FALSE)) {
+    p <- isotope_pattern(formula_vec, n_top = 60, use_envipat = engine)
+    if (is.null(p) || nrow(p) == 0) next
+    closest <- min(abs(p$mass - mono))
+    cat(sprintf("  %-12s use_envipat=%-5s lightest %.4f, mono %.4f, closest peak %+.4f Da\n",
+                label, engine, min(p$mass), mono, closest))
+    if (min(p$mass) < mono - 0.05)
+      stop("Isotope pattern contains a peak lighter than the monoisotopic ",
+           "mass (", label, ", use_envipat=", engine, ")")
+    if (closest > 0.05)
+      stop("Isotope pattern does not contain the monoisotopic peak (",
+           label, ", use_envipat=", engine, ")")
+  }
+}
+cat("\n=== 4b. Isotope pattern anchors on the monoisotopic mass ===\n")
+.iso_check(info$formula_vec, info$mono_mass, "inotersen")
+for (fs in c("C8H10N4O2", "C6H12O6", "S8")) {
+  .iso_check(parse_formula(fs), formula_mass(parse_formula(fs)), fs)
+}
+
 cat("\n=== 5. Isotope m/z cluster at z=8 ===\n")
 cl <- isotope_mz_cluster(info$formula_vec, z = 8, n_top = 5)
 print(cl[, c("iso", "mz", "abundance")], digits = 6)

@@ -41,6 +41,7 @@ source(file.path(script_dir, "R", "ms_matching.R"))
 source(file.path(script_dir, "R", "build_workbook.R"))
 source(file.path(script_dir, "R", "build_report.R"))
 source(file.path(script_dir, "R", "export_acquisition.R"))
+source(file.path(script_dir, "R", "export_spectral.R"))
 
 ## ===========================================================================
 ## CONFIG -- edit this block for your oligonucleotide

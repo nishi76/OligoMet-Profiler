@@ -63,6 +63,21 @@ example loaded in the sequence box; paste in your own sequence, or use the
 Terminal conjugates travel with the example -- loading the GalNAc-siRNA
 sets its 3' conjugate for you.
 
+If you would rather not assemble triplet notation by hand, the **Manual
+sequence entry** panel in the middle of the dashboard takes the three
+lines a chemical analysis file gives you directly -- bases, sugars and
+linkages -- and builds the sequence for you:
+
+| Field | Example |
+|---|---|
+| Bases (5'->3') | `TSASTTTSATAATGSTGG` |
+| Sugars | `eeeeeeeeeeeeeeeeee` (or just `e` for all positions) |
+| Linkages | `sssssssssssssssss` (or just `s`) |
+
+[docs/SEQUENCE_GUIDE.md](docs/SEQUENCE_GUIDE.md) walks a first-time user
+through reading those three lines off a chemical analysis file, and
+through exporting the same sequence as a BioPharma Finder FASTA.
+
 ## What's in here
 
 | Path | Role |
@@ -72,7 +87,7 @@ sets its 3' conjugate for you.
 | `app.R` | Repository-root launcher, so `shiny::runApp(".")`, `shiny::runGitHub()`, and RStudio's "Run App" button work from a clone. Sources `inst/app/app.R`. |
 | `R/run_app.R` | `run_app()` -- launches the bundled dashboard from an installed package. |
 | `R/chemistry_dict.R` | Element table, formula arithmetic, and `STANDARD_DICT` -- the default chemistry dictionary (DNA/RNA/2'OMe/2'F/MOE/cEt/LNA sugars, PO/PS linkages, common conjugates) every module falls back to.  Also holds the four bundled reference drugs and the `validate_reference()` self-test. |
-| `R/oligo_io.R` | Sequence parsing (triplet / OligoDistiller / structured notation). |
+| `R/oligo_io.R` | Sequence parsing (triplet / OligoDistiller / structured / three-line bases-sugars-linkages notation), plus BioPharma Finder FASTA export. |
 | `R/metabolites.R` | Theoretical metabolite library generation (truncations, endo fragments). |
 | `R/mass_isotope.R` | Mass, charge envelope, isotope pattern, PS oxidation series. |
 | `R/fragments.R` | McLuckey MS/MS fragment ions, matching, confirmation scoring. |
@@ -80,11 +95,13 @@ sets its 3' conjugate for you.
 | `R/build_workbook.R` | 7-sheet Excel workbook export. |
 | `R/build_report.R` | Plots and HTML/PDF report export. |
 | `R/export_acquisition.R` | Thermo Orbitrap Exploris MS1 inclusion / MS2 PRM target list export, plus a fragment-ion reference table (see "Orbitrap Exploris acquisition method export" below). |
+| `R/export_spectral.R` | Theoretical MS1 and MS2 spectral libraries as MGF and MSP (see "Spectral library export" below). |
 | `R/progress_utils.R` | Console progress bar with elapsed time and adaptive ETA (see "Console progress reporting" below). |
 | `inst/py_decode.py` | Python helper for mzML base64/zlib binary decoding, called via `system2()`. Falls back to a pure-R decoder automatically if python3 is not on PATH. |
 | `run_custom_oligo.R` | **Primary CLI entry point.** Template driver for any sequence -- copy it, edit the CONFIG block (sequence, chemistry overrides, parameters), and run. Works with standard chemistry out of the box. |
 | `tests/` | Validation scripts (print-based, not testthat -- see note below). |
 | `QUICKSTART.md` | From CoA/synthesis documentation to a valid input string, plus the fastest path to a first run. |
+| `docs/SEQUENCE_GUIDE.md` | **Start here if you are new to oligo work.** Reading a chemical analysis file, writing the bases/sugars/linkages lines, and preparing a BioPharma Finder input, with a worked example. |
 | `vignettes/OligoMetProfiler.Rmd` | Full package vignette: input notations, chemistry dictionary and overrides, library generation, masses/envelopes/isotopes, fragment ions, workbook/report/acquisition exports, MS matching. |
 
 ## Bundled reference examples
@@ -198,6 +215,24 @@ this dictionary. Their formulas come straight from the BioPharma Finder
 and are flagged for verification (`verify = TRUE` in `chemistry_dict.R`)
 until checked against a real BPF-computed mass.
 
+Going the other way, `format_biopharma_fasta()` -- the app's **BPF
+FASTA** button -- writes the current sequence as a FASTA record for
+BioPharma Finder's Sequence Manager ("Import FASTA File"):
+
+```
+>nusinersen | 18-mer
+Te-sSe-sAe-sSe-sTe-sTe-sTe-sSe-sAe-sTe-sAe-sAe-sTe-sGe-sSe-sTe-sGe-sGe
+```
+
+Two things to check on the BPF side, since they depend on your
+installation rather than on this package: **sugar codes** resolve against
+BPF's own Building Block editor, so a modification your site defined
+under a different code needs renaming or adding there; and **terminal
+conjugates** have nowhere to live in triplet notation, so the export
+writes them into the header as a reminder and you set them as terminus
+modifications yourself. See
+[docs/SEQUENCE_GUIDE.md](docs/SEQUENCE_GUIDE.md) section 7.
+
 ## Orbitrap Exploris acquisition method export
 
 The app and `run_custom_oligo.R` both export targeted mass lists formatted
@@ -229,6 +264,43 @@ oligonucleotide backbones, not a validated instrument parameter -- optimize
 it per method. Both list functions cap the number of rows (`max_targets`,
 configurable) since the Method Editor's own limit is 150,000 rows per file
 but PRM cycle time degrades well before that.
+
+## Spectral library export
+
+The theoretical library also exports as MGF and MSP -- the two formats
+that spectral-library tools read (MS-DIAL, mzVault/Compound Discoverer,
+MZmine, matchms, SIRIUS, GNPS). Four files, from the app's **Spectral
+Libraries** download row, from the "Save to folder" field, or from
+`export_spectral_libraries()`:
+
+```r
+export_spectral_libraries(mets, dict, out_dir = "results", prefix = "my_oligo")
+#> results/my_oligo_MS1_library.mgf   my_oligo_MS1_library.msp
+#> results/my_oligo_MS2_library.mgf   my_oligo_MS2_library.msp
+```
+
+- **MS1 library** -- one spectrum per (metabolite, PS-oxidation level,
+  charge state). The peaks are the theoretical isotope cluster at that
+  charge, so their intensities are real relative abundances and can be
+  matched against an acquired isotope pattern. Peaks are annotated with
+  their true isotopologue offset (`M+0`, `M+1`, ...), and the cluster is
+  anchored on the m/z computed directly from the formula.
+- **MS2 library** -- one spectrum per (metabolite, precursor charge
+  state), holding the McLuckey fragment ions (terminal a/a-B/b/b-B/c/w/x/y
+  plus w-a/w-b/w-d internal ions) at the requested fragment charges, each
+  annotated in the MSP (`w4^2-`, `a-B5^1-`, `w-a(3,8)^1-`).
+
+**One caveat, and it matters.** This pipeline has no fragment-intensity
+model, so every MS2 peak is written at a flat intensity of 100. Match on
+*m/z*; do not run intensity-weighted dot-product or cosine scoring
+against the MS2 libraries, because with flat intensities that score
+reduces to a function of peak count. The MS1 libraries carry genuine
+isotope abundances and are not subject to this caveat.
+
+Both builders cap their output (`max_spectra`) since a full metabolite
+library across a wide charge envelope runs to thousands of spectra: at
+default settings a 51-metabolite library produces ~3,400 MS1 spectra and
+~200 MS2 spectra (about 20 seconds each to build, a few MB on disk).
 
 ## Console progress reporting
 

@@ -45,7 +45,7 @@ if (!is.null(.module_dir)) {
   for (.f in c("progress_utils.R", "chemistry_dict.R", "oligo_io.R",
                "metabolites.R", "mass_isotope.R", "fragments.R",
                "ms_matching.R", "build_workbook.R", "build_report.R",
-               "export_acquisition.R")) {
+               "export_acquisition.R", "export_spectral.R")) {
     source(file.path(.module_dir, "R", .f))
   }
 } else if (requireNamespace("OligoMetProfiler", quietly = TRUE)) {
@@ -107,6 +107,26 @@ library(DT)
   stringsAsFactors = FALSE
 )
 
+## ---- Custom chemistry table -> build_dictionary() overrides ----------------
+# Shared by the Run handler and by manual sequence entry, so a code typed
+# into the Custom Chemistry table validates the same way in both.
+.overrides_from_table <- function(cd) {
+  overrides <- list()
+  for (i in seq_len(nrow(cd))) {
+    code <- trimws(cd$Code[i])
+    formula_str <- trimws(cd$Formula[i])
+    if (nchar(code) == 0 || nchar(formula_str) == 0) next
+    entry <- list(
+      formula = formula_str,
+      name = if (nchar(trimws(cd$Name[i])) > 0) trimws(cd$Name[i]) else code
+    )
+    if (cd$Type[i] == "conjugate") entry$attach <- cd$Attach[i]
+    entry$kind <- cd$Type[i]
+    overrides[[code]] <- entry
+  }
+  overrides
+}
+
 ## =============================================================================
 ## UI
 ## =============================================================================
@@ -129,6 +149,16 @@ ui <- fluidPage(
         .metric-card .label { font-size: 11px; color: #6c757d; text-transform: uppercase;
                               letter-spacing: 0.5px; }
         .metric-card .value { font-size: 18px; font-weight: 600; color: #2c3e50; }
+        .manual-entry { background: #f8f9fa; border: 1px solid #dee2e6;
+                        border-radius: 6px; padding: 14px 16px 6px;
+                        margin-bottom: 14px; }
+        .manual-entry h5 { font-weight: 600; color: #2c3e50; }
+        .manual-entry .hint { font-size: 12px; color: #6c757d; }
+        .manual-entry .form-group { margin-bottom: 8px; }
+        .man-ok { color: #18632f; font-size: 13px; }
+        .man-err { color: #a3231b; font-size: 13px; }
+        .man-seq { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                   font-size: 12px; word-break: break-all; }
       "))),
 
       ## -- Input section --
@@ -258,9 +288,52 @@ ui <- fluidPage(
       actionButton("run", "Run Pipeline", class = "btn-primary btn-lg w-100")
     ),
 
-    ## ---- Main panel: status + summary + downloads -------------------------
+    ## ---- Main panel: manual entry + status + summary + downloads ----------
     mainPanel(
       width = 8,
+
+      ## -- Manual sequence entry ---------------------------------------------
+      ## The other way in: instead of assembling triplet notation by hand in
+      ## the sidebar, type the three lines a chemical analysis file (or a
+      ## BioPharma Finder sequence entry) already gives you, and let the app
+      ## assemble the triplet. See docs/SEQUENCE_GUIDE.md.
+      tags$div(class = "manual-entry",
+        tags$h5("Manual sequence entry"),
+        tags$p(class = "hint",
+               "Type the three lines from your chemical analysis file. ",
+               "Bases and sugars need one code per position; linkages sit ",
+               "between positions, so there is one fewer of them. A single ",
+               "sugar or linkage code is applied to every position ",
+               "(\"e\" = all MOE, \"s\" = all phosphorothioate). Separate ",
+               "multi-character codes with commas or dashes ",
+               "(\"MOE-MOE-d-d\"). Submit fills in the sequence box on the ",
+               "left; then click Run Pipeline. New to this? ",
+               tags$a(href = paste0("https://github.com/nishi76/OligoMet-Profiler",
+                                    "/blob/main/docs/SEQUENCE_GUIDE.md"),
+                      target = "_blank", rel = "noopener",
+                      "Read the sequence guide"),
+               " -- it walks through reading a chemical analysis file and ",
+               "filling in these three fields."),
+        fluidRow(
+          column(4, textInput("man_bases", "Bases (5'->3')", value = "",
+                              placeholder = "TSASTTTSATAATGSTGG")),
+          column(4, textInput("man_sugars", "Sugars", value = "",
+                              placeholder = "eeeeeeeeeeeeeeeeee")),
+          column(4, textInput("man_linkages", "Linkages", value = "",
+                              placeholder = "sssssssssssssssss"))
+        ),
+        fluidRow(
+          column(3, actionButton("man_submit", "Submit",
+                                 class = "btn-primary w-100")),
+          column(3, actionButton("man_example", "Fill example",
+                                 class = "btn-outline-secondary w-100")),
+          column(3, actionButton("man_clear", "Clear",
+                                 class = "btn-outline-secondary w-100")),
+          column(3, downloadButton("dl_fasta", "BPF FASTA",
+                                   class = "btn-outline-secondary w-100"))
+        ),
+        htmlOutput("man_feedback")
+      ),
 
       ## Status / log
       verbatimTextOutput("status", placeholder = TRUE),
@@ -338,6 +411,28 @@ ui <- fluidPage(
                "Mass filter. The fragment reference is for interpreting spectra ",
                "after acquisition (e.g. Skyline transitions) -- it isn't an ",
                "acquisition input and won't import into the Method Editor."),
+
+        tags$div(style = "height: 10px;"),
+        tags$h5("Spectral Libraries"),
+        fluidRow(
+          column(3, downloadButton("dl_ms1_mgf", "MS1 (.mgf)",
+                                   class = "btn-outline-primary w-100")),
+          column(3, downloadButton("dl_ms1_msp", "MS1 (.msp)",
+                                   class = "btn-outline-primary w-100")),
+          column(3, downloadButton("dl_ms2_mgf", "MS2 (.mgf)",
+                                   class = "btn-outline-primary w-100")),
+          column(3, downloadButton("dl_ms2_msp", "MS2 (.msp)",
+                                   class = "btn-outline-primary w-100"))
+        ),
+        tags$p(style = "font-size: 11px; color: #6c757d; margin-top: 6px;",
+               "Theoretical libraries for MS-DIAL, mzVault/Compound Discoverer, ",
+               "MZmine, matchms and similar. MS1 spectra hold the isotope ",
+               "cluster of each metabolite at each charge state, with real ",
+               "relative abundances. MS2 spectra hold the McLuckey fragment ",
+               "ions for each precursor charge state; there is no fragment ",
+               "intensity model here, so every MS2 peak is written at a flat ",
+               "100 -- match on m/z, and don't use intensity-weighted ",
+               "dot-product scoring against them."),
         tags$div(style = "height: 20px;")
       )
     )
@@ -358,6 +453,97 @@ server <- function(input, output, session) {
 
   ## ---- Custom chemistry table ----------------------------------------------
   custom_chem_data <- reactiveVal(.custom_chem_init)
+
+  ## ---- Manual three-line sequence entry ------------------------------------
+  # Bases / sugars / linkages as three plain strings -- the layout a chemical
+  # analysis file or a BioPharma Finder sequence entry uses. Submit converts
+  # them to triplet notation and loads that into the sidebar's sequence box,
+  # so the rest of the app sees an ordinary sequence and nothing downstream
+  # needs to know which way it was entered.
+  man_spec <- reactiveVal(NULL)
+
+  observeEvent(input$man_example, {
+    # The 18-mer worked example from docs/SEQUENCE_GUIDE.md (nusinersen:
+    # uniform 2'-MOE, fully phosphorothioate, 5-methyl-C written as S).
+    updateTextInput(session, "man_bases", value = "TSASTTTSATAATGSTGG")
+    updateTextInput(session, "man_sugars", value = "eeeeeeeeeeeeeeeeee")
+    updateTextInput(session, "man_linkages", value = "sssssssssssssssss")
+  })
+
+  observeEvent(input$man_clear, {
+    for (id in c("man_bases", "man_sugars", "man_linkages")) {
+      updateTextInput(session, id, value = "")
+    }
+    man_spec(NULL)
+    output$man_feedback <- renderUI(NULL)
+  })
+
+  observeEvent(input$man_submit, {
+    fields <- lapply(c("man_bases", "man_sugars", "man_linkages"),
+                     function(id) trimws(input[[id]] %||% ""))
+    names(fields) <- c("bases", "sugars", "linkages")
+    empty <- names(fields)[!nzchar(unlist(fields))]
+    if (length(empty) > 0) {
+      man_spec(NULL)
+      output$man_feedback <- renderUI(tags$p(class = "man-err",
+        paste0("Fill in all three fields -- still empty: ",
+               paste(empty, collapse = ", "), ".")))
+      return()
+    }
+
+    # Build against the same dictionary the run will use, so a custom code
+    # typed into the Custom Chemistry table validates here too.
+    dict <- tryCatch(build_dictionary(overrides = .overrides_from_table(
+      custom_chem_data())), error = function(e) STANDARD_DICT)
+
+    spec <- tryCatch(
+      parse_three_line(fields$bases, fields$sugars, fields$linkages,
+                       conj5 = input$conj5, conj3 = input$conj3, dict = dict),
+      error = function(e) structure(conditionMessage(e), class = "man_error"))
+
+    if (inherits(spec, "man_error")) {
+      man_spec(NULL)
+      output$man_feedback <- renderUI(tags$p(class = "man-err",
+        paste0("Could not build the sequence: ", as.character(spec))))
+      return()
+    }
+
+    triplet <- format_triplet(spec)
+    man_spec(spec)
+    updateTextAreaInput(session, "seq", value = triplet)
+
+    info <- tryCatch(metabolite_mass_info(spec, dict), error = function(e) NULL)
+    output$man_feedback <- renderUI(tagList(
+      tags$p(class = "man-ok",
+             sprintf("Built a %d-mer (%d linkages) and loaded it into the sequence box. Click Run Pipeline.",
+                     spec$n, spec$n - 1L)),
+      tags$p(class = "man-seq", triplet),
+      if (!is.null(info)) tags$p(class = "hint",
+        sprintf("Formula %s -- monoisotopic %.4f Da, average %.2f Da.",
+                info$formula_str, info$mono_mass, info$avg_mass))
+    ))
+  })
+
+  output$dl_fasta <- downloadHandler(
+    filename = function() paste0(input$oligo_name %||% "oligo", ".fasta"),
+    content = function(file) {
+      # Prefer whatever is in the sequence box, so this works whether the
+      # sequence came from manual entry, an example, or was typed directly.
+      spec <- man_spec()
+      if (is.null(spec)) {
+        spec <- tryCatch(parse_input(trimws(input$seq %||% "")),
+                         error = function(e) NULL)
+        if (!is.null(spec)) {
+          spec$conj5 <- input$conj5
+          spec$conj3 <- input$conj3
+        }
+      }
+      validate(need(!is.null(spec),
+                    "Enter a valid sequence before downloading a FASTA."))
+      writeLines(format_biopharma_fasta(spec, input$oligo_name %||% "oligo"),
+                 file)
+    }
+  )
 
   # Load a selected example sequence into the input box. Terminal
   # conjugates travel with the example (triplet notation can't express
@@ -486,24 +672,8 @@ server <- function(input, output, session) {
       # Step 1: Build dictionary with custom overrides
       incProgress(0.05, detail = "Building dictionary")
       progress_next(prog)
-      custom_overrides <- list()
-      cd <- custom_chem_data()
-      for (i in seq_len(nrow(cd))) {
-        code <- trimws(cd$Code[i])
-        formula_str <- trimws(cd$Formula[i])
-        if (nchar(code) == 0 || nchar(formula_str) == 0) next
-        entry <- list(
-          formula = formula_str,
-          name = if (nchar(trimws(cd$Name[i])) > 0) trimws(cd$Name[i]) else code
-        )
-        type <- cd$Type[i]
-        if (type == "conjugate") {
-          entry$attach <- cd$Attach[i]
-        }
-        entry$kind <- type
-        custom_overrides[[code]] <- entry
-      }
-      dict <- build_dictionary(overrides = custom_overrides)
+      dict <- build_dictionary(overrides =
+                                 .overrides_from_table(custom_chem_data()))
       rv$dict <- dict
 
       # Step 2: Parse input
@@ -698,6 +868,12 @@ server <- function(input, output, session) {
             ms2_dest, row.names = FALSE)
           utils::write.csv(ms2_fragment_reference(mets, dict, z_range = z2),
                            frag_dest, row.names = FALSE)
+          export_spectral_libraries(
+            mets, dict, out_dir = out_dir, prefix = input$output_prefix,
+            z_range = z_range, n_iso = input$n_iso, max_oxid = input$max_oxid,
+            precursor_z_range = z2, frag_z_range = 1:input$frag_z_max,
+            h_offset = input$h_offset, use_envipat = input$use_envipat,
+            oligo_name = input$oligo_name)
           normalizePath(out_dir)
         }, error = function(e) {
           paste0("WARNING: could not save to '", out_dir, "': ", conditionMessage(e))
@@ -853,6 +1029,44 @@ server <- function(input, output, session) {
       write.csv(ref, file, row.names = FALSE)
     }
   )
+
+  ## ---- Spectral library downloads ------------------------------------------
+  # Built on demand rather than during the run: the MS2 library in
+  # particular is large (one spectrum per metabolite per precursor charge,
+  # each holding every fragment ion), and most runs never download it.
+  .ms1_library <- function() {
+    build_ms1_library(rv$mets, rv$dict, z_range = input$z_min:input$z_max,
+                      n_iso = input$n_iso, max_oxid = input$max_oxid,
+                      h_offset = input$h_offset,
+                      use_envipat = input$use_envipat,
+                      oligo_name = input$oligo_name)
+  }
+  .ms2_library <- function() {
+    z2 <- min(input$ms2_z_min, input$ms2_z_max):max(input$ms2_z_min, input$ms2_z_max)
+    build_ms2_library(rv$mets, rv$dict, precursor_z_range = z2,
+                      frag_z_range = 1:input$frag_z_max,
+                      h_offset = input$h_offset,
+                      oligo_name = input$oligo_name)
+  }
+  .spectral_download <- function(build, writer, label) {
+    downloadHandler(
+      filename = function() paste0(input$output_prefix, label),
+      content = function(file) {
+        req(rv$ready, rv$mets, rv$dict)
+        withProgress(message = paste0("Building ", label, " ..."), value = 0.5, {
+          writer(build(), file)
+        })
+      }
+    )
+  }
+  output$dl_ms1_mgf <- .spectral_download(.ms1_library, write_mgf,
+                                          "_MS1_library.mgf")
+  output$dl_ms1_msp <- .spectral_download(.ms1_library, write_msp,
+                                          "_MS1_library.msp")
+  output$dl_ms2_mgf <- .spectral_download(.ms2_library, write_mgf,
+                                          "_MS2_library.mgf")
+  output$dl_ms2_msp <- .spectral_download(.ms2_library, write_msp,
+                                          "_MS2_library.msp")
 }
 
 ## ---- Run app ---------------------------------------------------------------

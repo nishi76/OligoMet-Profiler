@@ -318,6 +318,37 @@ identical(spec_od$bases, spec$bases)
 Sugar suffixes: `m` = 2'-OMe, `f` = 2'-F, `d` = DNA, `r` = RNA,
 `e` = MOE.
 
+## Three-line notation (bases / sugars / linkages)
+
+The layout a chemical analysis file or a BioPharma Finder sequence entry
+gives you directly, and the one the dashboard's **Manual sequence entry**
+panel uses. One code per position for bases and sugars; one per *bond*
+for linkages, so an n-mer has n-1 of them.
+
+```{r three-line}
+spec_3l <- parse_three_line(
+  bases    = "TSASTTTSATAATGSTGG",
+  sugars   = "eeeeeeeeeeeeeeeeee",
+  linkages = "sssssssssssssssss")
+format_triplet(spec_3l)
+```
+
+A field holding a single code is applied to every position, which is the
+common case for a uniformly modified drug -- `sugars = "e"` and
+`linkages = "s"` give exactly the result above. Multi-character codes
+(`MOE`, `cEt`, `LNA`) need a separator: `"MOE-MOE-d-d"`, `"A,G,S,T"`.
+
+`format_three_line()` renders any spec back to the three lines, and
+`format_biopharma_fasta()` writes it as a FASTA record for BioPharma
+Finder's Sequence Manager:
+
+```{r bpf-fasta}
+cat(format_biopharma_fasta(spec_3l, name = "nusinersen"))
+```
+
+See `docs/SEQUENCE_GUIDE.md` for a walkthrough aimed at readers who have
+not worked with oligonucleotide notation before.
+
 ## Structured input
 
 An R list with explicit parallel vectors -- use this when you need
@@ -620,6 +651,36 @@ Both list functions cap output rows (`max_targets`) -- the Method
 Editor accepts up to 150,000 rows, but PRM duty cycle degrades long
 before that.
 
+## Spectral libraries (MGF / MSP)
+
+The same theoretical library also exports as MGF and MSP, the formats
+spectral-library tools read (MS-DIAL, mzVault/Compound Discoverer,
+MZmine, matchms, SIRIUS, GNPS).
+
+```{r spectral, eval = FALSE}
+export_spectral_libraries(mets, dict, out_dir = "results",
+                          prefix = "my_oligo")
+#> results/my_oligo_MS1_library.mgf  (+ .msp)
+#> results/my_oligo_MS2_library.mgf  (+ .msp)
+```
+
+`build_ms1_library()` emits one spectrum per (metabolite, PS-oxidation
+level, charge state), whose peaks are the theoretical isotope cluster --
+real relative abundances, annotated with the true isotopologue offset
+(`M+0`, `M+1`, ...) and anchored on the m/z computed from the formula
+rather than on the isotope engine's binned masses.
+
+`build_ms2_library()` emits one spectrum per (metabolite, precursor
+charge state), holding the McLuckey fragment ions at the requested
+fragment charges, annotated `w4^2-`, `a-B5^1-`, `w-a(3,8)^1-` in the
+MSP.
+
+There is no fragment-intensity model in this pipeline, so **every MS2
+peak is written at a flat intensity of 100**. Match on m/z; an
+intensity-weighted dot-product or cosine score against these libraries
+reduces to a function of peak count and means nothing. The MS1
+libraries carry genuine isotope abundances and are not affected.
+
 # Matching against acquired MS data
 
 Point the pipeline at an mzML/mzXML file (or a two-column m/z-intensity
@@ -652,10 +713,11 @@ Three ready-made entry points wrap the same engine. The dashboard
 ships inside the installed package; the CLI drivers live in the
 repository root:
 
-* **`run_app()`** -- a Shiny dashboard with sequence input, an editable
+* **`run_app()`** -- a Shiny dashboard with sequence input (triplet, or
+  the three-field manual entry described above), an editable
   custom-chemistry table, full parameter control, optional MS upload,
-  a four-plot summary, and workbook/report/PRM/acquisition-list
-  downloads. Launch with `OligoMetProfiler::run_app()` from an
+  a four-plot summary, and workbook/report/PRM/acquisition-list/
+  spectral-library downloads. Launch with `OligoMetProfiler::run_app()` from an
   installed package, or `shiny::runApp(".")` from a clone of the
   repository.
 * **`run_custom_oligo.R`** -- the primary CLI template: copy it, edit

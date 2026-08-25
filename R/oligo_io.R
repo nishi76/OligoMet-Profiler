@@ -85,6 +85,67 @@ parse_structured <- function(spec, dict = STANDARD_DICT) {
        conj5 = conj5, conj3 = conj3)
 }
 
+## ---- Three-line (bases / sugars / linkages) parser -------------------------
+# The layout a chemical analysis file or a BioPharma Finder sequence entry
+# gives you directly:
+#   bases     "TSASTTTSATAATGSTGG"   one code per position, 5'->3'
+#   sugars    "eeeeeeeeeeeeeeeeee"   one code per position
+#   linkages  "sssssssssssssssss"    one code per *bond*, so n-1 of them
+#
+# Tokenizing: a string containing a separator (space, comma, dash, slash or
+# pipe) is split on it, which is how multi-character codes are written --
+# "A,G,S" or "MOE-MOE-d". Otherwise the string is split into single
+# characters, the compact form above.
+#
+# Recycling: a sugar or linkage field holding exactly one code is applied to
+# every position ("e" = uniform MOE, "s" = fully phosphorothioate). This is
+# the common case for antisense drugs and saves typing out 18 identical
+# letters.
+#
+# Linkage length: n-1 is the correct count (bonds between positions). A
+# vector of n is also accepted -- the trailing entry is the 3'-terminal
+# "bond", which does not exist and is dropped -- because sequence tables
+# often carry a placeholder there.
+.tokenize_codes <- function(x, field) {
+  if (length(x) > 1) return(as.character(x))
+  s <- trimws(as.character(x))
+  if (!nzchar(s)) stop("The ", field, " field is empty")
+  if (grepl("[ ,/|-]", s)) {
+    toks <- strsplit(s, "[ ,/|-]+")[[1]]
+    toks <- toks[nzchar(toks)]
+  } else {
+    toks <- strsplit(s, "")[[1]]
+  }
+  toks
+}
+
+parse_three_line <- function(bases, sugars, linkages,
+                             conj5 = "none", conj3 = "none",
+                             dict = STANDARD_DICT) {
+  b <- .tokenize_codes(bases, "bases")
+  s <- .tokenize_codes(sugars, "sugars")
+  l <- .tokenize_codes(linkages, "linkages")
+  n <- length(b)
+  if (n < 2) stop("Need at least 2 bases; got ", n)
+
+  if (length(s) == 1) s <- rep(s, n)
+  if (length(s) != n)
+    stop("Got ", n, " bases but ", length(s), " sugars. There must be one ",
+         "sugar per base (or a single sugar code to apply to all of them).")
+
+  if (length(l) == 1) l <- rep(l, n - 1)
+  if (length(l) == n) l <- l[-n]          # drop the non-existent 3' bond
+  if (length(l) != n - 1)
+    stop("Got ", n, " bases but ", length(l), " linkages. Linkages sit ",
+         "*between* positions, so a sequence of ", n, " bases has ", n - 1,
+         " of them (or give a single linkage code to apply to all of them).")
+
+  parse_input(list(bases = b, sugars = s,
+                   linkages = c(l, NA_character_),
+                   conj5 = conj5, conj3 = conj3),
+              dict = dict, notation = "structured")
+}
+
 ## ---- Notation auto-detection + dispatcher ----------------------------------
 # Returns a canonical oligo_spec list.
 parse_input <- function(x, dict = STANDARD_DICT, sugar_map = .default_sugar_map,
@@ -177,6 +238,55 @@ format_oligodistiller <- function(spec, sugar_map = .default_sugar_map) {
     toks[i] <- paste0(spec$bases[i], suf, star)
   }
   paste0("OH-", paste(toks, collapse = "-"), "-OH")
+}
+
+# Render an oligo_spec as the three plain lines a sequence table (or a
+# BioPharma Finder sequence entry form) is filled in with. Returns a named
+# character vector: bases (n codes), sugars (n codes), linkages (n-1 codes).
+# Multi-character codes are dash-separated so the string round-trips through
+# parse_three_line(); single-character codes are written compactly.
+format_three_line <- function(spec) {
+  pack <- function(v) {
+    if (any(nchar(v) > 1)) paste(v, collapse = "-") else paste(v, collapse = "")
+  }
+  lk <- spec$linkages[seq_len(spec$n - 1)]
+  c(bases = pack(spec$bases),
+    sugars = pack(spec$sugars),
+    linkages = pack(lk))
+}
+
+# Render an oligo_spec as a FASTA record for BioPharma Finder's Sequence
+# Manager ("Import FASTA File"). The sequence line is triplet notation,
+# which is the same 5'-1'-2' building-block notation BPF itself uses --
+# [linkage][base][sugar] per residue, 'p' for phosphodiester and 's' for
+# phosphorothioate (see the LINKAGE_FORMULAS note in chemistry_dict.R).
+#
+# Two things to check before importing, because they depend on your BPF
+# build rather than on this package:
+#   * Sugar codes. This writes the dictionary's own codes (d/r/m/f/e, or
+#     MOE/cEt/LNA spelled out). BPF resolves sugar codes against its
+#     Building Block editor, so a modification your site has defined under a
+#     different code needs renaming here or adding there.
+#   * Terminal conjugates. Triplet notation has nowhere to put them, so a
+#     5'/3' conjugate on the spec is written into the header as a comment
+#     and must be set on the BPF side as a terminus modification.
+#
+# po_code = "p" writes BPF's phosphodiester prefix; set it to "o" to keep
+# this package's own notation instead.
+format_biopharma_fasta <- function(spec, name = "oligo", po_code = "p") {
+  s <- spec
+  s$linkages <- ifelse(!is.na(s$linkages) & s$linkages == "o",
+                       po_code, s$linkages)
+  conj <- character(0)
+  if (!is.null(s$conj5) && nzchar(s$conj5) && s$conj5 != "none")
+    conj <- c(conj, paste0("5'-", s$conj5))
+  if (!is.null(s$conj3) && nzchar(s$conj3) && s$conj3 != "none")
+    conj <- c(conj, paste0("3'-", s$conj3))
+  header <- paste0(">", name, " | ", s$n, "-mer",
+                   if (length(conj))
+                     paste0(" | set as terminus modifications in BioPharma ",
+                            "Finder: ", paste(conj, collapse = ", ")) else "")
+  paste0(header, "\n", format_triplet(s), "\n")
 }
 
 # Human-readable one-line summary.

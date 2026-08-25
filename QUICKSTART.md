@@ -64,6 +64,31 @@ dropdown or `chemistry_dict.R` for the full list).
 
 ## 3. Construct the input string
 
+### The easy way: type the three lines
+
+You do not have to assemble the token string by hand. The dashboard's
+**Manual sequence entry** panel takes the three lines you just read off
+the document and builds the sequence for you:
+
+| Field | Nusinersen |
+|---|---|
+| Bases (5'→3') | `TSASTTTSATAATGSTGG` |
+| Sugars | `eeeeeeeeeeeeeeeeee` — or just `e`, applied to every position |
+| Linkages | `sssssssssssssssss` — or just `s` |
+
+Click Submit and the triplet string appears in the sequence box, along
+with the formula and mass it computed. From R, the same thing:
+
+```r
+spec <- parse_three_line("TSASTTTSATAATGSTGG", "e", "s")
+```
+
+Never done this before? [docs/SEQUENCE_GUIDE.md](docs/SEQUENCE_GUIDE.md)
+walks through it slowly, with a worked example and the mistakes people
+actually make.
+
+### The explicit way: write the tokens
+
 Write one dash-separated token per nucleotide, 5'→3'. Each token is:
 
 ```

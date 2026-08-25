@@ -209,15 +209,21 @@ ps_oxidation_series <- function(met, max_oxid = 6, z_range = 3:12,
     # pattern for one atom
     one <- data.frame(mass = iso$masses, abundance = iso$abund,
                       stringsAsFactors = FALSE)
-    # convolve cnt times (binary doubling for speed)
+    # Raise the one-atom pattern to the cnt-th convolution power by binary
+    # exponentiation: multiply `pat` by elpat = one^(2^bit) at every set bit
+    # of cnt, and square elpat once per bit. The exponent must be cnt itself
+    # and the accumulate step must happen inside the loop -- an earlier
+    # version started from cnt-1 and appended one final unconditional
+    # convolution after the loop, which raised `one` to roughly twice the
+    # intended power (nusinersen's pattern came out near 15571 Da against a
+    # 7122 Da monoisotopic mass).
     elpat <- one
-    remaining <- cnt - 1
+    remaining <- cnt
     while (remaining > 0) {
       if (remaining %% 2 == 1) pat <- .convolve_patterns(pat, elpat, threshold)
-      elpat <- .convolve_patterns(elpat, elpat, threshold)
       remaining <- remaining %/% 2
+      if (remaining > 0) elpat <- .convolve_patterns(elpat, elpat, threshold)
     }
-    pat <- .convolve_patterns(pat, elpat, threshold)
   }
   pat <- pat[order(-pat$abundance), ]
   out <- head(pat, n_top)
