@@ -7,7 +7,7 @@
     "entrypoint": "app.R",
     "displayName": "OligoMet Profiler",
     "contentTitle": "OligoMet Profiler - Theoretical Oligonucleotide Metabolite Libraries",
-    "contentDescription": "A Shiny application for generating theoretical metabolite libraries, charge envelopes, isotope patterns, MS/MS fragment ions, and PRM inclusion lists for therapeutic oligonucleotides.",
+    "contentDescription": "A Shiny application for generating theoretical metabolite libraries, charge envelopes, isotope patterns, MS/MS fragment ions, and PRM inclusion lists for therapeutic oligonucleotides",
     "contentUrl": "https://github.com/nishi76/OligoMet-Profiler",
     "contentCategory": "application"
   },
