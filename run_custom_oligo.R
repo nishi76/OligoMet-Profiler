@@ -15,6 +15,15 @@
 # For the Shiny dashboard instead, see app.R. To self-test that the
 # formula engine still matches a known mass, run validate_reference() from R
 # or the validation scripts under tests/.
+#
+# Author and developer: Nishikant Wase, PhD <nishikant.wase@gmail.com>
+# https://github.com/nishi76/OligoMet-Profiler -- MIT licence.
+#
+# FOR RESEARCH USE ONLY. Not for diagnostic, clinical, or regulatory
+# submission use. Everything this pipeline reports is a computed
+# prediction, not a measurement, and must be confirmed experimentally.
+# Provided without warranty; the author accepts no liability for its use.
+# Run oligomet_about(), or see DISCLAIMER.md, for the full statement.
 # =============================================================================
 
 ## ---- Bootstrap: find modules and source them --------------------------------
@@ -31,6 +40,7 @@ if (!file.exists(file.path(script_dir, "R", "chemistry_dict.R"))) {
        "Rscript run_custom_oligo.R.")
 }
 
+source(file.path(script_dir, "R", "about.R"))
 source(file.path(script_dir, "R", "progress_utils.R"))
 source(file.path(script_dir, "R", "chemistry_dict.R"))
 source(file.path(script_dir, "R", "oligo_io.R"))

@@ -42,7 +42,7 @@
 .module_dir <- .find_module_dir()
 
 if (!is.null(.module_dir)) {
-  for (.f in c("progress_utils.R", "chemistry_dict.R", "oligo_io.R",
+  for (.f in c("about.R", "progress_utils.R", "chemistry_dict.R", "oligo_io.R",
                "metabolites.R", "mass_isotope.R", "fragments.R",
                "ms_matching.R", "build_workbook.R", "build_report.R",
                "export_acquisition.R", "export_spectral.R")) {
@@ -176,6 +176,18 @@ ui <- fluidPage(
 
   titlePanel("OligoMet Profiler"),
 
+  ## Research-use-only banner. Deliberately above the fold and not
+  ## dismissible: every number this app produces is a prediction, and the
+  ## outputs get shared as files that leave the app.
+  tags$div(class = "ruo-banner",
+    tags$span(class = "ruo-tag", "RESEARCH USE ONLY"),
+    tags$span("Not for diagnostic, clinical, or regulatory submission use. ",
+              "All values are computed predictions, not measurements -- ",
+              "confirm every assignment experimentally. Provided without ",
+              "warranty; the author accepts no liability for their use. "),
+    tags$a(href = "#about-section", "Full disclaimer")
+  ),
+
   sidebarLayout(
 
     ## ---- Sidebar: all parameters ------------------------------------------
@@ -221,6 +233,17 @@ ui <- fluidPage(
                         overflow-x: auto; }
         .help-doc code { font-size: 12px; }
         .help-doc img { max-width: 100%; }
+        .ruo-banner { background: #fff8e6; border: 1px solid #f0d68a;
+                      border-radius: 6px; padding: 8px 14px; margin-bottom: 14px;
+                      font-size: 12px; color: #5c4813; line-height: 1.5; }
+        .ruo-tag { display: inline-block; background: #a3231b; color: #fff;
+                   font-weight: 700; font-size: 10.5px; letter-spacing: 0.6px;
+                   border-radius: 3px; padding: 1px 7px; margin-right: 8px; }
+        .about-block { border-top: 1px solid #dee2e6; margin-top: 24px;
+                       padding-top: 12px; font-size: 12px; color: #6c757d; }
+        .about-block h6 { font-weight: 600; color: #2c3e50; font-size: 13px;
+                          margin-bottom: 4px; }
+        .about-block p { margin-bottom: 8px; }
       "))),
 
       ## -- Input section --
@@ -510,6 +533,27 @@ ui <- fluidPage(
                "100 -- match on m/z, and don't use intensity-weighted ",
                "dot-product scoring against them."),
         tags$div(style = "height: 20px;")
+      ),
+
+      ## ---- About and full disclaimer --------------------------------------
+      ## Always visible, not gated behind the run: the disclaimer has to be
+      ## readable before anyone downloads anything.
+      tags$div(id = "about-section", class = "about-block",
+        tags$h6("About"),
+        ## htmltools joins sibling arguments with a space, so anything that
+        ## must sit flush against its neighbour (a colon, a bracket) is
+        ## pasted into one string rather than passed as its own argument.
+        tags$p(
+          tags$strong("OligoMet Profiler"), HTML("&mdash;"),
+          textOutput("about_version", inline = TRUE), tags$br(),
+          paste0(OLIGOMET_AUTHOR_ROLE, ": ", OLIGOMET_AUTHOR),
+          HTML(paste0("(<a href=\"mailto:", OLIGOMET_AUTHOR_EMAIL, "\">",
+                      OLIGOMET_AUTHOR_EMAIL, "</a>)")), tags$br(),
+          tags$a(href = OLIGOMET_URL, target = "_blank", rel = "noopener",
+                 OLIGOMET_URL),
+          HTML("&mdash; released under the MIT licence.")),
+        tags$h6("Disclaimer"),
+        lapply(OLIGOMET_DISCLAIMER, tags$p)
       )
     )
   )
@@ -693,6 +737,13 @@ server <- function(input, output, session) {
       d <- d[-nrow(d), , drop = FALSE]
       custom_chem_data(d)
     }
+  })
+
+  ## ---- About ---------------------------------------------------------------
+  output$about_version <- renderText({
+    v <- tryCatch(as.character(utils::packageVersion("OligoMetProfiler")),
+                  error = function(e) NA_character_)
+    if (is.na(v)) "running from a repository checkout" else paste("version", v)
   })
 
   ## ---- Help documents ------------------------------------------------------

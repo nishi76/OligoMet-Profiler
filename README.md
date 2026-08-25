@@ -1,5 +1,11 @@
 # OligoMet Profiler
 
+> **FOR RESEARCH USE ONLY.** Not for diagnostic, clinical, or regulatory
+> submission use. Every value this software produces is a computed
+> prediction, not a measurement, and must be confirmed experimentally.
+> Provided without warranty; the author accepts no liability for its use.
+> See [DISCLAIMER.md](DISCLAIMER.md).
+
 A general-purpose R pipeline for generating theoretical metabolite
 libraries, charge envelopes, isotope patterns, McLuckey MS/MS fragment ions,
 and PRM inclusion lists for any therapeutic oligonucleotide -- DNA, RNA,
@@ -477,6 +483,56 @@ optional -- the app runs without them, with reduced MS-import coverage.
     "Targeted Inclusion -- Targeted Mass filter" -- the mass-list column
     layout used by the acquisition exports.
 
+## Author
+
+**Nishikant Wase, PhD** -- author and developer
+<nishikant.wase@gmail.com>
+
+Designed, written and maintained by the author. If this software
+contributes to work you publish, please cite it as:
+
+> Wase, N. *OligoMetProfiler: theoretical metabolite libraries, charge
+> envelopes, and MS/MS fragment ions for therapeutic oligonucleotides.*
+> R package. <https://github.com/nishi76/OligoMet-Profiler>
+
+## Disclosure and disclaimer
+
+**Research use only.** OligoMetProfiler is a research tool. It is not a
+medical device and is not intended or validated for diagnostic use,
+clinical decision-making, patient care, quality control release testing,
+or inclusion in a regulatory submission. Any such use is outside the
+scope of this software and is at the user's own risk.
+
+**Everything it reports is a prediction.** Metabolite libraries,
+formulas, masses, envelopes, isotope patterns, fragment ions, target
+lists and spectral libraries are computed from a chemistry dictionary and
+a set of assumptions about oligonucleotide metabolism and fragmentation.
+They are not measurements, and a mass match is a hypothesis rather than
+an identification. Confirm every assignment experimentally. Note in
+particular that formulas flagged `verify = TRUE` are unverified best
+estimates, and that the MS2 spectral libraries carry placeholder
+intensities.
+
+**No warranty, no liability.** This software is provided "as is",
+without warranty of any kind, express or implied, under the MIT licence.
+In no event shall the author be liable for any claim, damages or other
+liability -- including any loss of data, wasted instrument time or
+materials, or erroneous scientific conclusion -- arising from or in
+connection with this software or its use. The user is solely responsible
+for verifying that it is fit for their purpose and for validating every
+result it produces.
+
+**No affiliation or endorsement.** The author is not affiliated with, and
+this software is not endorsed by, any instrument vendor, software vendor
+or pharmaceutical company named in this package. Product and drug names
+are used for identification and interoperability only and remain the
+trademarks of their owners. The bundled reference drugs are worked
+examples from published literature and public regulatory filings.
+
+The full statement is in [DISCLAIMER.md](DISCLAIMER.md). It also appears
+in the dashboard, and travels inside the generated report, workbook and
+spectral libraries. From R: `oligomet_about()`.
+
 ## License
 
-MIT -- see [LICENSE.md](LICENSE.md).
+MIT -- see [LICENSE.md](LICENSE.md). Copyright (c) 2026 Nishikant Wase.

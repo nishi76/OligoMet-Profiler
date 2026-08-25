@@ -1,6 +1,13 @@
 # =============================================================================
 # app.R -- OligoMet Profiler (repository-root launcher)
-#
+# 
+# Author: Nishikant Wase, PhD 
+# email: nishikant.wase@gmail.com
+# Research Scientist
+# Thermofisher Scientific
+# 
+# 
+# 
 # The dashboard itself lives in inst/app/app.R so that it ships with the
 # installed package; installed users launch it with
 # OligoMetProfiler::run_app(). This file keeps the repository root working

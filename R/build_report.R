@@ -206,6 +206,8 @@ build_report <- function(spec, mets, dict, validation, ms_results = NULL,
   # Title
   md <- c(md, "---",
     "title: 'Oligonucleotide Metabolite Identification Report'",
+    paste0("author: '", OLIGOMET_AUTHOR,
+           " -- generated with OligoMetProfiler'"),
     paste0("date: '", format(Sys.Date(), "%B %d, %Y"), "'"),
     "output:",
     if (output_format == "pdf") {
@@ -216,6 +218,16 @@ build_report <- function(spec, mets, dict, validation, ms_results = NULL,
         "    toc_float: true", "    theme: flatly", "    code_folding: hide")
     },
     "---", "")
+
+  # Research-use-only banner. This report is the artefact most likely to be
+  # circulated on its own, so the disclaimer travels at the top of it and
+  # in full at the bottom -- not only in the app that produced it.
+  md <- c(md,
+    "> **FOR RESEARCH USE ONLY.** Not for diagnostic, clinical, or",
+    "> regulatory submission use. Every value in this report is a computed",
+    "> prediction, not a measurement, and must be confirmed experimentally.",
+    "> Provided without warranty; the author accepts no liability for its",
+    "> use. See the Disclaimer at the end of this report.", "")
 
   # 1. Summary
   md <- c(md, "## 1. Summary", "",
@@ -334,6 +346,16 @@ build_report <- function(spec, mets, dict, validation, ms_results = NULL,
     "3. Liu Y et al. OligoDistiller: A Platform Agnostic Software Tool for MS and MS2 Data Analysis. Anal Chem. 2025.",
     "4. Ye et al. Automatic identification of oligonucleotide metabolites using FMVS. J Chromatogr B. 2025.",
     "")
+
+  # 10. Attribution and the full disclaimer. Both travel with the report,
+  # since the file is routinely shared away from the app that made it.
+  md <- c(md, "## 10. About and Disclaimer", "",
+    paste0("Generated with **OligoMetProfiler** (", OLIGOMET_URL, ")."), "",
+    paste0(OLIGOMET_AUTHOR_ROLE, ": ", OLIGOMET_AUTHOR,
+           " (", OLIGOMET_AUTHOR_EMAIL, "). Released under the MIT licence."), "",
+    paste0("Report generated ", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), "."), "",
+    "### Disclaimer", "",
+    paste0(OLIGOMET_DISCLAIMER, "\n", collapse = "\n"), "")
 
   # Write rmd file
   rmd_file <- file.path(plot_dir, paste0(output_file, ".Rmd"))

@@ -1,5 +1,10 @@
 # Modification reference
 
+> **FOR RESEARCH USE ONLY.** Everything below produces computed
+> predictions, not measurements. Confirm every assignment
+> experimentally. Provided without warranty; the author accepts no
+> liability for its use. See DISCLAIMER.md in the repository root.
+
 Every sugar and backbone chemistry the dictionary knows, what it is for,
 what it does to the mass, and how to enter it. If your modification is
 not here, section 5 shows how to add it yourself in about a minute --
@@ -354,3 +359,10 @@ and inotersen exactly (`validate_reference()`).
   [chiral phosphorothioates](https://www.biosyn.com/custom-chiral-oligo-synthesis.aspx),
   [morpholinos](https://www.biosyn.com/custom-morpholino-synthesis.aspx),
   [PNA](https://www.biosyn.com/custom-pna-synthesis.aspx)
+
+
+---
+
+*OligoMetProfiler -- Nishikant Wase, PhD (nishikant.wase@gmail.com),
+author and developer. MIT licence. Research use only; see DISCLAIMER.md
+for the full disclosure statement.*

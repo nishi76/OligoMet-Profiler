@@ -1,5 +1,10 @@
 # Quick Start Guide
 
+> **FOR RESEARCH USE ONLY.** Everything below produces computed
+> predictions, not measurements. Confirm every assignment
+> experimentally. Provided without warranty; the author accepts no
+> liability for its use. See DISCLAIMER.md in the repository root.
+
 From zero to a full theoretical metabolite library in about ten minutes.
 
 ## 1. Install and launch
@@ -200,3 +205,10 @@ Vendor raw files convert automatically when ProteoWizard `msconvert`
 is on the PATH. The MS Matching sheet of the workbook then reports
 matched features with ppm error, isotope-fit, envelope-consistency,
 and MS2 confirmation scores.
+
+
+---
+
+*OligoMetProfiler -- Nishikant Wase, PhD (nishikant.wase@gmail.com),
+author and developer. MIT licence. Research use only; see DISCLAIMER.md
+for the full disclosure statement.*

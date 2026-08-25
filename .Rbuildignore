@@ -7,3 +7,5 @@
 ^\.gitignore$
 ^.*\.xlsx$
 ^QUICKSTART\.md$
+^.*\.Rproj$
+^\.Rproj\.user$

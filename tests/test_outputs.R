@@ -8,6 +8,7 @@
   }, error = function(e) NULL)
   if (!is.null(this)) dirname(dirname(this)) else ".."
 })
+source(file.path(.pkg_root, "R", "about.R"))
 source(file.path(.pkg_root, "R", "chemistry_dict.R"))
 source(file.path(.pkg_root, "R", "oligo_io.R"))
 source(file.path(.pkg_root, "R", "metabolites.R"))

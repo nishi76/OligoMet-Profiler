@@ -1,8 +1,9 @@
 ---
 title: "OligoMet Profiler: In-Silico Metabolite Identification for Therapeutic Oligonucleotides"
 author:
-- name: Nishikant Wase
+- name: Nishikant Wase, PhD
   email: nishikant.wase@gmail.com
+  affiliation: Author and developer
 date: "`r Sys.Date()`"
 package: OligoMetProfiler
 output:
@@ -29,6 +30,11 @@ vignette: >
   %\VignetteIndexEntry{OligoMet Profiler: In-Silico Metabolite Identification for Therapeutic Oligonucleotides}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
+  FOR RESEARCH USE ONLY: not for diagnostic, clinical, or
+  regulatory submission use. All outputs are computed
+  predictions, not measurements, and must be confirmed
+  experimentally; the software is provided without warranty
+  and the author accepts no liability for its use.
 ---
 
 ```{r setup, include = FALSE}
@@ -835,3 +841,43 @@ sessionInfo()
 13. Thermo Fisher Scientific. *Orbitrap Exploris 120 Software Manual*,
     "Targeted Inclusion -- Targeted Mass filter" -- mass-list column
     layout used by the acquisition exports.
+
+# Author, disclosure and disclaimer
+
+**Nishikant Wase, PhD** -- author and developer
+(nishikant.wase@gmail.com). Designed, written and maintained by the
+author; released under the MIT licence.
+
+**Research use only.** OligoMetProfiler is a research tool. It is not a
+medical device and is not intended or validated for diagnostic use,
+clinical decision-making, patient care, quality control release testing,
+or inclusion in a regulatory submission.
+
+**Everything it reports is a prediction.** Libraries, formulas, masses,
+envelopes, isotope patterns, fragment ions, target lists and spectral
+libraries are computed from a chemistry dictionary and from assumptions
+about oligonucleotide metabolism and fragmentation -- not measured. A
+mass match is a hypothesis, not an identification; confirm every
+assignment experimentally. Formulas flagged `verify = TRUE` are
+unverified best estimates, and the MS2 spectral libraries carry
+placeholder intensities.
+
+**No warranty, no liability.** The software is provided "as is", without
+warranty of any kind, express or implied, under the MIT licence. In no
+event shall the author be liable for any claim, damages or other
+liability -- including loss of data, wasted instrument time or
+materials, or an erroneous scientific conclusion -- arising from or in
+connection with the software or its use. The user is solely responsible
+for verifying fitness for their purpose and for validating every result.
+
+**No affiliation or endorsement.** The author is not affiliated with, and
+this package is not endorsed by, any instrument vendor, software vendor
+or pharmaceutical company named in it. Product and drug names are used
+for identification and interoperability only and remain the trademarks
+of their owners.
+
+```{r about, eval = FALSE}
+oligomet_about()   # prints this statement in the console
+```
+
+The full statement is in `DISCLAIMER.md`.

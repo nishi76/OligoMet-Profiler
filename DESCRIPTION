@@ -6,29 +6,33 @@ Version: 1.0.0
 Date: 2026-08-22
 Authors@R: person("Nishikant", "Wase",
     email = "nishikant.wase@gmail.com",
-    role = c("aut", "cre"))
+    role = c("aut", "cre", "cph"),
+    comment = "Author and developer")
 Description: A general-purpose pipeline for in-silico metabolite
     identification of therapeutic oligonucleotides (antisense
-    oligonucleotides, siRNA, and related modalities). Generates
+    oligonucleotides, siRNA, and related modalities). This pipeline generates
     theoretical metabolite libraries (3'/5' exonuclease truncations and
     endonuclease internal fragments), molecular formulas, monoisotopic
     and average masses, negative-ESI charge envelopes with adduct
     variants, isotope patterns, phosphorothioate oxidation series,
-    McLuckey MS/MS fragment ions, and PRM inclusion lists for any
+    MS/MS fragment ions, and PRM inclusion lists for any
     sequence built from DNA, RNA, 2'-O-methyl, 2'-fluoro, MOE, cEt, or
-    LNA chemistry with mixed PO/PS backbones -- plus fully custom
-    chemistry via dictionary overrides. Four approved oligonucleotide
-    therapeutics (nusinersen, inotersen, patisiran, givosiran) ship as
-    worked examples spanning the major modality classes; two double as
+    LNA chemistry with mixed PO/PS backbones. Here four approved oligonucleotide
+    therapeutics (nusinersen, inotersen, patisiran, givosiran) are provided as working 
+    examples spanning the major modality classes; two double as
     the formula engine's regression anchors, reproducing their
-    published molecular formulas exactly. Optionally matches the
+    published molecular formulas. Matching the
     theoretical library against uploaded mzML/mzXML or peak-list MS
-    data, exports a multi-sheet Excel workbook and HTML/PDF report, and
+    data (still under production).  This app exports a multi-sheet Excel workbook and HTML/PDF report, and
     writes targeted mass lists formatted for the Thermo Orbitrap
     Exploris Method Editor. Exports theoretical MS1 and MS2 spectral
     libraries as MGF and MSP. A Shiny dashboard (launched with
     run_app(), with the user guides built in) and command-line drivers
-    wrap the same engine.
+    wrap the same engine. FOR RESEARCH USE ONLY: not for diagnostic,
+    clinical, or regulatory submission use. All outputs are computed
+    predictions, not measurements, and must be confirmed experimentally;
+    the software is provided without warranty and the author accepts no
+    liability for its use (see DISCLAIMER.md).
 License: MIT + file LICENSE
 URL: https://github.com/nishi76/OligoMet-Profiler
 BugReports: https://github.com/nishi76/OligoMet-Profiler/issues

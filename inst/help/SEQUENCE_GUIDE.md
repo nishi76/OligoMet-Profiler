@@ -1,5 +1,10 @@
 # From a chemical analysis file to a sequence you can run
 
+> **FOR RESEARCH USE ONLY.** Everything below produces computed
+> predictions, not measurements. Confirm every assignment
+> experimentally. Provided without warranty; the author accepts no
+> liability for its use. See DISCLAIMER.md in the repository root.
+
 A guide for people who have never typed an oligonucleotide sequence into
 software before. It takes about fifteen minutes, and by the end you will
 have the same sequence in three usable forms: three plain lines you can
@@ -314,3 +319,10 @@ sequence entry takes the same three lines you prepared in section 4.
   73789](https://documents.thermofisher.com/TFS-Assets/CMD/Application-Notes/an-73789-lc-ms-identification-mapping-oligonucleotides-an73789-en.pdf)
   (5'-1'-2' building-block notation; `Cd-pAd-pGd` / `Cr-pAr-pGr` /
   `Cd-sAd-sGd` examples)
+
+
+---
+
+*OligoMetProfiler -- Nishikant Wase, PhD (nishikant.wase@gmail.com),
+author and developer. MIT licence. Research use only; see DISCLAIMER.md
+for the full disclosure statement.*
