@@ -323,8 +323,5 @@ sequence entry takes the same three lines you prepared in section 4.
 
 ---
 
-*OligoMetProfiler -- Nishikant Wase, PhD (nishikant.wase@gmail.com),
-author and developer; Research Scientist, Thermo Fisher Scientific. An
-independent personal project, not a Thermo Fisher Scientific product.
-MIT licence. Research use only; see DISCLAIMER.md for the full
-disclosure statement.*
+*OligoMetProfiler -- Nishikant Wase, PhD. MIT licence. Research use
+only; see DISCLAIMER.md.*

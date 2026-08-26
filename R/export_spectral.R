@@ -238,13 +238,13 @@ write_msp <- function(records, file) {
   con <- file(file, open = "wt")
   on.exit(close(con), add = TRUE)
   for (r in records) {
-    # MSP has no portable comment-line syntax, so the attribution and the
-    # research-use-only notice go in each record's Comment field rather than
-    # in a file header -- a stray "#" block ahead of the first Name: is not
-    # something every MSP reader tolerates.
-    comment <- paste0("Theoretical ", r$level, " spectrum (OligoMetProfiler",
-                      ", ", OLIGOMET_AUTHOR, "); RESEARCH USE ONLY, ",
-                      "computed prediction not a measurement",
+    # MSP has no portable comment-line syntax, so the footer goes in each
+    # record's Comment field rather than in a file header -- a stray "#" block
+    # ahead of the first Name: is not something every MSP reader tolerates.
+    # Kept to the footer line; the full statement is in DISCLAIMER.md.
+    comment <- paste0("Theoretical ", r$level, " spectrum -- ",
+                      OLIGOMET_FOOTER,
+                      " Computed prediction, not a measurement",
                       if (r$level == "MS2")
                         "; intensities are placeholders" else "",
                       if (nzchar(.fields_to_string(r$fields)))

@@ -357,8 +357,9 @@
     row <- write_pair("MS2 Spectra", ms_info$n_ms2, row)
   }
 
-  # Attribution and the research-use-only disclaimer. The workbook is the
-  # output most likely to be forwarded on its own, so both travel inside it.
+  # Attribution footer. The research-use-only banner stays, since the workbook
+  # is the output most likely to be forwarded on its own, but the detailed
+  # statement lives in DISCLAIMER.md rather than being restated here.
   row <- row + 2
   openxlsx::writeData(wb, "Summary", "FOR RESEARCH USE ONLY",
                        startRow = row, colNames = FALSE)
@@ -374,16 +375,11 @@
   row <- write_pair("Licence", "MIT", row)
 
   row <- row + 1
-  wrap <- openxlsx::createStyle(wrapText = TRUE, valign = "top")
-  for (para in OLIGOMET_DISCLAIMER) {
-    openxlsx::writeData(wb, "Summary", para, startRow = row, startCol = 1,
-                         colNames = FALSE)
-    openxlsx::mergeCells(wb, "Summary", cols = 1:2, rows = row)
-    openxlsx::addStyle(wb, "Summary", wrap, rows = row, cols = 1)
-    openxlsx::setRowHeights(wb, "Summary", rows = row,
-                             heights = 14 * ceiling(nchar(para) / 95))
-    row <- row + 1
-  }
+  openxlsx::writeData(wb, "Summary", OLIGOMET_FOOTER, startRow = row,
+                       startCol = 1, colNames = FALSE)
+  openxlsx::mergeCells(wb, "Summary", cols = 1:2, rows = row)
+  openxlsx::addStyle(wb, "Summary",
+    openxlsx::createStyle(wrapText = TRUE, valign = "top"), rows = row, cols = 1)
 
   openxlsx::setColWidths(wb, "Summary", cols = 1:2, widths = c(30, 70))
 }

@@ -90,6 +90,5 @@ isotope-fit, envelope-consistency, and MS2 confirmation scores.
 
 ---
 
-*OligoMetProfiler — Nishikant Wase, PhD. Independent personal project,
-not a Thermo Fisher Scientific product. MIT licence. Research use only;
-see DISCLAIMER.md.*
+*OligoMetProfiler — Nishikant Wase, PhD. MIT licence. Research use
+only; see DISCLAIMER.md.*

@@ -216,6 +216,5 @@ inotersen exactly (`validate_reference()`).
 
 ---
 
-*OligoMetProfiler — Nishikant Wase, PhD. Independent personal project,
-not a Thermo Fisher Scientific product. MIT licence. Research use only;
-see DISCLAIMER.md.*
+*OligoMetProfiler — Nishikant Wase, PhD. MIT licence. Research use
+only; see DISCLAIMER.md.*

@@ -1962,13 +1962,13 @@
       "checksum": "077338929eaef2a69bee6c2dfeda3854"
     },
     "inst/help/MODIFICATIONS.md": {
-      "checksum": "98d464ae99e4da0de60c2309afadb193"
+      "checksum": "8def99aa20a496dfec57f9f41d1f636e"
     },
     "inst/help/QUICKSTART.md": {
-      "checksum": "bb0310fecc59d72343a1d1e020abcf12"
+      "checksum": "cd386cc7c499f359f5999cb9ac557165"
     },
     "inst/help/SEQUENCE_GUIDE.md": {
-      "checksum": "55affd96ad8a4a3a8dc4e6754470cf45"
+      "checksum": "22b18c978441a388c10428aee2700a39"
     },
     "inst/py_decode.py": {
       "checksum": "465453c14d5ee81c3671cc3f0b7047f0"
@@ -1980,13 +1980,13 @@
       "checksum": "81f2228e3d845b602095a26152cb1380"
     },
     "R/about.R": {
-      "checksum": "6d63f3cf1db4f701e57adea607efbd56"
+      "checksum": "6eda8406bff09a0b28762a3522f3331c"
     },
     "R/build_report.R": {
       "checksum": "ed8976093b685efad284c350f4ca1e09"
     },
     "R/build_workbook.R": {
-      "checksum": "08fcdcbe95ac5358db0c9a1e00d02c95"
+      "checksum": "6bd21285b19ffac4efd3ce8e574bf9ef"
     },
     "R/chemistry_dict.R": {
       "checksum": "f57f4c40e7d878f198aa0cd71290e377"
@@ -1995,7 +1995,7 @@
       "checksum": "720e1128168bed0774c1fba9452ae1bc"
     },
     "R/export_spectral.R": {
-      "checksum": "2e71ac2e4490602964888f956cc5b3f2"
+      "checksum": "c5110e80e92f7193bbc27fb801a4acd6"
     },
     "R/fragments.R": {
       "checksum": "b9ad401af0d0bfbcf2a8ad1845efff67"
