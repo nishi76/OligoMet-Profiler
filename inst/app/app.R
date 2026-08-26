@@ -488,6 +488,15 @@ ui <- fluidPage(
         ## Download buttons
         tags$h5("Download"),
         fluidRow(
+          column(12, downloadButton("dl_all", "Download All Outputs (.zip)",
+                                    class = "btn-dark w-100"))
+        ),
+        tags$p(style = "font-size: 11px; color: #6c757d; margin: 4px 0 10px;",
+               "Bundles every file below -- workbook, report, PRM list, ",
+               "acquisition method lists, and spectral libraries -- into a ",
+               "single .zip for local download. Individual files are also ",
+               "available one at a time below."),
+        fluidRow(
           column(4, downloadButton("dl_workbook", "Excel Workbook (.xlsx)",
                                    class = "btn-success w-100")),
           column(4, downloadButton("dl_report", "HTML Report (.html)",
@@ -760,7 +769,7 @@ server <- function(input, output, session) {
   output$status <- renderText({ rv$status_text })
 
   # Hidden flag for conditionalPanel
-  output$status_ready <- reactive({ rv$ready })
+  output$status_ready <- reactive({ if (rv$ready) "true" else "false" })
   outputOptions(output, "status_ready", suspendWhenHidden = FALSE)
 
   ## ---- Run pipeline --------------------------------------------------------
@@ -1204,6 +1213,83 @@ server <- function(input, output, session) {
                                           "_MS2_library.mgf")
   output$dl_ms2_msp <- .spectral_download(.ms2_library, write_msp,
                                           "_MS2_library.msp")
+
+  ## ---- Download all outputs as a single .zip -------------------------------
+  # Re-derives the CSV/spectral-library files rather than reusing the
+  # download handlers above (downloadHandlers aren't callable as plain
+  # functions), writing everything into one scratch directory before zipping.
+  # Uses the "zip" package when available (pure R, no external binary) and
+  # falls back to utils::zip() (shells out to a system "zip") otherwise.
+  output$dl_all <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_all_outputs.zip"),
+    content = function(file) {
+      req(rv$ready, rv$mets, rv$dict, rv$prm)
+      withProgress(message = "Bundling all outputs...", value = 0, {
+        prefix <- input$output_prefix
+        bundle_dir <- tempfile("oligomet_bundle_")
+        dir.create(bundle_dir)
+        on.exit(unlink(bundle_dir, recursive = TRUE), add = TRUE)
+
+        incProgress(0.05, detail = "Workbook")
+        if (!is.null(rv$wb_path) && file.exists(rv$wb_path))
+          file.copy(rv$wb_path, file.path(bundle_dir, paste0(prefix, "_library.xlsx")))
+
+        incProgress(0.05, detail = "Report")
+        if (!is.null(rv$report_path) && file.exists(rv$report_path))
+          file.copy(rv$report_path, file.path(bundle_dir, paste0(prefix, "_report.html")))
+
+        incProgress(0.05, detail = "PRM list")
+        utils::write.csv(rv$prm, file.path(bundle_dir, paste0(prefix, "_prm_list.csv")),
+                         row.names = FALSE)
+
+        z_range <- input$z_min:input$z_max
+        z2 <- min(input$ms2_z_min, input$ms2_z_max):max(input$ms2_z_min, input$ms2_z_max)
+
+        incProgress(0.1, detail = "MS1 inclusion list")
+        utils::write.csv(
+          thermo_ms1_inclusion_list(rv$mets, rv$dict, z_range = z_range,
+            h_offset = input$h_offset, max_oxid = input$max_oxid,
+            rt_start = 0, rt_end = input$method_length,
+            max_targets = input$ms1_target_cap),
+          file.path(bundle_dir, paste0(prefix, "_MS1_inclusion_list.csv")),
+          row.names = FALSE)
+
+        incProgress(0.1, detail = "MS2 PRM target list")
+        utils::write.csv(
+          thermo_ms2_prm_target_list(rv$mets, rv$dict, z_range = z2,
+            h_offset = input$h_offset, max_oxid = input$max_oxid,
+            rt_start = 0, rt_end = input$method_length,
+            nce = input$hcd_nce, max_targets = input$ms2_target_cap),
+          file.path(bundle_dir, paste0(prefix, "_MS2_PRM_target_list.csv")),
+          row.names = FALSE)
+
+        incProgress(0.1, detail = "MS2 fragment reference")
+        utils::write.csv(ms2_fragment_reference(rv$mets, rv$dict, z_range = z2),
+                         file.path(bundle_dir, paste0(prefix, "_MS2_fragment_reference.csv")),
+                         row.names = FALSE)
+
+        incProgress(0.2, detail = "MS1 spectral library")
+        ms1_lib <- .ms1_library()
+        write_mgf(ms1_lib, file.path(bundle_dir, paste0(prefix, "_MS1_library.mgf")))
+        write_msp(ms1_lib, file.path(bundle_dir, paste0(prefix, "_MS1_library.msp")))
+
+        incProgress(0.2, detail = "MS2 spectral library")
+        ms2_lib <- .ms2_library()
+        write_mgf(ms2_lib, file.path(bundle_dir, paste0(prefix, "_MS2_library.mgf")))
+        write_msp(ms2_lib, file.path(bundle_dir, paste0(prefix, "_MS2_library.msp")))
+
+        incProgress(0.15, detail = "Compressing")
+        zipfile <- normalizePath(file, mustWork = FALSE)
+        old_wd <- setwd(bundle_dir)
+        on.exit(setwd(old_wd), add = TRUE)
+        if (requireNamespace("zip", quietly = TRUE)) {
+          zip::zip(zipfile, list.files("."))
+        } else {
+          utils::zip(zipfile, list.files("."))
+        }
+      })
+    }
+  )
 }
 
 ## ---- Run app ---------------------------------------------------------------

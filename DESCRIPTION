@@ -50,6 +50,7 @@ Suggests:
     markdown,
     enviPat,
     rmarkdown,
-    knitr
+    knitr,
+    zip
 VignetteBuilder: knitr
 RoxygenNote: 7.3.2
