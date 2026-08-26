@@ -13,7 +13,7 @@ submission. Any such use is outside its scope and at the user's own risk.
 
 ## Everything it reports is a prediction
 
-All outputs — metabolite libraries, formulas, masses, charge envelopes,
+All outputs metabolite libraries, formulas, masses, charge envelopes,
 isotope patterns, fragment ions, target lists, and spectral libraries —
 are computed from a chemistry dictionary and modelling assumptions. They
 are not measurements: a match between a predicted mass and an observed
@@ -44,7 +44,7 @@ every result.
 The author is a Research Scientist at Thermo Fisher Scientific,
 disclosed because the package interoperates with Thermo Fisher products
 (BioPharma Finder notation, Orbitrap Exploris mass lists).
-**OligoMetProfiler is an independent personal project** — not a Thermo
+**OligoMetProfiler is an independent personal project**  not a Thermo
 Fisher Scientific product, and not supplied, reviewed, supported,
 endorsed, or approved by Thermo Fisher Scientific or any other company.
 All interoperability is implemented from publicly documented formats
