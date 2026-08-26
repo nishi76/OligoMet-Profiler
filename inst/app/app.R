@@ -66,6 +66,13 @@ if (!requireNamespace("DT", quietly = TRUE)) {
 # loses its folder-browser button.
 .have_shinyfiles <- requireNamespace("shinyFiles", quietly = TRUE)
 
+# Optional: "Download All (.zip)" needs either the zip package or a system
+# zip binary. The zip package is preferred -- it's a self-contained CRAN
+# package, so it works the same on Windows, macOS and Linux without relying
+# on an external zip executable being on PATH.
+.have_zip_pkg <- requireNamespace("zip", quietly = TRUE)
+.have_zip_cmd <- nzchar(Sys.which("zip"))
+
 library(shiny)
 library(DT)
 
@@ -487,6 +494,14 @@ ui <- fluidPage(
 
         ## Download buttons
         tags$h5("Download"),
+        fluidRow(
+          column(12, downloadButton("dl_all_zip", "Download All Outputs (.zip)",
+                                    class = "btn-dark w-100"))
+        ),
+        tags$p(style = "font-size: 11px; color: #6c757d; margin: 6px 0 12px;",
+               "Bundles every file below -- workbook, report, PRM list, ",
+               "acquisition method lists, and spectral libraries -- into ",
+               "one archive."),
         fluidRow(
           column(4, downloadButton("dl_workbook", "Excel Workbook (.xlsx)",
                                    class = "btn-success w-100")),
@@ -1204,6 +1219,86 @@ server <- function(input, output, session) {
                                           "_MS2_library.mgf")
   output$dl_ms2_msp <- .spectral_download(.ms2_library, write_msp,
                                           "_MS2_library.msp")
+
+  ## ---- Download all as a single ZIP ----------------------------------------
+  # Writes every file the individual buttons above offer into a scratch
+  # directory, reusing the same builder calls, then zips it. Built on
+  # demand like the spectral libraries -- most runs never touch this
+  # button, so there's no point building it during Run Pipeline.
+  .write_all_outputs <- function(dir) {
+    prefix <- input$output_prefix
+    z_range <- input$z_min:input$z_max
+    z2 <- min(input$ms2_z_min, input$ms2_z_max):max(input$ms2_z_min, input$ms2_z_max)
+    files <- character(0)
+    add <- function(name, write) {
+      dest <- file.path(dir, name)
+      write(dest)
+      files <<- c(files, dest)
+    }
+
+    if (!is.null(rv$wb_path) && file.exists(rv$wb_path))
+      add(paste0(prefix, "_library.xlsx"),
+          function(dest) file.copy(rv$wb_path, dest))
+    if (!is.null(rv$report_path) && file.exists(rv$report_path))
+      add(paste0(prefix, "_report.html"),
+          function(dest) file.copy(rv$report_path, dest))
+    if (!is.null(rv$prm))
+      add(paste0(prefix, "_prm_list.csv"),
+          function(dest) write.csv(rv$prm, dest, row.names = FALSE))
+
+    add(paste0(prefix, "_MS1_inclusion_list.csv"), function(dest) write.csv(
+      thermo_ms1_inclusion_list(rv$mets, rv$dict, z_range = z_range,
+        h_offset = input$h_offset, max_oxid = input$max_oxid,
+        rt_start = 0, rt_end = input$method_length,
+        max_targets = input$ms1_target_cap),
+      dest, row.names = FALSE))
+    add(paste0(prefix, "_MS2_PRM_target_list.csv"), function(dest) write.csv(
+      thermo_ms2_prm_target_list(rv$mets, rv$dict, z_range = z2,
+        h_offset = input$h_offset, max_oxid = input$max_oxid,
+        rt_start = 0, rt_end = input$method_length,
+        nce = input$hcd_nce, max_targets = input$ms2_target_cap),
+      dest, row.names = FALSE))
+    add(paste0(prefix, "_MS2_fragment_reference.csv"), function(dest) write.csv(
+      ms2_fragment_reference(rv$mets, rv$dict, z_range = z2),
+      dest, row.names = FALSE))
+
+    ms1_lib <- .ms1_library()
+    add(paste0(prefix, "_MS1_library.mgf"), function(dest) write_mgf(ms1_lib, dest))
+    add(paste0(prefix, "_MS1_library.msp"), function(dest) write_msp(ms1_lib, dest))
+    ms2_lib <- .ms2_library()
+    add(paste0(prefix, "_MS2_library.mgf"), function(dest) write_mgf(ms2_lib, dest))
+    add(paste0(prefix, "_MS2_library.msp"), function(dest) write_msp(ms2_lib, dest))
+
+    files
+  }
+
+  output$dl_all_zip <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_all_outputs.zip"),
+    content = function(file) {
+      req(rv$ready, rv$mets, rv$dict)
+      validate(need(.have_zip_pkg || .have_zip_cmd,
+        paste("Zipping needs either the 'zip' R package",
+              "(install.packages(\"zip\")) or a 'zip' command available",
+              "on the server's PATH.")))
+      withProgress(message = "Building complete output bundle...", value = 0.15, {
+        out_dir <- file.path(tempdir(), paste0("omp_zip_", as.integer(Sys.time())))
+        dir.create(out_dir)
+        on.exit(unlink(out_dir, recursive = TRUE), add = TRUE)
+
+        incProgress(0.15, detail = "Collecting output files")
+        out_files <- .write_all_outputs(out_dir)
+
+        incProgress(0.6, detail = "Compressing")
+        if (.have_zip_pkg) {
+          zip::zip(file, files = basename(out_files), root = out_dir)
+        } else {
+          old_wd <- setwd(out_dir)
+          on.exit(setwd(old_wd), add = TRUE)
+          utils::zip(file, files = basename(out_files), flags = "-r9Xq")
+        }
+      })
+    }
+  )
 }
 
 ## ---- Run app ---------------------------------------------------------------
