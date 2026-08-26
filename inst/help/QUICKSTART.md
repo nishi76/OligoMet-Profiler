@@ -1,16 +1,10 @@
 # Quick Start Guide
 
-> **FOR RESEARCH USE ONLY.** Everything below produces computed
-> predictions, not measurements. Confirm every assignment
-> experimentally. Provided without warranty; the author accepts no
-> liability for its use. See DISCLAIMER.md in the repository root.
-
-From zero to a full theoretical metabolite library in about ten minutes.
+> **FOR RESEARCH USE ONLY.** All outputs are computed predictions, not
+> measurements — confirm every assignment experimentally. No warranty;
+> see DISCLAIMER.md.
 
 ## 1. Install and launch
-
-Install the package from GitHub and launch the dashboard -- no clone
-needed:
 
 ```r
 # install.packages(c("remotes", "shiny", "DT", "shinyFiles"))
@@ -18,199 +12,84 @@ remotes::install_github("nishi76/OligoMet-Profiler")
 OligoMetProfiler::run_app()
 ```
 
-Or, from a clone of this repository:
-
-```r
-install.packages("shiny")
-source("install_packages.R")     # installs remaining dependencies
-shiny::runApp(".")
-```
-
-To drive the engine from R instead of the dashboard:
-
-```r
-library(OligoMetProfiler)
-```
-
-Or run the command-line driver on your own sequence: copy
-`run_custom_oligo.R`, edit the CONFIG block at the top, and
+Or from a clone: `source("install_packages.R")` then `shiny::runApp(".")`.
+For scripted runs, copy `run_custom_oligo.R`, edit its CONFIG block, and
 `Rscript run_custom_oligo.R`.
 
-## 2. Read your chemical analysis file
+## 2. Read your documentation
 
-Before you can type the sequence in, you need three pieces of
-information **per nucleotide position**, plus anything attached to the
-ends. All of it is normally in the documentation that came with your
-oligonucleotide — a Certificate of Analysis (CoA), a synthesis report,
-a patent sequence listing, or a BioPharma Finder sequence-editor
-export. Look for:
+From your Certificate of Analysis or synthesis report you need, per
+position: the **base sequence** (watch for 5-methylcytosine — `mC`,
+`5-Me-C`, or a footnote), the **sugar** (e.g. "5-10-5 MOE gapmer"), the
+**backbone linkages** (*n* bases = *n−1* linkages), and any **terminal
+conjugates**.
 
-| What you need | Where it usually appears on the document |
-|---|---|
-| **Base sequence** (A/G/C/T/U, 5'→3') | "Sequence", often in IUPAC letters. Watch for 5-methylcytosine — CoAs write it as `mC`, `5-Me-C`, `C*`, or a footnote ("all cytosines are 5-methyl"). |
-| **Sugar at each position** | "Chemistry", "Modification pattern", or a design shorthand like *"5-10-5 MOE gapmer"* (5 MOE wings, 10 DNA gap, 5 MOE) or *"2'-OMe/2'-F alternating"*. |
-| **Backbone linkages** | "Backbone: full phosphorothioate (PS)" is most common for ASOs. Mixed backbones are listed per position or as a pattern ("PS wings, PO gap"). One oligo of *n* bases has *n−1* linkages. |
-| **Terminal conjugates** | "5'-conjugate / 3'-conjugate": GalNAc, cholesterol, C6 amino linker, phosphate cap, dyes. If nothing is stated, there is none. |
+Codes:
 
-Translate each item with these code tables:
+- **Bases:** `A` `G` `C` `T` `U`, `S` = 5-methyl-C, `D` = 2,6-diaminopurine, `I` = inosine
+- **Sugars:** `d` DNA, `r` RNA, `m` 2'-OMe, `f` 2'-F, `e` MOE, `cEt`, `LNA`
+- **Linkages:** `s` = PS, `o` or `p` = PO
+- **Conjugates:** `GalNAc`, `cholesterol`, `C6`, `TEG`, `FAM`, … (see the app dropdown)
 
-**Bases:** `A` `G` `C` `T` `U`, plus `S` = 5-methylcytosine,
-`D` = 2,6-diaminopurine, `I` = inosine.
+## 3. Enter the sequence
 
-**Sugars:** `d` = DNA (2'-deoxy), `r` = RNA, `m` = 2'-OMe,
-`f` = 2'-F, `e` = MOE (2'-O-methoxyethyl), `cEt`, `LNA`.
+**Easiest: the three-line entry panel.** Type the bases, sugars, and
+linkages as separate lines; a single code is applied to every position.
+Nusinersen:
 
-**Linkages:** `s` = phosphorothioate (PS), `o` or `p` = phosphodiester
-(PO — `p` matches BioPharma Finder's notation).
-
-**Conjugates:** `GalNAc`, `GalNAc3`, `cholesterol`, `C6`, `C12`,
-`TEG`, `FAM`, `Cy3`, `5'-phosphate`, `3'-phosphate` (see the app's
-dropdown or `chemistry_dict.R` for the full list).
-
-## 3. Construct the input string
-
-### The easy way: type the three lines
-
-You do not have to assemble the token string by hand. The dashboard's
-**Manual sequence entry** panel takes the three lines you just read off
-the document and builds the sequence for you:
-
-| Field | Nusinersen |
+| Field | Value |
 |---|---|
 | Bases (5'→3') | `TSASTTTSATAATGSTGG` |
-| Sugars | `eeeeeeeeeeeeeeeeee` — or just `e`, applied to every position |
-| Linkages | `sssssssssssssssss` — or just `s` |
+| Sugars | `e` |
+| Linkages | `s` |
 
-Click Submit and the triplet string appears in the sequence box, along
-with the formula and mass it computed. From R, the same thing:
+Click Submit and the app builds the triplet string and shows the
+computed formula and mass. From R: `parse_three_line("TSAS...", "e", "s")`.
+New to this? [SEQUENCE_GUIDE.md](SEQUENCE_GUIDE.md) walks through it slowly.
 
-```r
-spec <- parse_three_line("TSASTTTSATAATGSTGG", "e", "s")
-```
-
-Never done this before? [SEQUENCE_GUIDE.md](SEQUENCE_GUIDE.md)
-walks through it slowly, with a worked example and the mistakes people
-actually make.
-
-### The explicit way: write the tokens
-
-Write one dash-separated token per nucleotide, 5'→3'. Each token is:
-
-```
-[linkage-coming-into-this-position][BASE][sugar]
-```
-
-The first (5') token has **no** linkage prefix — there is no incoming
-bond.
-
-### Worked example: inotersen
-
-Take a real one. Inotersen's published description reads:
-
-> 20-mer antisense oligonucleotide targeting the TTR 3'UTR (bases
-> 618-637). Sequence: 5'-TCTTGGTTACATGAAATCCC-3'. Design: 5-10-5
-> gapmer; positions 1-5 and 16-20 are 2'-MOE, positions 6-15 are
-> 2'-deoxy. Backbone: full phosphorothioate. All cytosines are
-> 5-methylcytosine. No terminal conjugates.
-
-Build it position by position:
-
-| Pos | Base | Base code | Sugar | Incoming linkage | Token |
-|----:|------|-----------|-------|------------------|-------|
-| 1 | T | `T` | 2'-MOE → `e` | (none, 5' end) | `Te` |
-| 2 | 5-Me-C | `S` | 2'-MOE → `e` | PS → `s` | `sSe` |
-| 3–5 | T, T, G | `T` `T` `G` | 2'-MOE → `e` | PS → `s` | `sTe-sTe-sGe` |
-| 6 | G | `G` | DNA → `d` (gap starts) | PS → `s` | `sGd` |
-| 7–15 | ...gap... | | DNA → `d` | PS → `s` | `sTd-sTd-sAd-sSd-...` |
-| 16 | A | `A` | 2'-MOE → `e` (wing resumes) | PS → `s` | `sAe` |
-| 17–20 | T, C, C, C | `T` `S` `S` `S` | 2'-MOE → `e` | PS → `s` | `sTe-sSe-sSe-sSe` |
-
-Joined with dashes:
+**Explicit: triplet tokens.** One dash-separated token per position,
+5'→3': `[linkage][BASE][sugar]`, with no linkage on the first token.
+Inotersen (5-10-5 MOE gapmer, full PS, all C are 5-Me-C):
 
 ```
 Te-sSe-sTe-sTe-sGe-sGd-sTd-sTd-sAd-sSd-sAd-sTd-sGd-sAd-sAd-sAe-sTe-sSe-sSe-sSe
 ```
 
-Paste that into the app's sequence box, or into the CONFIG block of the
-CLI driver. **How you know it's right:** the computed molecular formula
-should match the published one. For inotersen that is
-`C230H318N69O121P19S19`, average MW 7183.08 — and this pipeline
-reproduces it exactly. Run `validate_reference()` in R to see that check
-run against both inotersen and nusinersen.
+**Check yourself:** the computed formula should match the published one
+(inotersen: `C230H318N69O121P19S19`, avg MW 7183.08 — reproduced exactly;
+see `validate_reference()`).
 
-Sanity checks the parser enforces: token count = oligo length; every
-token after the first starts with a linkage code; every code must exist
-in the dictionary (you get a clear error naming any unknown code).
+Also accepted, auto-detected: **BioPharma Finder triplets**
+(`Ad-pTd-pCd`), **OligoDistiller** notation, and a structured R list
+(needed for terminal conjugates).
 
-### The four bundled examples
-
-Rather than typing them out, four approved drugs ship with the package —
-one per modality class — and are loadable from the app's "Load example"
-dropdown:
-
-| Modality | Drug | Constant | Chemistry |
-|---|---|---|---|
-| Antisense (SSO) | nusinersen | `NUSINERSEN_TRIPLET` | PS, uniform 2'-MOE, 5-methyl pyrimidines |
-| Antisense (gapmer) | inotersen | `INOTERSEN_TRIPLET` | PS, 5-10-5 2'-MOE/DNA gapmer |
-| siRNA (LNP) | patisiran (sense) | `PATISIRAN_SENSE_TRIPLET` | 2'-OMe/ribose, all-PO, dTdT overhang |
-| siRNA (GalNAc) | givosiran (sense) | `GIVOSIRAN_SENSE_TRIPLET` | 2'-OMe/2'-F, partial PS, 3' GalNAc |
-
-siRNA drugs are given as their **sense strand** — the pipeline profiles
-one strand at a time, so run each strand of a duplex separately. The
-GalNAc conjugate on givosiran is set through the `conj3` field (the app
-sets it for you when you load that example), because triplet notation
-has no conjugate field.
-
-### Alternative notations (also accepted, auto-detected)
-
-- **BioPharma Finder triplets** — copy the sequence straight out of
-  BPF's sequence editor (`Ad-pTd-pCd-pAd` style); `p` and `s` parse
-  directly.
-- **OligoDistiller** — `OH-Gm*-Tm*-...-Gm-OH`, where `*` = PS outgoing
-  bond.
-- **Structured R list** — explicit `bases` / `sugars` / `linkages`
-  vectors plus `conj5` / `conj3`; required when you have terminal
-  conjugates. See the vignette for a GalNAc siRNA example.
+**Bundled examples** (app's "Load example" dropdown): nusinersen,
+inotersen, patisiran (sense), givosiran (sense). siRNA duplexes are run
+one strand at a time.
 
 ### Common pitfalls
 
-- **5-methylcytosine**: 2'-MOE antisense drugs almost always use 5-Me-C
-  at every cytosine. If the CoA says so, use base code `S`, not `C` —
-  the mass differs by CH₂ (14.016 Da) per site. In inotersen that is
-  five sites, so getting it wrong shifts the parent mass by 70 Da.
-- **5-methyluracil is thymine**: CoAs for MOE drugs often write `MeU` or
-  `5-Me-U`. That is the same nucleobase as thymine — use base code `T`.
-- **Linkage count**: *n* bases means *n−1* linkage codes. The parser
-  puts the linkage on the *following* token.
-- **A modification you don't have a code for**: add it as a custom
-  override with its elemental formula (app: custom chemistry table;
-  CLI: `custom_overrides` block) — see "Custom chemistry overrides" in
-  the vignette.
+- **5-Me-C** must be `S`, not `C` — 14.016 Da per site.
+- **5-Me-U is thymine** — use `T`.
+- ***n* bases need *n−1* linkage codes** (on the *following* token).
+- **Unknown modification?** Add it as a custom override with its formula
+  (app: custom chemistry table) — see [MODIFICATIONS.md](MODIFICATIONS.md).
 
 ## 4. Run and collect outputs
 
-Click **Run** in the app (or run the CLI driver). You get:
+Click **Run**. You get the 7-sheet Excel workbook, an HTML report,
+Orbitrap Exploris MS1 inclusion and MS2 PRM target lists (CSV), and
+MGF/MSP spectral libraries.
 
-- `*_library.xlsx` — 7-sheet workbook (library, charge envelopes,
-  PS-oxidation series, fragment ions, PRM list, summary),
-- `*_report.html` — plots and summary report,
-- Orbitrap Exploris **MS1 inclusion** and **MS2 PRM** target lists
-  (CSV, Method Editor import-ready).
+## 5. (Optional) match against LC-MS data
 
-## 5. (Optional) match against your LC-MS data
-
-Upload an `mzML`/`mzXML` file (or a two-column m/z–intensity peak
-list) in the app's MS panel, or set `MS_FILE` in the CLI driver.
-Vendor raw files convert automatically when ProteoWizard `msconvert`
-is on the PATH. The MS Matching sheet of the workbook then reports
-matched features with ppm error, isotope-fit, envelope-consistency,
-and MS2 confirmation scores.
-
+Upload an mzML/mzXML file or two-column peak list in the MS panel.
+Vendor raw files convert automatically when ProteoWizard `msconvert` is
+on the PATH. The MS Matching sheet reports matches with ppm error,
+isotope-fit, envelope-consistency, and MS2 confirmation scores.
 
 ---
 
-*OligoMetProfiler -- Nishikant Wase, PhD (nishikant.wase@gmail.com),
-author and developer; Research Scientist, Thermo Fisher Scientific. An
-independent personal project, not a Thermo Fisher Scientific product.
-MIT licence. Research use only; see DISCLAIMER.md for the full
-disclosure statement.*
+*OligoMetProfiler — Nishikant Wase, PhD. Independent personal project,
+not a Thermo Fisher Scientific product. MIT licence. Research use only;
+see DISCLAIMER.md.*

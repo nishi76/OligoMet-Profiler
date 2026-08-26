@@ -1953,19 +1953,19 @@
       "checksum": "b62d1a78b64943f68b3c3e0e08e7c053"
     },
     "DESCRIPTION": {
-      "checksum": "440799d1e0a6f77584377cdf11d4f189"
+      "checksum": "0920b9816808c8508d02d0ee4c5f66f5"
     },
     "DISCLAIMER.md": {
-      "checksum": "b1485dc94482de5c818160f26d1c855e"
+      "checksum": "5b5bb60e8f638e0e90fbbf9d11197408"
     },
     "inst/app/app.R": {
       "checksum": "077338929eaef2a69bee6c2dfeda3854"
     },
     "inst/help/MODIFICATIONS.md": {
-      "checksum": "a021659b421ff5300e146e63da044caf"
+      "checksum": "98d464ae99e4da0de60c2309afadb193"
     },
     "inst/help/QUICKSTART.md": {
-      "checksum": "bd31a0f9d9b2468e7ab66d0284dcb8a4"
+      "checksum": "bb0310fecc59d72343a1d1e020abcf12"
     },
     "inst/help/SEQUENCE_GUIDE.md": {
       "checksum": "55affd96ad8a4a3a8dc4e6754470cf45"
@@ -1980,7 +1980,7 @@
       "checksum": "81f2228e3d845b602095a26152cb1380"
     },
     "R/about.R": {
-      "checksum": "908b6f839ca7c4678abb913d395041b7"
+      "checksum": "6d63f3cf1db4f701e57adea607efbd56"
     },
     "R/build_report.R": {
       "checksum": "ed8976093b685efad284c350f4ca1e09"

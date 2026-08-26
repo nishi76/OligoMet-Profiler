@@ -10,31 +10,25 @@ Authors@R: person("Nishikant", "Wase",
     comment = "Author and developer; Research Scientist, Thermo Fisher
     Scientific. An independent personal project, not a Thermo Fisher
     Scientific product.")
-Description: A general-purpose pipeline for in-silico metabolite
-    identification of therapeutic oligonucleotides (antisense
-    oligonucleotides, siRNA, and related modalities). This pipeline generates
-    theoretical metabolite libraries (3'/5' exonuclease truncations and
-    endonuclease internal fragments), molecular formulas, monoisotopic
-    and average masses, negative-ESI charge envelopes with adduct
-    variants, isotope patterns, phosphorothioate oxidation series,
-    MS/MS fragment ions, and PRM inclusion lists for any
-    sequence built from DNA, RNA, 2'-O-methyl, 2'-fluoro, MOE, cEt, or
-    LNA chemistry with mixed PO/PS backbones. Here four approved oligonucleotide
-    therapeutics (nusinersen, inotersen, patisiran, givosiran) are provided as working 
-    examples spanning the major modality classes; two double as
-    the formula engine's regression anchors, reproducing their
-    published molecular formulas. Matching the
-    theoretical library against uploaded mzML/mzXML or peak-list MS
-    data (still under production).  This app exports a multi-sheet Excel workbook and HTML/PDF report, and
-    writes targeted mass lists formatted for the Thermo Orbitrap
-    Exploris Method Editor. Exports theoretical MS1 and MS2 spectral
-    libraries as MGF and MSP. A Shiny dashboard (launched with
-    run_app(), with the user guides built in) and command-line drivers
-    wrap the same engine. FOR RESEARCH USE ONLY: not for diagnostic,
-    clinical, or regulatory submission use. All outputs are computed
-    predictions, not measurements, and must be confirmed experimentally;
-    the software is provided without warranty and the author accepts no
-    liability for its use (see DISCLAIMER.md).
+Description: In-silico metabolite identification for therapeutic
+    oligonucleotides (antisense, siRNA, and related modalities).
+    Generates theoretical metabolite libraries (exonuclease truncations
+    and endonuclease internal fragments), molecular formulas,
+    monoisotopic and average masses, negative-ESI charge envelopes,
+    isotope patterns, phosphorothioate oxidation series, MS/MS fragment
+    ions, and PRM inclusion lists for any sequence built from DNA, RNA,
+    2'-O-methyl, 2'-fluoro, MOE, cEt, or LNA chemistry with mixed PO/PS
+    backbones. Exports a multi-sheet Excel workbook, an HTML report,
+    MGF/MSP spectral libraries, and targeted mass lists for the Thermo
+    Orbitrap Exploris Method Editor; optionally matches the library
+    against mzML/mzXML or peak-list data. Four approved drugs
+    (nusinersen, inotersen, patisiran, givosiran) ship as worked
+    examples, two of which anchor the formula engine's regression tests.
+    A Shiny dashboard (run_app()) and command-line drivers wrap the same
+    engine. FOR RESEARCH USE ONLY: not for diagnostic, clinical, or
+    regulatory submission use. All outputs are computed predictions that
+    must be confirmed experimentally; provided without warranty (see
+    DISCLAIMER.md).
 License: MIT + file LICENSE
 URL: https://github.com/nishi76/OligoMet-Profiler
 BugReports: https://github.com/nishi76/OligoMet-Profiler/issues

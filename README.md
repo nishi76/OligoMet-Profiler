@@ -1,37 +1,31 @@
 # OligoMet Profiler
 
 > **FOR RESEARCH USE ONLY.** Not for diagnostic, clinical, or regulatory
-> submission use. Every value this software produces is a computed
-> prediction, not a measurement, and must be confirmed experimentally.
-> Provided without warranty; the author accepts no liability for its use.
-> See [DISCLAIMER.md](DISCLAIMER.md).
+> submission use. Every value is a computed prediction, not a
+> measurement, and must be confirmed experimentally. No warranty; see
+> [DISCLAIMER.md](DISCLAIMER.md).
 
-A general-purpose R pipeline for generating theoretical metabolite
-libraries, charge envelopes, isotope patterns, McLuckey MS/MS fragment ions,
-and PRM inclusion lists for any therapeutic oligonucleotide -- DNA, RNA,
-2'OMe, 2'F, MOE, cEt, LNA, mixed PO/PS backbones, and custom chemistry via
-dictionary overrides -- with optional matching against uploaded MS data.
-Ships as an installable R package (`OligoMetProfiler`) with a Shiny
+An R pipeline that generates theoretical metabolite libraries, charge
+envelopes, isotope patterns, McLuckey MS/MS fragment ions, and PRM
+inclusion lists for any therapeutic oligonucleotide — DNA, RNA, 2'-OMe,
+2'-F, MOE, cEt, LNA, mixed PO/PS backbones, and custom chemistry via
+dictionary overrides — with optional matching against uploaded MS data.
+Ships as an installable package (`OligoMetProfiler`) with a Shiny
 dashboard.
 
-Background information is obtained from published work SynONIM (Lippens et al., JASMS 2024), the Eluforsen metabolite
-profiling study (Kim et al., Mol Ther Nucleic Acids 2019), OligoDistiller
-(Liu et al., Anal Chem 2025), and the FMVS automatic metabolite ID method
-(Ye et al., J Chromatogr B 2025). Four approved oligonucleotide
-therapeutics are bundled as working examples, one per modality class in
-Takakusa et al. (2023) -- **nusinersen** (antisense SSO), **inotersen**
-(antisense gapmer), **patisiran** (siRNA in LNP) and **givosiran**
-(GalNAc-siRNA). They are illustrations, not default targets -- run the pipeline on any sequence.
-See the [Bibliography](#bibliography) for sources.
+Method background comes from SynONIM (Lippens et al. 2024), the
+eluforsen metabolite profiling study (Kim et al. 2019), OligoDistiller
+(Liu et al. 2025), and FMVS automatic metabolite ID (Ye et al. 2025);
+see the [Bibliography](#bibliography). Four approved drugs are bundled
+as worked examples, one per modality class in Takakusa et al. (2023) —
+they are illustrations, not default targets.
 
-**New here?** Start with [QUICKSTART.md](inst/help/QUICKSTART.md) -- This document will helps user 
-through reading Certificate of Analysis / synthesis documentation and
-constructing a valid input string. The full workflow documentation is the
-package vignette, [vignettes/OligoMetProfiler.Rmd](vignettes/OligoMetProfiler.Rmd).
+**New here?** Start with [QUICKSTART.md](inst/help/QUICKSTART.md), which
+covers reading a Certificate of Analysis and building a valid input
+string. Full workflow documentation is in the
+[vignette](vignettes/OligoMetProfiler.Rmd).
 
 ## Installation
-
-As an R package, straight from GitHub:
 
 ```r
 # install.packages(c("remotes", "shiny", "DT", "shinyFiles"))
@@ -39,44 +33,35 @@ remotes::install_github("nishi76/OligoMet-Profiler")
 library(OligoMetProfiler)   # engine functions
 OligoMetProfiler::run_app() # launches the dashboard
 ```
-Or clone the repository to use the Shiny dashboard and CLI drivers:
+
+Or from a clone, for the dashboard and CLI drivers:
 
 ```r
-install.packages("shiny")   # if not already installed
-source("install_packages.R") # installs the rest of the dependencies
-shiny::runApp(".")          # launches the dashboard
+install.packages("shiny")
+source("install_packages.R")  # installs the rest
+shiny::runApp(".")
 ```
 
-Or from the shell, once dependencies are installed:
+The dashboard carries its own documentation in a **Help & guides** panel
+(quick start, sequence guide, modification reference).
 
-```bash
-Rscript -e 'shiny::runApp(".", launch.browser = TRUE)'
-```
-
-The dashboard carries its own documentation: a **Help & guides** panel
-on the front page quick start, the sequence guide and the
-modification reference.
-
-If the user do not want to assemble triplet notation by hand, the **Manual
-sequence entry** panel in the middle of the dashboard takes information provided by the chemical analysis file  -- bases, sugars and
-linkages -- and it will build the sequence for you:
+Rather than assembling triplet notation by hand, the **Manual sequence
+entry** panel takes the three lines off your analysis document — bases,
+sugars, linkages — and builds the sequence:
 
 | Field | Example |
 |---|---|
-| Bases (5'->3') | `TSASTTTSATAATGSTGG` |
+| Bases (5'→3') | `TSASTTTSATAATGSTGG` |
 | Sugars | `eeeeeeeeeeeeeeeeee` (or just `e` for all positions) |
 | Linkages | `sssssssssssssssss` (or just `s`) |
 
 [SEQUENCE_GUIDE.md](inst/help/SEQUENCE_GUIDE.md) walks a first-time user
-through reading those three lines off a chemical analysis file, and
-through exporting the same sequence as a BioPharma Finder FASTA.
+through reading those three lines and exporting a BioPharma Finder FASTA.
 
 ## Bundled reference examples
 
-Four approved oligonucleotide therapeutics ship with the package, one per
-modality class in Takakusa et al. (2023) Table 1. They are selectable from
-the app's "Load example" dropdown and available programmatically as
-constants and through the `REFERENCE_OLIGOS` registry:
+Selectable from the app's "Load example" dropdown, and available
+programmatically as constants and via the `REFERENCE_OLIGOS` registry:
 
 | Modality | Drug (brand) | nt | Chemistry | Constant |
 |---|---|---:|---|---|
@@ -85,136 +70,107 @@ constants and through the `REFERENCE_OLIGOS` registry:
 | siRNA (LNP) | patisiran (ONPATTRO) | 21 | 2'-OMe/ribose, all-PO backbone, dTdT overhang | `PATISIRAN_SENSE_TRIPLET` |
 | siRNA (GalNAc) | givosiran (GIVLAARI) | 21 | 2'-OMe/2'-F, partial PS, 3' trivalent GalNAc | `GIVOSIRAN_SENSE_TRIPLET` |
 
-siRNA entries are the **sense strand** -- this pipeline profiles one strand
-at a time, so run each strand of a duplex separately. Givosiran's GalNAc is
-carried in the registry's `conj3` field, since triplet notation has no
-conjugate field (`GIVOSIRAN_SENSE_SPEC` gives the equivalent structured
-form).
-
 ```r
-library(OligoMetProfiler)
 spec <- parse_input(INOTERSEN_TRIPLET)
 mets <- generate_metabolites(spec, opts = list(oligo_name = "inotersen",
                                                endo = TRUE, endo_sites = "gap"))
 ```
 
+siRNA entries are the **sense strand** — the pipeline profiles one
+strand at a time, so run each strand separately. Givosiran's GalNAc is
+carried in the registry's `conj3` field, since triplet notation has no
+conjugate field.
+
 Each modality stresses a different part of the pipeline: gapmers cleave
 endonucleolytically in the DNA gap, sugar-modified SSOs degrade from the
-termini by exonuclease, the all-PO siRNA has no PS oxidation series to
-model, and the GalNAc conjugate is retained on 5' truncations but lost from
-3' truncations that cut past it.
+termini, the all-PO siRNA has no PS oxidation series, and the GalNAc
+conjugate is retained on 5' truncations but lost from 3' ones cutting
+past it.
 
 ## BioPharma Finder compatibility
 
-Triplet sequences copied from Thermo BioPharma Finder's sequence editor
-(e.g. `Ad-pTd-pCd-pAd`) are accepted directly -- `p` is recognized as the
-phosphodiester linkage, matching BPF's own notation, alongside this
-pipeline's original `o`. `s` (phosphorothioate) already matched BPF's
-convention. BPF's 5'/3' terminal modification codes (biotin, cAG/cAU/ARCA/
-mCAP cap analogs, triantennary GalNAc) are available from the conjugate
-dropdowns in the app under
-descriptive names rather than BPF's own single-letter codes, since those
-letters (`a`, `u`, `r`, `c`) already mean specific sugars or linkages in
-this dictionary. Their formulas come straight from the BioPharma Finder
-5.2 Oligonucleotide Analysis User Guide's "Modification notation" topic.
+Triplet sequences from BPF's sequence editor (`Ad-pTd-pCd-pAd`) parse
+directly — `p` is recognized as phosphodiester alongside this pipeline's
+`o`, and `s` already matched. BPF's terminal modification codes (biotin,
+cap analogs, triantennary GalNAc) appear in the app's conjugate
+dropdowns under descriptive names, since BPF's single letters (`a`, `u`,
+`r`, `c`) already mean specific sugars or linkages here. Formulas come
+from the BioPharma Finder 5.2 user guide.
 
-Going the other way, `format_biopharma_fasta()` -- the app's **BPF
-FASTA** button -- writes the current sequence as a FASTA record for
-BioPharma Finder's Sequence Manager ("Import FASTA File"):
+Going the other way, `format_biopharma_fasta()` — the app's **BPF
+FASTA** button — writes the sequence as a FASTA record for BPF's
+Sequence Manager:
 
 ```
 >nusinersen | 18-mer
 Te-sSe-sAe-sSe-sTe-sTe-sTe-sSe-sAe-sTe-sAe-sAe-sTe-sGe-sSe-sTe-sGe-sGe
 ```
 
-Two things to check on the BPF side, since they depend on your
-installation rather than on this package: **sugar codes** resolve against
-BPF's own Building Block editor, so a modification your site defined
-under a different code needs renaming or adding there; and **terminal
-conjugates** have nowhere to live in triplet notation, so the export
-writes them into the header as a reminder and you set them as terminus
-modifications yourself. See
+Two things depend on your BPF installation: **sugar codes** resolve
+against its Building Block editor, so a locally-defined code needs
+renaming or adding there; and **terminal conjugates** have nowhere to
+live in triplet notation, so the export writes them into the header as a
+reminder and you set them yourself. See
 [SEQUENCE_GUIDE.md](inst/help/SEQUENCE_GUIDE.md) section 7.
 
 ## Modification coverage
-
-The dictionary covers the chemistries used in approved and clinical
-oligonucleotide therapeutics, plus the next-generation ones now in
-development:
 
 | Class | Codes |
 |---|---|
 | Sugars | `d` `r` `m` `f` `FANA` `e`/`MOE` **`NMA`** `allyl` `AP` `NH2` `UNA` `GNA` `LNA` `ENA` `cEt` `NP` |
 | Backbones | `o`/`p` `s`/`u` `mp` `prp` `ibu` `chx` `mop` `pace` `tpace` **`msp`** `pgo` `tmg` |
-| Conjugates | GalNAc (mono/trivalent/triantennary), cholesterol, C6/C12, TEG, FAM, Cy3, phosphate and thiophosphate caps, cap analogs, fatty acids (`myristoyl` `palmitoyl` `stearoyl` `docosanoyl`) |
+| Conjugates | GalNAc (mono/tri/triantennary), cholesterol, C6/C12, TEG, FAM, Cy3, phosphate and thiophosphate caps, cap analogs, fatty acids |
 
-A few worth calling out, because their mass differences are the ones
-people most often need:
+The mass differences people most often need:
 
-- **2'-O-NMA** (2'-O-[2-(methylamino)-2-oxoethyl]) is **+12.9953 Da per
-  position vs MOE** -- an amide where MOE has an ether.
+- **2'-O-NMA** is **+12.9953 Da per position vs MOE** — an amide where
+  MOE has an ether.
 - **Mesyl phosphoramidate** (msPA) is **+61.0164 Da per bond vs PS**.
-- **Phosphoryl guanidine** comes in two variants that differ by
-  2.0157 Da per bond (`pgo` cyclic, `tmg` tetramethyl) -- check which
-  one your synthesis used before assigning anything.
+- **Phosphoryl guanidine** has two variants differing by 2.0157 Da per
+  bond (`pgo` cyclic, `tmg` tetramethyl) — check which yours is.
 - **FANA** is exactly isobaric with 2'-F ribo; MS cannot distinguish
-  them, and the separate code exists only to keep the sequence record
-  correct.
-- **UNA** and **GNA** are duplex destabilizers used positionally in
-  siRNA, at +2.0157 and −58.0055 Da vs RNA.
+  them.
+- **UNA** and **GNA** are siRNA destabilizers at +2.0157 and −58.0055 Da
+  vs RNA.
 
-[inst/help/MODIFICATIONS.md](inst/help/MODIFICATIONS.md) is the full
-reference: every code, its residue formula, its mass difference from the
-parent chemistry, how to enter it, and how to add one the dictionary
-does not have. `tests/test_modifications.R` recomputes every number in
-it and anchors each sugar against an independently known nucleoside
-formula.
+[MODIFICATIONS.md](inst/help/MODIFICATIONS.md) is the full reference:
+every code, residue formula, mass difference, and how to add one the
+dictionary lacks. `tests/test_modifications.R` recomputes every number.
 
-Morpholino (PMO), PNA and boranophosphate are deliberately absent --
-the first two do not decompose into base/sugar/linkage residues, and
-boranophosphate needs boron added to the element table (with its
-isotope abundances, not just a mass). The guide explains what to do
-about each.
+Morpholino (PMO), PNA, and boranophosphate are deliberately absent — the
+first two do not decompose into base/sugar/linkage residues, and
+boranophosphate needs boron added to the element table with its isotope
+abundances. The guide explains what to do about each.
 
-## Orbitrap Exploris acquisition method export
+## Orbitrap Exploris acquisition export
 
-The app export targeted mass lists formatted
-for the Orbitrap Exploris Method Editor's Targeted Mass filter (Mass List
-Type "m/z & z", Time Mode "Start/End Time" -- select that when importing,
-or "Unscheduled" if you'd rather ignore the time columns). Column layout
-follows the Orbitrap Exploris 240 Software Manual's "Targeted Inclusion --
-Targeted Mass filter" topic exactly: `Compound, Formula, Adduct, m/z, z,
-Intensity Threshold, t start (min), t stop (min), HCD Collision Energies
-(%), Maximum Injection Time (ms)`.
+Targeted mass lists follow the Orbitrap Exploris Software Manual's
+"Targeted Inclusion — Targeted Mass filter" column layout exactly
+(`Compound, Formula, Adduct, m/z, z, Intensity Threshold, t start, t
+stop, HCD Collision Energies (%), Maximum Injection Time`). Import with
+Mass List Type "m/z & z" and Time Mode "Start/End Time" (or
+"Unscheduled").
 
-- **MS1 Inclusion List** -- every (metabolite, PS-oxidation level, charge
-  state) combination across the configured charge envelope. Import into a
-  Full Scan experiment's Targeted Mass filter to prioritize these masses.
-- **MS2 PRM Target List** -- the same style of list, narrowed to a smaller
-  charge range (PRM duty cycle degrades quickly with target count) and
-  tagged with an HCD collision energy. Import as the target list for a
-  Targeted MS2 (tMS2)/PRM scan.
-- **MS2 Fragment Reference** -- theoretical McLuckey fragment ions (a/a-B/
-  b/b-B/c/w/x/y, plus internal fragments) per metabolite. This is **not**
-  a Method Editor import -- PRM targets a precursor and records the full
-  fragment spectrum, it doesn't take individual fragment ions as
-  acquisition input. This table is for interpreting the resulting spectra
-  afterward (manual annotation, or building a Skyline-style transition
-  list).
+- **MS1 Inclusion List** — every (metabolite, PS-oxidation level, charge
+  state) across the configured envelope, for a Full Scan experiment.
+- **MS2 PRM Target List** — the same, narrowed to a smaller charge range
+  (PRM duty cycle degrades with target count) and tagged with an HCD
+  collision energy, for a tMS2/PRM scan.
+- **MS2 Fragment Reference** — theoretical McLuckey fragment ions
+  (a/a-B/b/b-B/c/w/x/y plus internal). **Not** a Method Editor import;
+  PRM targets precursors, so this is for interpreting the resulting
+  spectra afterward or building a Skyline-style transition list.
 
-The default HCD NCE (20%) is a starting point for HCD of phosphorothioate
-oligonucleotide backbones, not a validated instrument parameter -- optimize
-it per method. Both list functions cap the number of rows (`max_targets`,
-configurable) since the Method Editor's own limit is 150,000 rows per file
-but PRM cycle time degrades well before that.
+The default HCD NCE (20%) is a starting point for PS backbones, not a
+validated parameter — optimize per method. Both list functions cap rows
+(`max_targets`), since PRM cycle time degrades well before the Method
+Editor's own 150,000-row limit.
 
 ## Spectral library export
 
-The theoretical library also exports as MGF and MSP -- the two formats
-that spectral-library tools read (MS-DIAL, mzVault/Compound Discoverer,
-MZmine, matchms, SIRIUS, GNPS). Four files, from the app's **Spectral
-Libraries** download row, from the "Save to folder" field, or from
-`export_spectral_libraries()`:
+The library also exports as MGF and MSP, read by MS-DIAL,
+mzVault/Compound Discoverer, MZmine, matchms, SIRIUS, and GNPS — from
+the app's **Spectral Libraries** download row or from R:
 
 ```r
 export_spectral_libraries(mets, dict, out_dir = "results", prefix = "my_oligo")
@@ -222,67 +178,54 @@ export_spectral_libraries(mets, dict, out_dir = "results", prefix = "my_oligo")
 #> results/my_oligo_MS2_library.mgf   my_oligo_MS2_library.msp
 ```
 
-- **MS1 library** -- one spectrum per (metabolite, PS-oxidation level,
-  charge state). The peaks are the theoretical isotope cluster at that
-  charge, so their intensities are real relative abundances and can be
-  matched against an acquired isotope pattern. Peaks are annotated with
-  their true isotopologue offset (`M+0`, `M+1`, ...), and the cluster is
-  anchored on the m/z computed directly from the formula.
-- **MS2 library** -- one spectrum per (metabolite, precursor charge
-  state), holding the McLuckey fragment ions (terminal a/a-B/b/b-B/c/w/x/y
-  plus w-a/w-b/w-d internal ions) at the requested fragment charges, each
-  annotated in the MSP (`w4^2-`, `a-B5^1-`, `w-a(3,8)^1-`).
-
+- **MS1 library** — one spectrum per (metabolite, oxidation level,
+  charge state). Peaks are the theoretical isotope cluster, so
+  intensities are real relative abundances matchable against an acquired
+  pattern, annotated with isotopologue offset (`M+0`, `M+1`, …).
+- **MS2 library** — one spectrum per (metabolite, precursor charge),
+  holding McLuckey terminal and internal ions at the requested fragment
+  charges, annotated in the MSP (`w4^2-`, `a-B5^1-`, `w-a(3,8)^1-`).
+  Intensities are flat placeholders — match on *m/z* only.
 
 ## Performance
 
-The **Charge Envelopes** computation is the heaviest step: one isotope
-pattern per metabolite × PS-oxidation level. Isotope patterns are memoized
-per formula (both the enviPat engine and the built-in fallback), so charge
-states and adducts add no repeated cost, and the Excel workbook itself is
-written in bulk -- one write per sheet, styling restricted to headers and a
-few accent cells -- so `saveWorkbook()` completes in seconds even for
-libraries with tens of thousands of envelope rows. A full default run on a
-16-mer (endonuclease fragments on, `max_oxid = 6`, z = 3–12) builds and
-saves the workbook in well under a minute on a typical laptop.
+**Charge Envelopes** is the heaviest step: one isotope pattern per
+metabolite × oxidation level. Patterns are memoized per formula, so
+charge states and adducts add no repeated cost, and the workbook is
+written in bulk. A full default run on a 16-mer (endonuclease fragments
+on, `max_oxid = 6`, z = 3–12) builds and saves in well under a minute on
+a typical laptop.
 
-To speed a long run up further: uncheck "Include endonuclease fragments",
-lower "Max PS oxid.", or narrow the charge range -- all directly reduce the
-number of isotope-pattern calls.
+To speed up a long run: uncheck "Include endonuclease fragments", lower
+"Max PS oxid.", or narrow the charge range — each directly reduces
+isotope-pattern calls.
 
-If the app appears completely unresponsive (Run does nothing, no error, no
-progress) after clicking a folder picker button, an earlier version of this
-app used `tcltk`/`utils::choose.dir()` for the "Browse..." button --
-blocking native OS dialogs, which on a single-threaded Shiny process can
-freeze the entire app (not just the picker) if the dialog fails to
-initialize properly, which happened intermittently on Windows depending on
-how the R process was spawned. This was replaced with an in-app
-`shinyFiles` picker, which can't block the R process the same way. If
-you're on a version with the old picker, update to this one. Separately,
-the Run handler is wrapped in a top-level `tryCatch`, so any unexpected
-error anywhere in the pipeline gets reported in the status panel instead
-of silently doing nothing.
+If the app seems unresponsive after clicking the folder picker, you are
+on an old version: `tcltk`/`utils::choose.dir()` used blocking native
+dialogs that could freeze the single-threaded Shiny process. That was
+replaced with an in-app `shinyFiles` picker. Separately, the Run handler
+is wrapped in a top-level `tryCatch`, so unexpected errors are reported
+in the status panel instead of silently doing nothing.
 
 ## Dependencies
 
-Required: `openxlsx`, `ggplot2`, `xml2`, `xfun` (installed automatically
-with the package). For the Shiny app: `shiny`, `DT`, `bslib`,
-`shinyFiles`. Optional: `enviPat` (higher-accuracy isotope patterns; a
-built-in convolution method is used if absent), `rmarkdown` (needed to
-render HTML/PDF reports). `install_packages.R` installs the required set
-and offers to install the optional set.
+Required: `openxlsx`, `ggplot2`, `xml2`, `xfun` (installed with the
+package). Dashboard: `shiny`, `DT`, `bslib`, `shinyFiles`. Optional:
+`enviPat` (higher-accuracy isotope patterns; a built-in convolution is
+used if absent) and `rmarkdown` (HTML/PDF reports). `install_packages.R`
+installs the required set and offers the optional one.
 
-mzML import additionally uses `python3` if it's on PATH, and vendor raw
-conversion uses `msconvert` (ProteoWizard) if it's on PATH. Both are
-optional -- the app runs without them, with reduced MS-import coverage.
+mzML import uses `python3` if on PATH; vendor raw conversion uses
+ProteoWizard `msconvert` if on PATH. Both optional — the app runs
+without them, with reduced MS-import coverage.
 
 ## Known limitations
 
-- No `testthat` suite -- the `tests/` scripts are console-output checks,
+- No `testthat` suite — the `tests/` scripts are console-output checks,
   not asserted unit tests.
-- Default parameters (charge range, oxidation cap, ppm tolerance, etc.) are
-  set independently in `inst/app/app.R` and in the CLI driver, so changing a
-  default in one place doesn't propagate to the other.
+- Default parameters (charge range, oxidation cap, ppm tolerance) are
+  set independently in `inst/app/app.R` and the CLI driver, so a change
+  in one does not propagate to the other.
 
 ## Bibliography
 
@@ -299,51 +242,43 @@ optional -- the app runs without them, with reduced MS-import coverage.
    oligonucleotides by full MS variable scanning. *J Chromatogr B* (2025).
 5. McLuckey S.A., Van Berkel G.J., Glish G.L. Tandem mass spectrometry of
    small, multiply charged oligonucleotides. *J Am Soc Mass Spectrom*
-   3:60-70 (1992). -- fragment ion nomenclature (a/a-B/b/c/w/x/y/z).
+   3:60-70 (1992). — fragment ion nomenclature (a/a-B/b/c/w/x/y/z).
 
 ### Reference drugs and modality classification
 
-6. Takakusa H., Iwazaki N., Nishikawa M., Yoshida T., Obika S., Inoue T.
-   Drug Metabolism and Pharmacokinetics of Antisense Oligonucleotide
-   Therapeutics: Typical Profiles, Evaluation Approaches, and Points to
-   Consider Compared with Small Molecule Drugs. *Nucleic Acid Therapeutics*
-   33(2):83-94 (2023). [doi:10.1089/nat.2022.0054](https://doi.org/10.1089/nat.2022.0054)
-   -- source of the modality classification (Table 1) used for the four
-   bundled examples, and of the class-specific metabolism routes.
+6. Takakusa H. *et al.* Drug Metabolism and Pharmacokinetics of Antisense
+   Oligonucleotide Therapeutics. *Nucleic Acid Therapeutics* 33(2):83-94
+   (2023). [doi:10.1089/nat.2022.0054](https://doi.org/10.1089/nat.2022.0054)
+   — modality classification (Table 1) for the four bundled examples, and
+   the class-specific metabolism routes.
 7. Egli M., Manoharan M. Chemistry, structure and function of approved
    oligonucleotide therapeutics. *Nucleic Acids Research* 51(6):2529-2573
    (2023). [doi:10.1093/nar/gkad067](https://doi.org/10.1093/nar/gkad067)
-   -- chemistry and structural review of the approved oligonucleotide drugs.
-8. SPINRAZA (nusinersen) prescribing information, Biogen -- 18-mer sequence,
-   uniform 2'-MOE/PS chemistry with 5-methyl pyrimidines, and free-acid
-   molecular formula C234H340N61O128P17S17.
-9. TEGSEDI (inotersen) prescribing information, Akcea Therapeutics / Ionis
-   Pharmaceuticals -- 5-10-5 MOE gapmer design, TTR 3'UTR target sequence
-   (bases 618-637), and free-acid molecular formula C230H318N69O121P19S19
-   (average MW 7183.08).
-10. ONPATTRO (patisiran) prescribing information, Alnylam Pharmaceuticals --
-    siRNA duplex sequences, per-position 2'-OMe pattern, dTdT overhangs, and
-    lipid-nanoparticle formulation.
-11. GIVLAARI (givosiran) prescribing information, Alnylam Pharmaceuticals --
-    ESC-GalNAc siRNA sequences, 2'-F/2'-OMe alternation, terminal
-    phosphorothioate placement, and the trivalent GalNAc (L96) 3' conjugate.
+8. SPINRAZA (nusinersen) prescribing information, Biogen — 18-mer sequence,
+   uniform 2'-MOE/PS chemistry, free-acid formula C234H340N61O128P17S17.
+9. TEGSEDI (inotersen) prescribing information, Akcea/Ionis — 5-10-5 MOE
+   gapmer, TTR 3'UTR target (bases 618-637), free-acid formula
+   C230H318N69O121P19S19 (average MW 7183.08).
+10. ONPATTRO (patisiran) prescribing information, Alnylam — duplex
+    sequences, 2'-OMe pattern, dTdT overhangs, LNP formulation.
+11. GIVLAARI (givosiran) prescribing information, Alnylam — ESC-GalNAc
+    sequences, 2'-F/2'-OMe alternation, terminal PS placement, trivalent
+    GalNAc (L96) 3' conjugate.
 
 ### Instrument and software documentation
 
 12. Thermo Fisher Scientific. *BioPharma Finder 5.2 Oligonucleotide Analysis
-    User Guide* -- triplet sequence notation and terminal modification codes.
+    User Guide* — triplet notation and terminal modification codes.
 13. Thermo Fisher Scientific. *Orbitrap Exploris 120 Software Manual*,
-    "Targeted Inclusion -- Targeted Mass filter" -- the mass-list column
-    layout used by the acquisition exports.
+    "Targeted Inclusion — Targeted Mass filter" — mass-list column layout.
 
 ## Author
 
-**Nishikant Wase, PhD** -- author and developer
+**Nishikant Wase, PhD** — author and developer
 Research Scientist, Thermo Fisher Scientific
 <nishikant.wase@gmail.com>
 
-Designed, written and maintained by the author. If this software
-contributes to work you publish, please cite it as:
+If this software contributes to work you publish, please cite it as:
 
 > Wase, N. *OligoMetProfiler: theoretical metabolite libraries, charge
 > envelopes, and MS/MS fragment ions for therapeutic oligonucleotides.*
@@ -351,46 +286,28 @@ contributes to work you publish, please cite it as:
 
 ## Disclosure and disclaimer
 
-**Research use only.** OligoMetProfiler is a research tool. It is not a
-medical device and is not intended or validated for diagnostic use,
-clinical decision-making, patient care, quality control release testing,
-or inclusion in a regulatory submission. Any such use is outside the
-scope of this software and is at the user's own risk.
+**Research use only.** Not a medical device; not validated for
+diagnostic use, clinical decision-making, quality-control release
+testing, or regulatory submission. **Everything it reports is a
+prediction** computed from a chemistry dictionary — confirm every
+assignment experimentally. **No warranty, no liability:** provided "as
+is" under the MIT licence; the author is not liable for any damages,
+loss of data, wasted instrument time, or erroneous conclusions, and the
+user is solely responsible for validating every result.
 
-**Everything it reports is a prediction.** Metabolite libraries,
-formulas, masses, envelopes, isotope patterns, fragment ions, target
-lists and spectral libraries are computed from a chemistry dictionary.
-Confirm every assignment experimentally.
+**Affiliation.** The author is a Research Scientist at Thermo Fisher
+Scientific, disclosed because the package interoperates with Thermo
+Fisher products. OligoMetProfiler is an independent personal project:
+not a Thermo Fisher Scientific product, and not supplied, reviewed,
+endorsed, or approved by Thermo Fisher Scientific or any other company.
+All interoperability uses publicly documented formats only. Product and
+drug names are used for identification only and remain their owners'
+trademarks; the bundled reference drugs are worked examples from
+published literature and public filings. All views and outputs are the
+author's own.
 
-**No warranty, no liability.** This software is provided "as is",
-without warranty of any kind, express or implied, under the MIT licence.
-In no event shall the author be liable for any claim, damages or other
-liability including any loss of data, wasted instrument time or
-materials, or erroneous scientific conclusion arising from this software or its use. The user is solely responsible
-for verifying that it is fit for their purpose and for validating every
-result it produces.
-
-**Affiliation and disclosure.** The author is employed as a Research
-Scientist at Thermo Fisher Scientific. This is disclosed because the
-package interoperates with Thermo Fisher products BioPharma Finder
-sequence notation and Orbitrap Exploris method-editor mass lists.
-OligoMetProfiler is an independent personal project: it is not a Thermo
-Fisher Scientific product and has not been supplied, reviewed,
-supported, endorsed or approved by Thermo Fisher Scientific or any other
-company. All interoperability is implemented from publicly documented
-formats only.
-
-**No endorsement, and trademarks.** Nothing here implies endorsement by
-any instrument vendor, software vendor or pharmaceutical company named
-in the package. Product and drug names are used for identification and
-interoperability only and remain the trademarks of their owners. The
-bundled reference drugs are working examples from published literature
-and public regulatory filings. All views and outputs are the author's
-own and do not represent Thermo Fisher Scientific or any other employer
-or institution.
-
-The full statement is in [DISCLAIMER.md](DISCLAIMER.md). From R: `oligomet_about()`.
+Full statement: [DISCLAIMER.md](DISCLAIMER.md), or `oligomet_about()` in R.
 
 ## License
 
-MIT -- see [LICENSE.md](LICENSE.md). Copyright (c) 2026 Nishikant Wase.
+MIT — see [LICENSE.md](LICENSE.md). Copyright (c) 2026 Nishikant Wase.

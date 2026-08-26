@@ -1,22 +1,15 @@
 # Modification reference
 
-> **FOR RESEARCH USE ONLY.** Everything below produces computed
-> predictions, not measurements. Confirm every assignment
-> experimentally. Provided without warranty; the author accepts no
-> liability for its use. See DISCLAIMER.md in the repository root.
+> **FOR RESEARCH USE ONLY.** All outputs are computed predictions, not
+> measurements — confirm every assignment experimentally. No warranty;
+> see DISCLAIMER.md.
 
-Every sugar and backbone chemistry the dictionary knows, what it is for,
-what it does to the mass, and how to enter it. If your modification is
-not here, section 5 shows how to add it yourself in about a minute --
-you do not need to modify the package.
+Every sugar and backbone chemistry in the dictionary, its mass effect,
+and how to enter it. Not listed? Section 5 shows how to add it without
+modifying the package. New to the notation? Read
+[SEQUENCE_GUIDE.md](SEQUENCE_GUIDE.md) first.
 
-New to oligonucleotide notation? Read
-[SEQUENCE_GUIDE.md](SEQUENCE_GUIDE.md) first; this page assumes you know
-what the bases/sugars/linkages lines are.
-
----
-
-## 1. How a mass difference is computed
+## 1. How mass differences work
 
 The formula engine is additive:
 
@@ -24,24 +17,18 @@ The formula engine is additive:
 oligo = sum(bases) + sum(sugars) + sum(linkages) - (2n-1) H2O + conjugates
 ```
 
-Two consequences that make the tables below directly usable:
+So a **sugar swap costs the residue difference per position** (DNA→MOE
+= +74.0368 Da; ×18 positions = +1332.66 Da) and a **linkage swap costs
+it per bond** (an *n*-mer has *n−1* bonds; PO→PS on an 18-mer =
+17 × 15.9772 = +271.61 Da).
 
-- **A sugar swap costs exactly the residue difference, per position.**
-  Changing one position from DNA to MOE adds 74.0368 Da. Changing all 18
-  positions of an 18-mer adds 18 x 74.0368 = 1332.66 Da.
-- **A linkage swap costs the residue difference, per bond.** An n-mer has
-  n-1 bonds, so converting an 18-mer from PO to PS adds
-  17 x 15.9772 = 271.61 Da.
-
-All numbers here are **monoisotopic**, in daltons, and come from
-`tests/test_modifications.R`, which recomputes them from the dictionary
-on every run. Average masses differ slightly; the app reports both.
-
----
+All values below are **monoisotopic** daltons, recomputed from the
+dictionary by `tests/test_modifications.R` on every run. The app also
+reports average masses.
 
 ## 2. Sugar modifications
 
-Residue mass is the free sugar; a nucleoside is `base + sugar - H2O`.
+Residue mass is the free sugar; a nucleoside is `base + sugar − H2O`.
 
 | Code | Modification | Formula | Residue mass | vs DNA (`d`) | vs RNA (`r`) |
 |---|---|---:|---:|---:|---:|
@@ -62,75 +49,29 @@ Residue mass is the free sugar; a nucleoside is `base + sugar - H2O`.
 | `NH2` | 2'-amino-2'-deoxy | C5H11NO4 | 149.0688 | +15.0109 | −0.9840 |
 | `NP` | 3'-amino (N3'→P5') | C5H11NO3 | 133.0739 | −0.9840 | −16.9789 |
 
-### 2'-O-NMA — the one most people are looking for
+Notes on the ones that cause trouble:
 
-**What it is.** 2'-O-[2-(methylamino)-2-oxoethyl]: the 2'-OH hydrogen is
-replaced by `-CH2-C(=O)-NH-CH3`. An amide where MOE has an ether.
-
-**Why it exists.** MOE-like binding affinity, better metabolic
-stability, and in splice-switching oligonucleotides better potency than
-the MOE equivalent. It is a next-generation chemistry rather than an
-established one -- there is no approved NMA drug yet.
-
-**The number to remember.** NMA is **+12.9953 Da heavier than MOE** per
-position, because its substituent (C3H6NO) differs from MOE's (C3H7O) by
-exactly N minus H. On a uniformly modified 18-mer that is +233.9 Da
-overall -- large, unambiguous, and easy to confirm on a deconvoluted
-mass.
-
-```r
-parse_three_line("TSASTTTSATAATGSTGG", "NMA", "s")   # uniform NMA
-```
-
-### UNA — unlocked nucleic acid
-
-The C2'-C3' bond of ribose is absent, so the residue is acyclic and
-flexible. Formally ribose + H2, i.e. **+2.0157 Da vs RNA**. UNA
-*lowers* duplex melting temperature -- it is used deliberately, usually
-at one or two positions in an siRNA seed region, to suppress off-target
-silencing rather than to add stability. Watch the mass: 2 Da is close
-enough to an isotope spacing that a single UNA in a large oligo is easy
-to misassign; check the full isotope pattern, not the monoisotopic peak
-alone.
-
-### GNA — glycol nucleic acid
-
-The sugar is replaced outright by a three-carbon glycerol unit, making
-this by far the largest per-position mass change in the table:
-**−58.0055 Da vs RNA**. Like UNA, it is a destabilizer used positionally
-in siRNA.
-
-### ENA, LNA, cEt — the bridged (BNA) family
-
-All three lock the sugar pucker for high affinity and nuclease
-resistance. LNA is ribose plus a methylene bridge (which, because
-forming two bonds costs 2 H, works out to exactly +12.0000 Da, one
-carbon); ENA has an ethylene bridge, **+14.0157 Da more than LNA**; cEt
-is a constrained ethyl on a deoxy scaffold. LNA, ENA and cEt are flagged
-`verify = TRUE` in the dictionary -- confirm against a known mass before
-relying on them for a formal assignment.
-
-### FANA — isobaric, and worth knowing about
-
-2'-deoxy-2'-fluoro-**arabino**nucleic acid has the same atoms as 2'-F
-ribo, in a different 2' configuration. It is **exactly isobaric**: mass
-spectrometry cannot distinguish `f` from `FANA`. The separate code
-exists so your sequence record is chemically correct; it will never
-change a computed mass.
-
-### N3'→P5' phosphoramidate — a sugar change, not a linkage change
-
-The 3'-OH becomes a 3'-NH2 and the phosphate bonds to nitrogen instead
-of oxygen. In the additive model that lives entirely in the sugar
-(`NP`, **−0.9840 Da vs DNA**, an O swapped for NH); keep the linkage as
-an ordinary `o` or `s`.
-
----
+- **`NMA`** (2'-O-[2-(methylamino)-2-oxoethyl]) is an amide where MOE
+  has an ether: **+12.9953 Da vs MOE** per position, or +233.9 Da across
+  a uniform 18-mer. A next-generation chemistry; no approved drug yet.
+- **`UNA`** is ribose + H2 (**+2.0157 Da**), a duplex destabilizer used
+  at one or two siRNA seed positions. 2 Da is close to isotope spacing —
+  check the full pattern, not the monoisotopic peak alone.
+- **`GNA`** replaces the sugar with a glycerol unit: **−58.0055 Da vs
+  RNA**, the largest per-position change here. Also a destabilizer.
+- **`LNA`/`ENA`/`cEt`** (bridged/BNA family) lock the sugar pucker. LNA
+  is ribose + CH2 − H2 = exactly +12.0000 Da; ENA is +14.0157 Da beyond
+  LNA. All three are flagged `verify = TRUE`.
+- **`FANA`** is **exactly isobaric** with 2'-F ribo — MS cannot
+  distinguish them. The code exists only to keep the record correct.
+- **`NP`** (N3'→P5' phosphoramidate) is modelled as a sugar change
+  (**−0.9840 Da vs DNA**, O→NH), not a linkage change; keep the linkage
+  as ordinary `o` or `s`.
 
 ## 3. Backbone (linkage) modifications
 
-Every linkage is the phosphodiester bridge with its single non-bridging
-`-OH` swapped for something else. An n-mer has n−1 of them.
+Each linkage is the phosphodiester bridge with its non-bridging `-OH`
+swapped for something else. An *n*-mer has *n−1*.
 
 | Code | Modification | Formula | Residue mass | vs PO | vs PS |
 |---|---|---:|---:|---:|---:|
@@ -147,79 +88,29 @@ Every linkage is the phosphodiester bridge with its single non-bridging
 | `pgo` | phosphoryl guanidine (cyclic) | C5H10N3O2P | 175.0511 | +95.0847 | +79.1076 |
 | `tmg` | phosphoryl guanidine (Tmg) | C5H12N3O2P | 177.0667 | +97.1004 | +81.1232 |
 
-### Mesyl phosphoramidate (msPA, "µ")
-
-`-O-P(=O)(NH-SO2-CH3)-O-`. The non-bridging OH is replaced by a
-methanesulfonamide. It gives PS-like nuclease resistance without PS's
-promiscuous protein binding, and unlike PS it is achiral at phosphorus,
-so there is no Rp/Sp diastereomer mixture. **+61.0164 Da per bond
-relative to PS** -- on a fully modified 18-mer (17 bonds) that is
-+1037.3 Da, so a partially converted batch is very visible in a
-deconvoluted spectrum.
-
-### PACE and thioPACE
-
-Phosphonoacetate replaces the OH with `-CH2-COOH` (**+42.0106 Da vs
-PO**); thioPACE is PACE with the P=O replaced by P=S, a further
-**+15.9772 Da**. Both improve cell uptake and nuclease resistance and
-are used in siRNA.
-
-### Phosphoryl guanidine (PGO) — check which variant you have
-
-A guanidine group replaces the OH, giving a **neutral** backbone with a
-chiral phosphorus (so synthesis produces diastereomers). Two variants
-are in common use and **they are not the same mass**:
-
-| Code | Guanidine | vs PO |
-|---|---|---:|
-| `pgo` | 1,3-dimethylimidazolidin-2-imine (cyclic) | +95.0847 |
-| `tmg` | tetramethylguanidine, Tmg (acyclic) | +97.1004 |
-
-They differ by H2 — 2.0157 Da per bond, which on a heavily modified
-oligo compounds into a large and very confusing discrepancy. Confirm
-which one your synthesis used before assigning anything.
-
-A neutral backbone also changes what you should expect in the mass
-spectrometer: it ionizes far less readily in negative ESI, so the charge
-envelope shifts to lower charge states than the `z_min`/`z_max` defaults
-assume. Widen the range downward if a PGO or alkyl phosphonate oligo
-gives no matches.
-
-### Alkyl phosphonates — methyl, propyl, isobutyl, cyclohexyl, MOP
-
-The same swap with a plain alkyl group in place of the OH, giving
-neutral linkages. Placed at siRNA internucleotide positions 6–7 from the
-5′ end they suppress off-target activity; in ASOs they steer RNase H1
-cleavage.
-
-| Code | Alkyl group | vs PO |
-|---|---|---:|
-| `mp` | methyl | −1.9793 |
-| `prp` | propyl | +26.0520 |
-| `ibu` | isobutyl | +40.0677 |
-| `chx` | cyclohexyl | +66.0833 |
-| `mop` | methoxypropyl | +56.0626 |
-
-Methylphosphonate is the awkward one: at **−1.9793 Da vs PO** it is a
-small shift, and close enough to other common differences that intact
-mass alone will not settle it. Confirm those with MS/MS.
-
-### A note on chiral phosphorothioates (Rp/Sp)
-
-Stereopure PS oligonucleotides are chemically identical to the racemic
-mixture -- same atoms, same mass. MS cannot distinguish Rp from Sp. The
-dictionary's `u` code exists to let you *record* a stereochemistry
-variant; it carries the same formula as `s` and will never change a
-computed mass.
-
----
+- **`msp`** (mesyl phosphoramidate, µ) gives PS-like nuclease resistance
+  without PS's protein binding, and is achiral at phosphorus (no Rp/Sp
+  mixture). **+61.0164 Da per bond vs PS** — +1037.3 Da on a fully
+  modified 18-mer, so partial conversion is very visible.
+- **`pace`/`tpace`** replace the OH with `-CH2-COOH` (+42.0106 vs PO);
+  thioPACE adds P=S for a further +15.9772. Used in siRNA.
+- **`pgo` vs `tmg`** — phosphoryl guanidines differ by H2, **2.0157 Da
+  per bond**, which compounds into a badly confusing discrepancy.
+  Confirm which variant your synthesis used before assigning anything.
+- **Alkyl phosphonates** (`mp` `prp` `ibu` `chx` `mop`) are neutral
+  linkages that suppress siRNA off-target activity and steer RNase H1
+  cleavage. `mp` is the awkward one: at −1.9793 Da vs PO, intact mass
+  alone will not settle it — confirm with MS/MS.
+- **Neutral backbones ionize poorly** in negative ESI, shifting the
+  charge envelope below the `z_min`/`z_max` defaults. Widen downward if
+  a PGO or alkyl-phosphonate oligo gives no matches.
+- **Stereopure PS** (`u`) carries the same formula as `s` — MS cannot
+  distinguish Rp from Sp; the code exists only to record it.
 
 ## 4. Entering a modification in the app
 
-Three routes, all equivalent.
-
-**Manual sequence entry** (middle of the dashboard). Multi-character
-codes need a separator, and a single code applies to every position:
+**Three-line entry.** Multi-character codes need a separator; a single
+code is recycled to every position:
 
 | Design | Bases | Sugars | Linkages |
 |---|---|---|---|
@@ -227,12 +118,8 @@ codes need a separator, and a single code applies to every position:
 | 5-10-5 NMA gapmer, all PS | `TSASTTTSATAATGSTGG` | `NMA,NMA,NMA,NMA,NMA,d,d,d,d,d,d,d,d,NMA,NMA,NMA,NMA,NMA` | `s` |
 | LNA/DNA mixmer | `AGSTAGST` | `LNA-d-LNA-d-LNA-d-LNA-d` | `s` |
 
-A field holding one code is recycled to every position, which is why
-`NMA` and `msp` above are not repeated 18 times.
-
-**Triplet notation** (sequence box). `[linkage][base][sugar]` per token;
-the parser matches multi-character linkage codes longest-first, so
-`mspANMA` reads as msPA + adenine + NMA:
+**Triplet notation.** `[linkage][base][sugar]` per token; multi-character
+linkage codes match longest-first, so `mspANMA` reads as msPA + A + NMA:
 
 ```
 TNMA-mspSNMA-mspANMA-mspSNMA-mspTNMA
@@ -245,26 +132,13 @@ spec <- parse_three_line(
   bases    = "TSASTTTSATAATGSTGG",
   sugars   = c(rep("NMA", 5), rep("d", 8), rep("NMA", 5)),
   linkages = c(rep("msp", 5), rep("s", 7), rep("msp", 5)))
-metabolite_mass_info(spec)$formula_str
-#> "C220H312N81O132P17S17"
 ```
 
----
+## 5. Adding a modification the dictionary lacks
 
-## 5. Adding a modification the dictionary does not have
-
-You do not need to edit the package. In the app, use the **Custom
-Chemistry** table in the sidebar: one row per code.
-
-| Column | What to put |
-|---|---|
-| Code | Whatever you want to type in your sequence, e.g. `tcDNA` |
-| Formula | The **residue** formula (see below), e.g. `C8H14O4` |
-| Name | A human-readable label |
-| Type | `base`, `sugar`, `linkage`, or `conjugate` |
-| Attach | Conjugates only: `add`, `replace_H`, or `replace_OH` |
-
-From R, pass the same thing as an override:
+No need to edit the package. In the app use the **Custom Chemistry**
+table (one row per code: Code, Formula, Name, Type — `base`/`sugar`/
+`linkage`/`conjugate` — and Attach for conjugates). From R:
 
 ```r
 dict <- build_dictionary(overrides = list(
@@ -272,73 +146,54 @@ dict <- build_dictionary(overrides = list(
 spec <- parse_three_line("AGST", "tcDNA", "s", dict = dict)
 ```
 
-### Working out the residue formula
+**Working out the residue formula** — what the molecule contributes
+before condensation; the engine subtracts the water:
 
-This is the only part that takes thought. The residue is what the
-molecule contributes *before* condensation, and the engine subtracts the
-water for you.
+- **2'-O-R sugar** = `C5H9O5 + R`. NMA: R = C3H6NO → C8H15NO6.
+- **Bridged sugar** = parent + bridge − 2 H. LNA = ribose + CH2 − H2.
+- **Linkage** = `PO2 + X`, X being the substituent. PACE: X = C2H3O2 →
+  C2H3O4P.
+- **Base** = the free nucleobase, not the nucleoside.
 
-- **A 2'-O-R sugar** is ribose with the 2'-OH hydrogen replaced by R:
-  `C5H9O5 + R`. For 2'-O-NMA, R = `-CH2C(O)NHCH3` = C3H6NO, giving
-  C8H15NO6.
-- **A bridged sugar** is the parent plus the bridge, minus 2 H for the
-  two new bonds: LNA = ribose + CH2 − H2 = C6H10O5.
-- **A linkage** is `HPO3` with the `-OH` replaced by your substituent X:
-  `PO2 + X`. For PACE, X = `-CH2COOH` = C2H3O2, giving C2H3O4P.
-- **A base** is the free nucleobase, not the nucleoside.
-
-**Then check it.** Build a single nucleoside by hand and compare against
-a known value -- `base + sugar - H2O` should reproduce the published
-nucleoside formula. That one check catches nearly every mistake:
+Then check it: `base + sugar − H2O` should reproduce a published
+nucleoside formula. That one check catches nearly every mistake.
 
 ```r
 f <- add_formulas(STANDARD_DICT[["A"]]$formula, dict[["tcDNA"]]$formula)
 format_formula(f - c(H = 2, O = 1))
 ```
 
-`tests/test_modifications.R` does exactly this for every built-in code;
-copy a row from its `nucleoside_anchors` list to add your own.
+`tests/test_modifications.R` does this for every built-in code; copy a
+row from its `nucleoside_anchors` list to add your own.
 
----
+## 6. Deliberately absent
 
-## 6. What is deliberately not in the dictionary
+These do not fit the additive residue model, and a wrong number is worse
+than a missing one:
 
-Three chemistries do not fit the additive residue model, and a wrong
-number is worse than a missing one:
-
-- **Morpholino (PMO/PPMO)** replaces both the sugar (a morpholine ring)
-  and the linkage (a phosphorodiamidate). The model can express it in
-  principle, as a custom sugar plus a custom linkage, but the subunit
-  formula must come from your own reference -- do not guess it.
-- **Peptide nucleic acid (PNA)** has no sugar and no phosphate at all;
-  its backbone is N-(2-aminoethyl)glycine with the base on an acetyl
-  linker. The base-plus-sugar-plus-linkage decomposition does not
-  describe it.
-- **Boranophosphate** replaces a non-bridging oxygen with `BH3`, and
-  boron is not in the engine's element table (`.ELEMENTS` in
-  `chemistry_dict.R`). Adding it means adding boron's atomic masses
-  *and* its isotope abundances (10B/11B is roughly 20/80, which visibly
-  changes isotope patterns), not just a residue formula.
-- **Tricyclo-DNA (tcDNA)** is a straightforward custom sugar -- it is
-  left out only because the residue formula should come from a source
-  you trust rather than from this package's guess. Add it per section 5.
-
----
+- **Morpholino (PMO/PPMO)** — replaces both sugar and linkage; can be
+  expressed as custom entries, but take the subunit formula from your
+  own reference.
+- **PNA** — no sugar and no phosphate; the decomposition doesn't apply.
+- **Boranophosphate** — needs boron added to `.ELEMENTS` with its
+  isotope abundances (10B/11B ≈ 20/80 visibly changes patterns), not
+  just a residue formula.
+- **Tricyclo-DNA** — a straightforward custom sugar; left out only so
+  the formula comes from a source you trust. Add it per section 5.
 
 ## 7. Which formulas are provisional
 
 Codes flagged `verify = TRUE` in `chemistry_dict.R` are best estimates
-that have not been checked against an independently measured mass:
-`cEt`, `LNA`, `ENA`, `AP`, `msp`, `pace`, `tpace`, `pgo`, `mp`, and the
-BioPharma Finder terminal-modification conjugates. They are internally
-consistent -- each is derived from the substitution rules above and
-verified by `tests/test_modifications.R` -- but "internally consistent"
-is not "confirmed against a real spectrum". Check one before you rely on
-it for a regulatory assignment, and override it if your value differs.
+not checked against an independently measured mass: `cEt`, `LNA`, `ENA`,
+`AP`, `msp`, `pace`, `tpace`, `pgo`, `mp`, and the BioPharma Finder
+terminal-modification conjugates. They are internally consistent and
+verified by `tests/test_modifications.R`, but that is not the same as
+confirmed against a real spectrum. Check one before relying on it for a
+formal assignment, and override it if your value differs.
 
-The unflagged entries reproduce published nucleoside formulas, and the
-whole engine reproduces the published molecular formulas of nusinersen
-and inotersen exactly (`validate_reference()`).
+Unflagged entries reproduce published nucleoside formulas, and the
+engine reproduces the published molecular formulas of nusinersen and
+inotersen exactly (`validate_reference()`).
 
 ### Sources
 
@@ -346,25 +201,21 @@ and inotersen exactly (`validate_reference()`).
   2′-O-[2-(methylamino)-2-oxoethyl]- and 2′-O-methoxyethyl-modified
   antisense oligonucleotides*, J Med Chem 2008,
   [doi:10.1021/jm701537z](https://pubs.acs.org/doi/10.1021/jm701537z)
-  (2'-O-NMA structure and properties)
 - *Enhanced splicing modulation by NMA-modified antisense
   oligonucleotides*, Nucleic Acids Research 2026,
   [gkag484](https://academic.oup.com/nar/article/54/10/gkag484/8688739)
 - Bio-Synthesis technology briefs:
   [2'-O-NMA](https://www.biosyn.com/nma-oligonucleotide-synthesis.aspx),
-  [unlocked/flexible nucleic acids](https://www.biosyn.com/flexible-nucleic-acid-overview.aspx),
+  [flexible nucleic acids](https://www.biosyn.com/flexible-nucleic-acid-overview.aspx),
   [bridged nucleic acids](https://www.biosyn.com/bridged-nucleic-acid.aspx),
-  [phosphonoacetate (PACE)](https://www.biosyn.com/pace-phosphonoacetate-oligo-modification.aspx),
+  [PACE](https://www.biosyn.com/pace-phosphonoacetate-oligo-modification.aspx),
   [phosphoramidate backbones](https://www.biosyn.com/phosphoramidate-pn-backbone-linkage-reengineering.aspx),
   [chiral phosphorothioates](https://www.biosyn.com/custom-chiral-oligo-synthesis.aspx),
   [morpholinos](https://www.biosyn.com/custom-morpholino-synthesis.aspx),
   [PNA](https://www.biosyn.com/custom-pna-synthesis.aspx)
 
-
 ---
 
-*OligoMetProfiler -- Nishikant Wase, PhD (nishikant.wase@gmail.com),
-author and developer; Research Scientist, Thermo Fisher Scientific. An
-independent personal project, not a Thermo Fisher Scientific product.
-MIT licence. Research use only; see DISCLAIMER.md for the full
-disclosure statement.*
+*OligoMetProfiler — Nishikant Wase, PhD. Independent personal project,
+not a Thermo Fisher Scientific product. MIT licence. Research use only;
+see DISCLAIMER.md.*
