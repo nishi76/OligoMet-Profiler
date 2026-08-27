@@ -566,10 +566,13 @@ ui <- fluidPage(
                "MZmine, matchms and similar. MS1 spectra hold the isotope ",
                "cluster of each metabolite at each charge state, with real ",
                "relative abundances. MS2 spectra hold the McLuckey fragment ",
-               "ions for each precursor charge state; there is no fragment ",
-               "intensity model here, so every MS2 peak is written at a flat ",
-               "100 -- match on m/z, and don't use intensity-weighted ",
-               "dot-product scoring against them."),
+               "ions for each precursor charge state, with a rule-based ",
+               "relative-intensity heuristic (PS-linkage lability, MOE-PS vs ",
+               "DNA-PS dominant ion series, purine base-loss lability -- see ",
+               "fragment_intensity_weight() in R/fragments.R) -- it is not ",
+               "fit to any measured spectra, so match on m/z and treat it as ",
+               "a coarse ranking, not a predicted abundance for quantitative ",
+               "dot-product scoring."),
         tags$div(style = "height: 20px;")
       ),
 
@@ -1300,12 +1303,13 @@ server <- function(input, output, session) {
     tags$h6(ms2_lib_rv()[[sel]]$name)
   })
 
-  # Basic stick plot: every fragment ion at its m/z, flat-intensity model
-  # (see the header note in R/export_spectral.R) -- so this is for inspecting
-  # m/z coverage and density, not a realistic intensity pattern. Exact
-  # per-peak annotations are in the paired table, not on the plot itself,
-  # since a precursor can carry hundreds to thousands of internal-fragment
-  # peaks that would make on-plot labels unreadable.
+  # Basic stick plot: every fragment ion at its m/z, height set by the
+  # rule-based intensity heuristic (fragment_intensity_weight() in
+  # R/fragments.R) -- a coarse relative ranking, not a predicted abundance
+  # (see that function's header for exactly what it does and does not
+  # encode). Exact per-peak annotations are in the paired table, not on the
+  # plot itself, since a precursor can carry hundreds to thousands of
+  # internal-fragment peaks that would make on-plot labels unreadable.
   output$ms2_explorer_plot <- renderPlot({
     sel <- input$ms2_explorer_table_rows_selected
     req(sel)
@@ -1313,7 +1317,7 @@ server <- function(input, output, session) {
     ggplot2::ggplot(r$peaks, ggplot2::aes(x = mz, y = intensity)) +
       ggplot2::geom_segment(ggplot2::aes(xend = mz, yend = 0),
                             color = "#2c3e50", linewidth = 0.3, alpha = 0.7) +
-      ggplot2::labs(x = "m/z", y = "Relative intensity (flat model)",
+      ggplot2::labs(x = "m/z", y = "Relative intensity (rule-based heuristic)",
                     title = r$name,
                     subtitle = paste0(nrow(r$peaks), " predicted fragment ions")) +
       ggplot2::ylim(0, 110) +
