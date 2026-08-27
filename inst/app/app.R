@@ -480,7 +480,36 @@ ui <- fluidPage(
           tabPanel("Charge Envelope", plotOutput("plot_envelope", height = "400px")),
           tabPanel("Truncation Series", plotOutput("plot_truncation", height = "400px")),
           tabPanel("Isotope Pattern", plotOutput("plot_isotope", height = "400px")),
-          tabPanel("Oxidation Series", plotOutput("plot_oxidation", height = "400px"))
+          tabPanel("Oxidation Series", plotOutput("plot_oxidation", height = "400px")),
+          tabPanel("MS2 Explorer",
+            tags$div(style = "padding-top: 12px;",
+              fluidRow(
+                column(8, tags$p(style = "font-size: 12px; color: #6c757d;",
+                  "Builds the full MS2 spectral library (one spectrum per ",
+                  "metabolite x precursor charge) for interactive browsing -- ",
+                  "the same computation as the MS2 library download below, ",
+                  "so it can take a while for long sequences or a wide charge ",
+                  "range.")),
+                column(4, actionButton("build_ms2_explorer",
+                  "Build / Refresh Library",
+                  class = "btn-sm btn-outline-primary w-100"))
+              ),
+              conditionalPanel(
+                condition = "output.ms2_explorer_ready == 'true'",
+                tags$p(style = "font-size: 12px; color: #6c757d;",
+                  "Filter by precursor m/z with the range slider, or by ",
+                  "charge with the dropdown, in the column headers below. ",
+                  "Click a row to plot its predicted MS2 spectrum."),
+                DT::dataTableOutput("ms2_explorer_table"),
+                tags$hr(),
+                uiOutput("ms2_explorer_title"),
+                fluidRow(
+                  column(7, plotOutput("ms2_explorer_plot", height = "320px")),
+                  column(5, DT::dataTableOutput("ms2_explorer_peaks"))
+                )
+              )
+            )
+          )
         ),
 
         tags$hr(),
@@ -582,6 +611,13 @@ server <- function(input, output, session) {
     ms_results = NULL, wb_path = NULL, report_path = NULL,
     plots = list(), ready = FALSE, status_text = "Enter a sequence and click Run Pipeline.\n"
   )
+
+  ## ---- MS2 library explorer --------------------------------------------------
+  # Cached separately from rv$ms_results etc.: building the full MS2 library
+  # is expensive (see .ms2_library() below), so it's built once on demand via
+  # the "Build / Refresh Library" button rather than on every Run, and stays
+  # cached until the next Run invalidates it or the user rebuilds it.
+  ms2_lib_rv <- reactiveVal(NULL)
 
   ## ---- Custom chemistry table ----------------------------------------------
   custom_chem_data <- reactiveVal(.custom_chem_init)
@@ -777,6 +813,7 @@ server <- function(input, output, session) {
     # Reset
     rv$ready <- FALSE
     rv$status_text <- "Running...\n"
+    ms2_lib_rv(NULL)
 
     # Validate inputs
     seq_str <- trimws(input$seq)
@@ -1213,6 +1250,86 @@ server <- function(input, output, session) {
                                           "_MS2_library.mgf")
   output$dl_ms2_msp <- .spectral_download(.ms2_library, write_msp,
                                           "_MS2_library.msp")
+
+  ## ---- MS2 library explorer -------------------------------------------------
+  # Builds the MS2 library once (via the button below) and caches it in
+  # ms2_lib_rv, so filtering the table afterwards is instant instead of
+  # rebuilding the library on every click.
+  observeEvent(input$build_ms2_explorer, {
+    req(rv$ready, rv$mets, rv$dict)
+    withProgress(message = "Building MS2 library for exploration...", value = 0.3, {
+      ms2_lib_rv(.ms2_library())
+    })
+  })
+
+  output$ms2_explorer_ready <- reactive({
+    if (!is.null(ms2_lib_rv()) && length(ms2_lib_rv()) > 0) "true" else "false"
+  })
+  outputOptions(output, "ms2_explorer_ready", suspendWhenHidden = FALSE)
+
+  # One row per precursor spectrum (metabolite x charge); the row order here
+  # matches ms2_lib_rv() exactly, so a DT row-selection index can be used to
+  # index straight into the library list below.
+  ms2_explorer_summary <- reactive({
+    lib <- ms2_lib_rv()
+    req(lib, length(lib) > 0)
+    data.frame(
+      Metabolite = vapply(lib, function(r)
+        sub(" \\[z=.*\\] MS2$", "", r$name), ""),
+      Charge = factor(vapply(lib, function(r) r$z, numeric(1))),
+      `Precursor m/z` = round(vapply(lib, function(r) r$precursor_mz, numeric(1)), 4),
+      Formula = vapply(lib, function(r) r$formula, ""),
+      `Mono mass (Da)` = round(vapply(lib, function(r) r$mono_mass, numeric(1)), 4),
+      `N fragments` = vapply(lib, function(r) nrow(r$peaks), numeric(1)),
+      check.names = FALSE, stringsAsFactors = FALSE
+    )
+  })
+
+  output$ms2_explorer_table <- DT::renderDataTable({
+    DT::datatable(ms2_explorer_summary(), filter = "top", rownames = FALSE,
+                  selection = "single",
+                  options = list(pageLength = 10,
+                                 order = list(list(2, "asc"))))
+  })
+
+  output$ms2_explorer_title <- renderUI({
+    sel <- input$ms2_explorer_table_rows_selected
+    if (is.null(sel))
+      return(tags$p(class = "hint",
+        "Select a row above to plot its predicted MS2 spectrum."))
+    tags$h6(ms2_lib_rv()[[sel]]$name)
+  })
+
+  # Basic stick plot: every fragment ion at its m/z, flat-intensity model
+  # (see the header note in R/export_spectral.R) -- so this is for inspecting
+  # m/z coverage and density, not a realistic intensity pattern. Exact
+  # per-peak annotations are in the paired table, not on the plot itself,
+  # since a precursor can carry hundreds to thousands of internal-fragment
+  # peaks that would make on-plot labels unreadable.
+  output$ms2_explorer_plot <- renderPlot({
+    sel <- input$ms2_explorer_table_rows_selected
+    req(sel)
+    r <- ms2_lib_rv()[[sel]]
+    ggplot2::ggplot(r$peaks, ggplot2::aes(x = mz, y = intensity)) +
+      ggplot2::geom_segment(ggplot2::aes(xend = mz, yend = 0),
+                            color = "#2c3e50", linewidth = 0.3, alpha = 0.7) +
+      ggplot2::labs(x = "m/z", y = "Relative intensity (flat model)",
+                    title = r$name,
+                    subtitle = paste0(nrow(r$peaks), " predicted fragment ions")) +
+      ggplot2::ylim(0, 110) +
+      ggplot2::theme_bw()
+  })
+
+  output$ms2_explorer_peaks <- DT::renderDataTable({
+    sel <- input$ms2_explorer_table_rows_selected
+    req(sel)
+    pk <- ms2_lib_rv()[[sel]]$peaks
+    pk <- pk[order(pk$mz), ]
+    DT::datatable(
+      data.frame(`m/z` = round(pk$mz, 4), Annotation = pk$annotation,
+                check.names = FALSE, stringsAsFactors = FALSE),
+      rownames = FALSE, options = list(pageLength = 15, dom = "tip"))
+  })
 
   ## ---- Download all outputs as a single .zip -------------------------------
   # Re-derives the CSV/spectral-library files rather than reusing the
