@@ -3,10 +3,14 @@
 Called from R via system2() to handle base64 + zlib decompression.
 
 Usage:
-  python3 py_decode.py <base64_string> <dtype> <byteorder>
+  python3 py_decode.py <dtype> <byteorder>  (base64 string read from stdin)
 
   dtype:    '32' (float32) or '64' (float64)
   byteorder: 'little' or 'big'
+
+The base64 payload is read from stdin rather than argv: a single
+high-resolution profile scan's m/z array can encode to hundreds of KB,
+well past typical OS command-line length limits (e.g. ~32K on Windows).
 
 Outputs decoded numbers as newline-separated text to stdout.
 """
@@ -32,9 +36,9 @@ def decode(b64_str, dtype='64', byteorder='little'):
     return vals
 
 if __name__ == '__main__':
-    b64 = sys.argv[1]
-    dtype = sys.argv[2] if len(sys.argv) > 2 else '64'
-    byteorder = sys.argv[3] if len(sys.argv) > 3 else 'little'
+    b64 = sys.stdin.read()
+    dtype = sys.argv[1] if len(sys.argv) > 1 else '64'
+    byteorder = sys.argv[2] if len(sys.argv) > 2 else 'little'
     vals = decode(b64, dtype, byteorder)
     for v in vals:
         sys.stdout.write(f"{v}\n")

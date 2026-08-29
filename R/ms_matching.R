@@ -99,7 +99,13 @@ convert_vendor_raw <- function(raw_file, output_dir = tempdir(),
 parse_mzml <- function(file) {
   if (!file.exists(file)) stop("mzML file not found: ", file)
   doc <- xml2::read_xml(file)
-  ns <- xml2::xml_ns(doc)
+  # mzML/mzXML declare a default namespace (e.g. xmlns="http://psi.hupo.org/ms/mzml"),
+  # and the unprefixed XPath queries below (".//spectrum", ".//cvParam", ...) match
+  # nothing against elements sitting in a non-null default namespace -- every real
+  # instrument file came back with 0 spectra without this. Namespaces carry no
+  # useful distinction for this parser's purposes, so stripping them is simpler
+  # than threading a namespace map through every xml_find_all()/xml_find_first().
+  xml2::xml_ns_strip(doc)
 
   # Helper: get cvParam value by accession
   get_cv <- function(node, accession) {
@@ -231,10 +237,13 @@ parse_mzml <- function(file) {
       readBin(decomp, "numeric", n = length(decomp) / 8, size = 8)
     }
   } else {
-    # Use Python helper (reliable for zlib + base64)
+    # Use Python helper (reliable for zlib + base64). The base64 blob is
+    # piped over stdin rather than passed as a CLI argument: a single
+    # high-resolution profile scan's m/z array can base64-encode to
+    # hundreds of KB, well past Windows' ~32K command-line length limit.
     tmp <- tempfile(fileext = ".txt")
-    system2("python3", args = c(py_decode, b64, dtype, "little"),
-            stdout = tmp, stderr = FALSE)
+    system2("python3", args = c(py_decode, dtype, "little"),
+            input = b64, stdout = tmp, stderr = FALSE)
     vals <- scan(tmp, what = numeric(), quiet = TRUE)
     unlink(tmp)
     vals
