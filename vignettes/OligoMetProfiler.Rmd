@@ -725,8 +725,92 @@ confirm via McLuckey fragment matching and PS diagnostic ions.
 
 Vendor raw files (Thermo `.raw`, Waters `.raw`, SCIEX `.wiff`) are
 converted automatically when ProteoWizard `msconvert` is on the PATH.
-mzML binary decoding uses a small Python helper when `python3` is
-available and falls back to a pure-R decoder otherwise.
+mzML binary data (base64 + zlib) is decoded natively in R.
+
+# Batch processing and statistical comparison
+
+The single-file matching above scales to a many-sample experiment via a
+bundled Python pipeline (`inst/python/oligomet_deconv/`, requires Python
+3.9+ with `inst/python/requirements.txt` installed) that streams each
+mzML/mzXML file and detects chromatographic features by grouping
+observed m/z into charge-state envelopes -- the same neutral-mass
+agreement check the R side already uses for `envelope_consistency()`,
+`M = z * (mz - proton)`, rather than a peptide isotope/averagine model,
+since that doesn't describe oligonucleotides. One worker process per
+file, so a batch scales with core count; a corrupt file is isolated and
+logged, not fatal to the run.
+
+```{r batch, eval = FALSE}
+source("R/batch_ms_processing.R"); source("R/statistics.R")
+
+deconv   <- run_batch_deconvolution(list.files("raw_data", pattern = "\\.mzML$", full.names = TRUE))
+features <- read_batch_features(deconv$features_path)
+batch    <- annotate_metabolites_batch(mets, features, dict = dict)   # matches + retains unmatched peaks
+
+abund <- build_abundance_matrix(batch$ms1_matches)
+long  <- abundance_long(abund, data.frame(
+  sample = c("ctrl_1", "ctrl_2", "treat_1", "treat_2"),
+  group  = c("control", "control", "treated", "treated")))
+compare_two_groups(long, "control", "treated")   # Welch t-test + BH-adjusted p-values
+```
+
+R matches the resulting features against the theoretical library by
+reusing `match_ms1()` unchanged; anything that matches no candidate
+within tolerance is retained (not discarded) as an "unidentified peaks"
+table. When MS2 confirmation is enabled, R first computes a *targeted*
+watch-list of theoretical precursor m/z (reusing `prm_inclusion_list()`)
+and passes it to the Python pipeline, which captures MS2 spectra only
+for scans near those candidates in the same streaming pass -- cheap on
+top of the deconvolution itself. R then confirms each matched hit
+against the theoretical fragment library with the existing
+`confirm_metabolite()` machinery, unchanged.
+
+`compare_two_groups()` (Welch t-test), `compare_multi_groups()`
+(one-way ANOVA + Tukey HSD), and `compare_time_series()` (linear trend)
+all report Benjamini-Hochberg-adjusted p-values and flag metabolites
+with too few replicates rather than erroring.
+
+## Bundled example
+
+A ready-to-run example ships with the package -- 6 synthetic mzML files
+(3 "control" + 3 "treated" replicates of the inotersen reference
+sequence, plus a contaminant trace that matches no theoretical
+metabolite) under `system.file("extdata", "batch_example", package =
+"OligoMetProfiler")`. `Rscript inst/examples/run_batch_example.R` from a
+repository checkout runs the whole thing end to end with no editing; the
+same data is used live below when Python is available on the machine
+building this vignette.
+
+```{r batch_example_setup, include = FALSE}
+python_available <- !is.na(find_python())
+```
+
+```{r batch_example, eval = python_available}
+example_dir <- system.file("extdata", "batch_example", package = "OligoMetProfiler")
+batch_files <- list.files(example_dir, pattern = "\\.mzML$", full.names = TRUE)
+sample_meta <- read.csv(file.path(example_dir, "sample_meta.csv"), stringsAsFactors = FALSE)
+
+ex_spec <- parse_input(INOTERSEN_TRIPLET)
+ex_mets <- generate_metabolites(ex_spec, opts = list(oligo_name = "inotersen_example",
+                                                       max_3p = 3, max_5p = 3, endo = FALSE))
+
+deconv   <- run_batch_deconvolution(batch_files, n_workers = 2)
+features <- read_batch_features(deconv$features_path)
+batch    <- annotate_metabolites_batch(ex_mets, features, ppm_tol = 10,
+                                        z_range = 3:12, adducts = "H", max_oxid = 0, n_iso = 0)
+
+cat("MS1 matches:", nrow(batch$ms1_matches),
+    " | unidentified peaks retained:", nrow(batch$unmatched), "\n")
+
+abund <- build_abundance_matrix(batch$ms1_matches)
+long  <- abundance_long(abund, sample_meta)
+compare_two_groups(long, "control", "treated")[, c("met_id", "met_name", "mean_a", "mean_b", "log2fc", "p_adj")]
+```
+
+```{r batch_example_skip, echo = FALSE, eval = !python_available, results = "asis"}
+cat("*(Skipped: no Python interpreter found while building this vignette --",
+    "run `Rscript inst/examples/run_batch_example.R` directly to see it work.)*")
+```
 
 # The Shiny dashboard and CLI drivers
 
@@ -744,6 +828,10 @@ repository root:
 * **`run_custom_oligo.R`** -- the primary CLI template: copy it, edit
   the CONFIG block (sequence, overrides, parameters), and
   `Rscript run_custom_oligo.R`.
+* **`run_batch_ms.R`** -- the batch/multi-sample counterpart: same
+  CONFIG-block pattern, but for a directory of raw files plus a sample
+  metadata table (group or timepoint), running the parallel Python
+  deconvolution pipeline and the statistics suite described above.
 
 For a formula-engine regression check from the command line, run the
 validation scripts in `tests/` (e.g.

@@ -290,6 +290,107 @@
   openxlsx::setColWidths(wb, "MS Matching", cols = 1:15, widths = 14)
 }
 
+## ---- Sheet: Batch MS Matching (batch/multi-sample mode only) ---------------
+# Written only when build_workbook() receives a non-NULL batch_ms_results
+# (from annotate_metabolites_batch() in R/batch_ms_processing.R); the
+# existing single-sample "MS Matching" sheet above is untouched either way.
+.build_batch_matching_sheet <- function(wb, batch_ms_results, styles) {
+  openxlsx::addWorksheet(wb, "Batch MS Matching")
+  matches <- batch_ms_results$ms1_matches
+  if (is.null(matches) || nrow(matches) == 0) {
+    openxlsx::writeData(wb, "Batch MS Matching", "No batch MS matches found")
+    return()
+  }
+
+  ms2c <- batch_ms_results$ms2_confirmations
+  if (!is.null(ms2c) && nrow(ms2c) > 0) {
+    ms2c$met_name <- NULL
+    matches <- merge(matches, ms2c, by = c("sample", "met_id", "k_oxid", "z", "adduct"),
+                      all.x = TRUE, sort = FALSE)
+  }
+
+  openxlsx::writeData(wb, "Batch MS Matching", "MS1 Matches (all samples)",
+                       startRow = 1, colNames = FALSE)
+  openxlsx::addStyle(wb, "Batch MS Matching", styles$subheader,
+                      rows = 1, cols = 1:ncol(matches), gridExpand = TRUE)
+  openxlsx::writeData(wb, "Batch MS Matching", matches, startRow = 2, colNames = TRUE)
+  openxlsx::addStyle(wb, "Batch MS Matching", styles$header,
+                      rows = 2, cols = 1:ncol(matches), gridExpand = TRUE)
+  next_row <- nrow(matches) + 4
+
+  # Metabolite x sample abundance pivot -- the same summary that feeds the
+  # statistics suite, included here for a quick look without opening R.
+  abund <- build_abundance_matrix(matches)
+  if (!is.null(abund) && nrow(abund) > 0) {
+    openxlsx::writeData(wb, "Batch MS Matching", "Metabolite x Sample Abundance (max intensity)",
+                         startRow = next_row, colNames = FALSE)
+    openxlsx::addStyle(wb, "Batch MS Matching", styles$subheader,
+                        rows = next_row, cols = 1:ncol(abund), gridExpand = TRUE)
+    openxlsx::writeData(wb, "Batch MS Matching", abund, startRow = next_row + 1, colNames = TRUE)
+    openxlsx::addStyle(wb, "Batch MS Matching", styles$header,
+                        rows = next_row + 1, cols = 1:ncol(abund), gridExpand = TRUE)
+  }
+
+  openxlsx::setColWidths(wb, "Batch MS Matching", cols = 1:ncol(matches), widths = 14)
+}
+
+## ---- Sheet: Unidentified Peaks (batch/multi-sample mode only) --------------
+.build_unmatched_sheet <- function(wb, batch_ms_results, styles) {
+  openxlsx::addWorksheet(wb, "Unidentified Peaks")
+  unmatched <- batch_ms_results$unmatched
+  if (is.null(unmatched) || nrow(unmatched) == 0) {
+    openxlsx::writeData(wb, "Unidentified Peaks", "No unmatched features")
+    return()
+  }
+  openxlsx::writeData(wb, "Unidentified Peaks", unmatched, startRow = 1, colNames = TRUE)
+  openxlsx::addStyle(wb, "Unidentified Peaks", styles$header,
+                      rows = 1, cols = 1:ncol(unmatched), gridExpand = TRUE)
+  openxlsx::setColWidths(wb, "Unidentified Peaks", cols = 1:ncol(unmatched), widths = 14)
+  openxlsx::freezePane(wb, "Unidentified Peaks", firstActiveRow = 2)
+}
+
+## ---- Sheets: Group Comparison / Time Series (statistics suite) -------------
+# stats_results is list(mode = "two_group"|"multi_group"|"time_series",
+# result = <compare_*() output>) -- see R/statistics.R.
+.build_stats_sheet <- function(wb, stats_results, styles) {
+  mode <- stats_results$mode
+  result <- stats_results$result
+
+  if (mode %in% c("two_group", "multi_group")) {
+    openxlsx::addWorksheet(wb, "Group Comparison")
+    if (mode == "two_group") {
+      openxlsx::writeData(wb, "Group Comparison", result, startRow = 1, colNames = TRUE)
+      openxlsx::addStyle(wb, "Group Comparison", styles$header,
+                          rows = 1, cols = 1:ncol(result), gridExpand = TRUE)
+    } else {
+      openxlsx::writeData(wb, "Group Comparison", "Omnibus (ANOVA)", startRow = 1, colNames = FALSE)
+      openxlsx::addStyle(wb, "Group Comparison", styles$subheader,
+                          rows = 1, cols = 1:ncol(result$omnibus), gridExpand = TRUE)
+      openxlsx::writeData(wb, "Group Comparison", result$omnibus, startRow = 2, colNames = TRUE)
+      openxlsx::addStyle(wb, "Group Comparison", styles$header,
+                          rows = 2, cols = 1:ncol(result$omnibus), gridExpand = TRUE)
+      next_row <- nrow(result$omnibus) + 4
+      if (!is.null(result$posthoc) && nrow(result$posthoc) > 0) {
+        openxlsx::writeData(wb, "Group Comparison", "Post-hoc (Tukey HSD)",
+                             startRow = next_row, colNames = FALSE)
+        openxlsx::addStyle(wb, "Group Comparison", styles$subheader,
+                            rows = next_row, cols = 1:ncol(result$posthoc), gridExpand = TRUE)
+        openxlsx::writeData(wb, "Group Comparison", result$posthoc,
+                             startRow = next_row + 1, colNames = TRUE)
+        openxlsx::addStyle(wb, "Group Comparison", styles$header,
+                            rows = next_row + 1, cols = 1:ncol(result$posthoc), gridExpand = TRUE)
+      }
+    }
+    openxlsx::setColWidths(wb, "Group Comparison", cols = 1:12, widths = 14)
+  } else if (mode == "time_series") {
+    openxlsx::addWorksheet(wb, "Time Series")
+    openxlsx::writeData(wb, "Time Series", result, startRow = 1, colNames = TRUE)
+    openxlsx::addStyle(wb, "Time Series", styles$header,
+                        rows = 1, cols = 1:ncol(result), gridExpand = TRUE)
+    openxlsx::setColWidths(wb, "Time Series", cols = 1:ncol(result), widths = 14)
+  }
+}
+
 ## ---- Sheet 7: Summary -----------------------------------------------------
 .build_summary_sheet <- function(wb, spec, mets, dict, validation, styles,
                                   opts, ms_info) {
@@ -394,7 +495,8 @@ build_workbook <- function(spec, mets, dict = STANDARD_DICT,
                            ms_info = NULL, opts = list(),
                            output_file = "oligo_metabolite_library.xlsx",
                            output_dir = tempdir(), progress = NULL,
-                           console_tracker = NULL) {
+                           console_tracker = NULL,
+                           batch_ms_results = NULL, stats_results = NULL) {
   z_range <- opts$z_range %||% 3:12
   n_iso <- opts$n_iso %||% 5
   max_oxid <- opts$max_oxid %||% 6
@@ -416,6 +518,13 @@ build_workbook <- function(spec, mets, dict = STANDARD_DICT,
   .build_fragment_sheet(wb, mets, dict, styles, 1:2, include_internal)
   .build_prm_sheet(wb, mets, dict, styles, z_range, max_oxid, h_offset)
   .build_matching_sheet(wb, ms_results, styles)
+  if (!is.null(batch_ms_results)) {
+    .build_batch_matching_sheet(wb, batch_ms_results, styles)
+    .build_unmatched_sheet(wb, batch_ms_results, styles)
+  }
+  if (!is.null(stats_results)) {
+    .build_stats_sheet(wb, stats_results, styles)
+  }
 
   # Save (write to a scratch dir first for binary format, then copy)
   out_path <- file.path(output_dir, output_file)

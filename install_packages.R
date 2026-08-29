@@ -24,5 +24,6 @@ if (length(missing_optional) > 0) {
   if (tolower(ans) == "y") install.packages(missing_optional, repos = "https://cloud.r-project.org")
 }
 
-cat("\nDone. Check for python3 on PATH separately -- it is used for mzML\n")
-cat("binary decoding (falls back to a pure-R decoder if unavailable).\n")
+cat("\nDone.\n")
+cat("\nBatch/parallel raw-file processing is a separate, optional Python\n")
+cat("component (needed only for that workflow): pip install -r inst/python/requirements.txt\n")

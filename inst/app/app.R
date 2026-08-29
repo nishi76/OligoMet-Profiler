@@ -44,7 +44,8 @@
 if (!is.null(.module_dir)) {
   for (.f in c("about.R", "progress_utils.R", "chemistry_dict.R", "oligo_io.R",
                "metabolites.R", "mass_isotope.R", "fragments.R",
-               "ms_matching.R", "build_workbook.R", "build_report.R",
+               "ms_matching.R", "batch_ms_processing.R", "statistics.R",
+               "build_workbook.R", "build_report.R",
                "export_acquisition.R", "export_spectral.R")) {
     source(file.path(.module_dir, "R", .f))
   }
@@ -368,6 +369,32 @@ ui <- fluidPage(
         )
       ),
 
+      ## -- Batch MS processing section (optional) --
+      ## Independent of the single-file "MS Matching" section above: uploads
+      ## multiple raw files, runs them through the parallel Python
+      ## charge-envelope deconvolution pipeline (inst/python/oligomet_deconv/),
+      ## and matches/confirms/compares across samples. See
+      ## R/batch_ms_processing.R and R/statistics.R.
+      tags$div(class = "sidebar-section",
+        tags$h5("Batch MS Processing (optional)"),
+        checkboxInput("enable_batch", "Enable batch processing", value = FALSE),
+        conditionalPanel(
+          condition = "input.enable_batch == true",
+          fileInput("batch_files", "Upload raw files (.mzML, .mzXML)", multiple = TRUE,
+                    accept = c(".mzML", ".mzml", ".mzXML", ".mzxml")),
+          DT::DTOutput("sample_meta_table"),
+          tags$p(style = "font-size: 11px; color: #6c757d; margin-top: 4px;",
+                 "One row per uploaded file. Fill in Group (2+ groups) or ",
+                 "Timepoint (time series) before running -- leave both blank ",
+                 "to only extract and match features, with no statistics."),
+          checkboxInput("batch_run_ms2", "Confirm hits with MS2", value = TRUE),
+          fluidRow(
+            column(6, numericInput("batch_n_workers", "Parallel workers", value = 4, min = 1, max = 64)),
+            column(6, numericInput("batch_deconv_ppm", "Deconv mass tol (ppm)", value = 20, min = 1, max = 100))
+          )
+        )
+      ),
+
       ## -- Run button --
       tags$hr(),
       actionButton("run", "Run Pipeline", class = "btn-primary btn-lg w-100")
@@ -509,6 +536,59 @@ ui <- fluidPage(
                 )
               )
             )
+          ),
+          tabPanel("Batch Results",
+            conditionalPanel(
+              condition = "output.batch_ready == 'true'",
+              tags$div(style = "padding-top: 12px;",
+                tags$p(style = "font-size: 12px; color: #6c757d;",
+                  "One row per matched (sample, metabolite, charge, adduct) hit. ",
+                  "Confirmation columns are populated only when MS2 confirmation ",
+                  "was enabled and a spectrum was found near that precursor."),
+                DT::DTOutput("batch_matches_table"),
+                tags$div(style = "height: 8px;"),
+                downloadButton("dl_batch_tsv", "Download combined features (.tsv)",
+                               class = "btn-outline-primary")
+              )
+            ),
+            conditionalPanel(
+              condition = "output.batch_ready != 'true'",
+              tags$p(style = "padding-top: 12px; color: #6c757d;",
+                     "Enable batch processing, upload files, and run the pipeline to see results here.")
+            )
+          ),
+          tabPanel("Unidentified Peaks",
+            conditionalPanel(
+              condition = "output.batch_ready == 'true'",
+              tags$div(style = "padding-top: 12px;",
+                tags$p(style = "font-size: 12px; color: #6c757d;",
+                  "Deconvolved features that matched no theoretical metabolite ",
+                  "within the MS1 tolerance -- retained for QC and follow-up, ",
+                  "not discarded."),
+                DT::DTOutput("unmatched_table"),
+                tags$div(style = "height: 8px;"),
+                downloadButton("dl_unmatched_csv", "Download unidentified peaks (.csv)",
+                               class = "btn-outline-primary")
+              )
+            )
+          ),
+          tabPanel("Statistics",
+            conditionalPanel(
+              condition = "output.stats_ready == 'true'",
+              tags$div(style = "padding-top: 12px;",
+                uiOutput("stats_met_selector"),
+                plotOutput("plot_stats_main", height = "360px"),
+                DT::DTOutput("stats_table"),
+                tags$div(style = "height: 8px;"),
+                downloadButton("dl_stats_csv", "Download statistics table (.csv)",
+                               class = "btn-outline-primary")
+              )
+            ),
+            conditionalPanel(
+              condition = "output.stats_ready != 'true'",
+              tags$p(style = "padding-top: 12px; color: #6c757d;",
+                     "Fill in Group or Timepoint in the batch sample table to see comparisons here.")
+            )
           )
         ),
 
@@ -612,8 +692,35 @@ server <- function(input, output, session) {
   rv <- reactiveValues(
     spec = NULL, mets = NULL, dict = NULL, prm = NULL,
     ms_results = NULL, wb_path = NULL, report_path = NULL,
-    plots = list(), ready = FALSE, status_text = "Enter a sequence and click Run Pipeline.\n"
+    plots = list(), ready = FALSE, status_text = "Enter a sequence and click Run Pipeline.\n",
+    batch_features = NULL, batch_ms_results = NULL,
+    sample_meta = NULL, stats_results = NULL
   )
+
+  ## ---- Batch sample metadata table (group/timepoint assignment) -------------
+  # Seeded from the uploaded batch_files' original filenames; edited in place
+  # via DT's edit feature. Blank group/timepoint columns mean "extract and
+  # match only, no statistics" -- see the Run handler below.
+  batch_meta_data <- reactiveVal(data.frame(
+    sample = character(0), group = character(0), timepoint = character(0),
+    stringsAsFactors = FALSE))
+
+  observeEvent(input$batch_files, {
+    samples <- tools::file_path_sans_ext(input$batch_files$name)
+    batch_meta_data(data.frame(sample = samples, group = "", timepoint = "",
+                                stringsAsFactors = FALSE))
+  })
+
+  output$sample_meta_table <- DT::renderDT({
+    DT::datatable(batch_meta_data(), editable = TRUE, rownames = FALSE,
+                   options = list(dom = "t", paging = FALSE, scrollY = "180px"))
+  })
+  observeEvent(input$sample_meta_table_cell_edit, {
+    df <- batch_meta_data()
+    edit <- input$sample_meta_table_cell_edit
+    df[edit$row, edit$col + 1] <- edit$value
+    batch_meta_data(df)
+  })
 
   ## ---- MS2 library explorer --------------------------------------------------
   # Cached separately from rv$ms_results etc.: building the full MS2 library
@@ -850,6 +957,7 @@ server <- function(input, output, session) {
         "Generating fragment ions" = 2,
         "Generating PRM list" = 1,
         "MS data import and matching" = 3,
+        "Batch MS processing (parallel)" = 10,
         "Building Excel workbook" = 15,
         "Building report" = 4,
         "Generating plots" = 2
@@ -956,6 +1064,90 @@ server <- function(input, output, session) {
       }
       rv$ms_results <- ms_results
 
+      # Step 7b: Optional batch MS processing (parallel, multi-file)
+      progress_next(prog)
+      rv$batch_features <- NULL
+      rv$batch_ms_results <- NULL
+      rv$sample_meta <- NULL
+      rv$stats_results <- NULL
+      if (input$enable_batch && !is.null(input$batch_files) && nrow(input$batch_files) > 0) {
+        incProgress(0.58, detail = "Batch deconvolution (parallel)")
+        batch_out <- tryCatch({
+          adducts <- input$adducts
+          if (is.null(adducts)) adducts <- "H"
+
+          watchlist_path <- NULL
+          if (isTRUE(input$batch_run_ms2)) {
+            watchlist_path <- tempfile(fileext = ".txt")
+            write_precursor_watchlist(mets, dict, z_range = z_range,
+                                       max_oxid = input$max_oxid, h_offset = input$h_offset,
+                                       out_path = watchlist_path)
+          }
+
+          deconv <- run_batch_deconvolution(
+            input$batch_files$datapath, precursor_watchlist = watchlist_path,
+            mass_tol_ppm = input$batch_deconv_ppm, n_workers = input$batch_n_workers,
+            progress = function(msg) incProgress(0, detail = msg))
+
+          # Shiny renames uploads to random tmp paths; recover the sample
+          # name from the ORIGINAL filename, not the datapath basename.
+          name_map <- stats::setNames(tools::file_path_sans_ext(input$batch_files$name),
+                                       tools::file_path_sans_ext(basename(input$batch_files$datapath)))
+          feats <- read_batch_features(deconv$features_path)
+          feats$sample <- unname(name_map[feats$sample])
+          ms2 <- if (!is.null(deconv$ms2_path)) read_batch_ms2(deconv$ms2_path) else NULL
+          if (!is.null(ms2) && nrow(ms2) > 0) ms2$sample <- unname(name_map[ms2$sample])
+
+          incProgress(0, detail = "Matching + MS2 confirmation")
+          batch_results <- annotate_metabolites_batch(
+            mets, feats, ms2, dict = dict, ppm_tol = input$ppm_tol, z_range = z_range,
+            adducts = adducts, max_oxid = input$max_oxid, h_offset = input$h_offset,
+            n_iso = input$n_iso, use_envipat = input$use_envipat,
+            frag_tol_ppm = input$frag_tol_ppm, frag_z_range = 1:input$frag_z_max)
+
+          list(features = feats, results = batch_results, meta = batch_meta_data())
+        }, error = function(e) {
+          rv$status_text <- paste0(rv$status_text,
+            "WARNING: Batch MS processing failed: ", conditionMessage(e), "\n")
+          NULL
+        })
+
+        if (!is.null(batch_out)) {
+          rv$batch_features <- batch_out$features
+          rv$batch_ms_results <- batch_out$results
+          rv$sample_meta <- batch_out$meta
+
+          meta <- batch_out$meta
+          has_group <- !is.null(meta$group) && any(nzchar(meta$group))
+          has_time <- !is.null(meta$timepoint) && any(nzchar(meta$timepoint))
+          if (nrow(batch_out$results$ms1_matches) > 0 && (has_group || has_time)) {
+            abund <- build_abundance_matrix(batch_out$results$ms1_matches)
+            stats_res <- tryCatch({
+              if (has_time) {
+                sm <- meta[, c("sample", "timepoint")]
+                sm$timepoint <- suppressWarnings(as.numeric(sm$timepoint))
+                long <- abundance_long(abund, sm[!is.na(sm$timepoint), ])
+                list(mode = "time_series", result = compare_time_series(long))
+              } else {
+                sm <- meta[nzchar(meta$group), c("sample", "group")]
+                groups <- unique(sm$group)
+                long <- abundance_long(abund, sm)
+                if (length(groups) == 2) {
+                  list(mode = "two_group", result = compare_two_groups(long, groups[1], groups[2]))
+                } else if (length(groups) > 2) {
+                  list(mode = "multi_group", result = compare_multi_groups(long, groups))
+                } else NULL
+              }
+            }, error = function(e) {
+              rv$status_text <- paste0(rv$status_text,
+                "WARNING: statistical comparison failed: ", conditionMessage(e), "\n")
+              NULL
+            })
+            rv$stats_results <- stats_res
+          }
+        }
+      }
+
       # Step 8: Build workbook
       incProgress(0.65, detail = "Building Excel workbook")
       progress_next(prog)
@@ -974,7 +1166,9 @@ server <- function(input, output, session) {
                         if (input$enable_ms) list(n_ms1 = 0, n_ms2 = 0) else NULL,
                         build_opts, wb_file,  # build_workbook writes to a scratch dir; download handler reads rv$wb_path
                         progress = function(msg) incProgress(0, detail = msg),
-                        console_tracker = prog)
+                        console_tracker = prog,
+                        batch_ms_results = rv$batch_ms_results,
+                        stats_results = rv$stats_results)
       }, error = function(e) {
         rv$status_text <- paste0("ERROR building workbook: ", conditionMessage(e), "\n")
         NULL
@@ -1335,6 +1529,87 @@ server <- function(input, output, session) {
       rownames = FALSE, options = list(pageLength = 15, dom = "tip"))
   })
 
+  ## ---- Batch MS Processing / Unidentified Peaks / Statistics tabs -----------
+  output$batch_ready <- reactive({
+    if (!is.null(rv$batch_ms_results) && nrow(rv$batch_ms_results$ms1_matches) >= 0) "true" else "false"
+  })
+  outputOptions(output, "batch_ready", suspendWhenHidden = FALSE)
+
+  output$stats_ready <- reactive({
+    if (!is.null(rv$stats_results) && !is.null(rv$stats_results$result)) "true" else "false"
+  })
+  outputOptions(output, "stats_ready", suspendWhenHidden = FALSE)
+
+  output$batch_matches_table <- DT::renderDT({
+    req(rv$batch_ms_results)
+    m <- rv$batch_ms_results$ms1_matches
+    DT::datatable(m, filter = "top", rownames = FALSE,
+                  options = list(pageLength = 10, scrollX = TRUE))
+  })
+
+  output$unmatched_table <- DT::renderDT({
+    req(rv$batch_ms_results)
+    DT::datatable(rv$batch_ms_results$unmatched, filter = "top", rownames = FALSE,
+                  options = list(pageLength = 10, scrollX = TRUE))
+  })
+
+  # Flattens compare_multi_groups()'s list(omnibus, posthoc) to a single
+  # table for display; two_group/time_series results are already flat.
+  .stats_display_table <- reactive({
+    sr <- rv$stats_results
+    req(sr)
+    if (sr$mode == "multi_group") sr$result$omnibus else sr$result
+  })
+
+  output$stats_met_selector <- renderUI({
+    df <- .stats_display_table()
+    req(nrow(df) > 0)
+    selectInput("stats_met_select", "Metabolite", choices = stats::setNames(df$met_id, df$met_name))
+  })
+
+  output$plot_stats_main <- renderPlot({
+    sr <- rv$stats_results
+    req(sr, input$stats_met_select)
+    if (sr$mode == "two_group") {
+      plot_volcano(sr$result)
+    } else if (sr$mode == "time_series") {
+      abund <- build_abundance_matrix(rv$batch_ms_results$ms1_matches)
+      long <- abundance_long(abund, rv$sample_meta[, c("sample", "timepoint")])
+      plot_trend(long, input$stats_met_select)
+    } else {
+      abund <- build_abundance_matrix(rv$batch_ms_results$ms1_matches)
+      long <- abundance_long(abund, rv$sample_meta[, c("sample", "group")])
+      plot_group_boxplot(long, input$stats_met_select)
+    }
+  })
+
+  output$stats_table <- DT::renderDT({
+    DT::datatable(.stats_display_table(), rownames = FALSE,
+                  options = list(pageLength = 10, scrollX = TRUE))
+  })
+
+  output$dl_batch_tsv <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_batch_features.tsv"),
+    content = function(file) {
+      req(rv$batch_features)
+      utils::write.table(rv$batch_features, file, sep = "\t", row.names = FALSE, quote = FALSE)
+    }
+  )
+  output$dl_unmatched_csv <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_unidentified_peaks.csv"),
+    content = function(file) {
+      req(rv$batch_ms_results)
+      utils::write.csv(rv$batch_ms_results$unmatched, file, row.names = FALSE)
+    }
+  )
+  output$dl_stats_csv <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_statistics.csv"),
+    content = function(file) {
+      req(rv$stats_results)
+      utils::write.csv(.stats_display_table(), file, row.names = FALSE)
+    }
+  )
+
   ## ---- Download all outputs as a single .zip -------------------------------
   # Re-derives the CSV/spectral-library files rather than reusing the
   # download handlers above (downloadHandlers aren't callable as plain
@@ -1398,6 +1673,19 @@ server <- function(input, output, session) {
         ms2_lib <- .ms2_library()
         write_mgf(ms2_lib, file.path(bundle_dir, paste0(prefix, "_MS2_library.mgf")))
         write_msp(ms2_lib, file.path(bundle_dir, paste0(prefix, "_MS2_library.msp")))
+
+        if (!is.null(rv$batch_features)) {
+          incProgress(0, detail = "Batch MS features")
+          utils::write.table(rv$batch_features,
+            file.path(bundle_dir, paste0(prefix, "_batch_features.tsv")),
+            sep = "\t", row.names = FALSE, quote = FALSE)
+          utils::write.csv(rv$batch_ms_results$unmatched,
+            file.path(bundle_dir, paste0(prefix, "_unidentified_peaks.csv")), row.names = FALSE)
+          if (!is.null(rv$stats_results)) {
+            utils::write.csv(.stats_display_table(),
+              file.path(bundle_dir, paste0(prefix, "_statistics.csv")), row.names = FALSE)
+          }
+        }
 
         incProgress(0.15, detail = "Compressing")
         zipfile <- normalizePath(file, mustWork = FALSE)

@@ -3,7 +3,7 @@
 # MS data import and targeted matching for oligonucleotide metabolite ID.
 #
 # Imports:
-#   - mzML files (parsed with xml2 + Python helper for base64/zlib binary data)
+#   - mzML files (parsed with xml2 + native base64/zlib decoding of binary data)
 #   - Simple text/CSV peak lists (mz, intensity columns)
 #   - Vendor raw via msconvert bridge (if msconvert is on PATH)
 #
@@ -27,34 +27,6 @@
 #   - FMVS (Ye et al., 2025): total confirmation score + sequence coverage
 #   - OligoDistiller (Liu et al., 2025): isotope envelope goodness-of-fit
 # =============================================================================
-
-## ---- Python helper path ---------------------------------------------------
-# py_decode.py lives in inst/ (repo checkout) or at the package root once
-# installed (inst/ contents are promoted on install). Try, in order:
-#   1. <dir of this file>/../inst/py_decode.py  -- sourced from R/ in a checkout
-#   2. system.file() -- loaded from an installed OligoMetProfiler package
-#   3. the current working directory variants -- pasted/sourced interactively
-# The source-checkout candidate is captured eagerly (ofile is only
-# meaningful while source() is running); the rest are evaluated on each
-# call so an installed package resolves system.file() at run time, not at
-# install time (staged installs relocate the package after top-level code
-# has already run).
-.PY_DECODE_SRC_CANDIDATE <- local({
-  src_dir <- dirname(sys.frame(1)$ofile %||% ".")
-  file.path(dirname(src_dir), "inst", "py_decode.py")
-})
-
-.py_decode_path <- function() {
-  candidates <- c(
-    .PY_DECODE_SRC_CANDIDATE,
-    tryCatch(system.file("py_decode.py", package = "OligoMetProfiler"),
-             error = function(e) ""),
-    file.path(getwd(), "inst", "py_decode.py"),
-    file.path(getwd(), "py_decode.py")
-  )
-  hit <- candidates[nzchar(candidates) & file.exists(candidates)]
-  if (length(hit) > 0) hit[1] else candidates[1]
-}
 
 ## ---- Vendor raw bridge ----------------------------------------------------
 # Check if msconvert (ProteoWizard) is available for vendor raw conversion.
@@ -99,11 +71,23 @@ convert_vendor_raw <- function(raw_file, output_dir = tempdir(),
 parse_mzml <- function(file) {
   if (!file.exists(file)) stop("mzML file not found: ", file)
   doc <- xml2::read_xml(file)
-  ns <- xml2::xml_ns(doc)
+
+  # mzML/mzXML normally declare a default namespace (e.g.
+  # xmlns="http://psi.hupo.org/ms/mzml"), which an unprefixed xpath tag
+  # test (e.g. ".//spectrum") never matches -- XPath 1.0 treats an
+  # unprefixed name test as "no namespace" regardless of any default
+  # namespace in scope. Matching on local-name() instead makes every
+  # lookup below namespace-agnostic, so it works whether or not the
+  # source file declares one.
+  find_all <- function(node, tag)
+    xml2::xml_find_all(node, sprintf(".//*[local-name()='%s']", tag))
+  find_first <- function(node, tag)
+    xml2::xml_find_first(node, sprintf(".//*[local-name()='%s']", tag))
 
   # Helper: get cvParam value by accession
   get_cv <- function(node, accession) {
-    cv <- xml2::xml_find_first(node, sprintf(".//cvParam[@accession='%s']", accession))
+    cv <- xml2::xml_find_first(node,
+      sprintf(".//*[local-name()='cvParam' and @accession='%s']", accession))
     if (!is.na(cv)) {
       v <- xml2::xml_attr(cv, "value")
       if (!is.na(v) && nzchar(v)) return(v)
@@ -113,15 +97,16 @@ parse_mzml <- function(file) {
 
   # Helper: check if cvParam exists
   has_cv <- function(node, accession) {
-    !is.na(xml2::xml_find_first(node, sprintf(".//cvParam[@accession='%s']", accession)))
+    !is.na(xml2::xml_find_first(node,
+      sprintf(".//*[local-name()='cvParam' and @accession='%s']", accession)))
   }
 
   # Find all spectra
-  spectra <- xml2::xml_find_all(doc, ".//spectrum")
+  spectra <- find_all(doc, "spectrum")
   n_spectra <- length(spectra)
   if (n_spectra == 0) {
     # Try mzXML format
-    spectra <- xml2::xml_find_all(doc, ".//scan")
+    spectra <- find_all(doc, "scan")
     if (length(spectra) == 0) stop("No spectra found in mzML/mzXML file")
   }
 
@@ -143,12 +128,12 @@ parse_mzml <- function(file) {
     rt <- get_cv(sp, "MS:1000016")
     if (is.na(rt)) {
       # Try in scanWindow or parent scan
-      rt <- get_cv(xml2::xml_find_first(sp, ".//scan"), "MS:1000016")
+      rt <- get_cv(find_first(sp, "scan"), "MS:1000016")
     }
     rt <- as.numeric(rt) %||% NA_real_
 
     # Extract binary data arrays
-    bdas <- xml2::xml_find_all(sp, ".//binaryDataArray")
+    bdas <- find_all(sp, "binaryDataArray")
     mz_arr <- NULL
     int_arr <- NULL
     for (bda in bdas) {
@@ -163,12 +148,11 @@ parse_mzml <- function(file) {
       is_zlib <- has_cv(bda, "MS:1000574")  # zlib compression
 
       # Get binary data
-      bin_node <- xml2::xml_find_first(bda, ".//binary")
+      bin_node <- find_first(bda, "binary")
       if (is.na(bin_node)) next
       b64 <- xml2::xml_text(bin_node)
       if (!nzchar(b64)) next
 
-      # Decode via Python helper
       vals <- .decode_binary(b64, dtype, is_zlib)
       if (is_mz) mz_arr <- vals
       else if (is_int) int_arr <- vals
@@ -182,7 +166,7 @@ parse_mzml <- function(file) {
         stringsAsFactors = FALSE)
     } else if (ms_level == 2) {
       # Get precursor info
-      prec <- xml2::xml_find_first(sp, ".//precursor")
+      prec <- find_first(sp, "precursor")
       prec_mz <- NA_real_; prec_z <- NA_integer_
       if (!is.na(prec)) {
         prec_mz <- as.numeric(get_cv(prec, "MS:1000744"))  # selected ion m/z
@@ -212,32 +196,19 @@ parse_mzml <- function(file) {
   list(ms1 = ms1_df, ms2 = ms2_df, info = info)
 }
 
-## ---- Binary data decoder (Python helper) ----------------------------------
+## ---- Binary data decoder ----------------------------------------------------
+# mzML binary data arrays are base64-encoded and, per MS:1000574, zlib-
+# compressed (RFC 1950 -- distinct from gzip/RFC 1952). Decoded natively in R:
+# base64 via xfun, decompression via memDecompress() (its "unknown" type
+# auto-detects and correctly inflates zlib streams, unlike gzcon() which
+# expects a gzip header and silently passes zlib data through unchanged).
 .decode_binary <- function(b64, dtype = "64", is_zlib = TRUE) {
-  py_decode <- .py_decode_path()
-  if (!file.exists(py_decode) || Sys.which("python3") == "") {
-    # Fallback: try R-only approach (may fail with zlib)
-    raw <- xfun::base64_decode(b64)
-    if (is_zlib) {
-      con <- gzcon(rawConnection(raw))
-      decomp <- readBin(con, "raw", n = 1e7)
-      close(con)
-    } else {
-      decomp <- raw
-    }
-    if (dtype == "32") {
-      readBin(decomp, "numeric", n = length(decomp) / 4, size = 4)
-    } else {
-      readBin(decomp, "numeric", n = length(decomp) / 8, size = 8)
-    }
+  raw <- xfun::base64_decode(b64)
+  decomp <- if (is_zlib) memDecompress(raw, type = "unknown") else raw
+  if (dtype == "32") {
+    readBin(decomp, "numeric", n = length(decomp) / 4, size = 4)
   } else {
-    # Use Python helper (reliable for zlib + base64)
-    tmp <- tempfile(fileext = ".txt")
-    system2("python3", args = c(py_decode, b64, dtype, "little"),
-            stdout = tmp, stderr = FALSE)
-    vals <- scan(tmp, what = numeric(), quiet = TRUE)
-    unlink(tmp)
-    vals
+    readBin(decomp, "numeric", n = length(decomp) / 8, size = 8)
   }
 }
 

@@ -21,7 +21,11 @@ Description: In-silico metabolite identification for therapeutic
     backbones. Exports a multi-sheet Excel workbook, an HTML report,
     MGF/MSP spectral libraries, and targeted mass lists for the Thermo
     Orbitrap Exploris Method Editor; optionally matches the library
-    against mzML/mzXML or peak-list data. Four approved drugs
+    against mzML/mzXML or peak-list data. A bundled Python pipeline adds
+    parallel charge-envelope deconvolution of many raw files at once,
+    MS2 confirmation of matched hits, and a statistics suite comparing
+    each confirmed metabolite across experimental groups or a time
+    series. Four approved drugs
     (nusinersen, inotersen, patisiran, givosiran) ship as worked
     examples, two of which anchor the formula engine's regression tests.
     A Shiny dashboard (run_app()) and command-line drivers wrap the same
