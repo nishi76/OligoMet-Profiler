@@ -55,6 +55,7 @@ Suggests:
     enviPat,
     rmarkdown,
     knitr,
-    zip
+    zip,
+    testthat (>= 3.0.0)
 VignetteBuilder: knitr
 RoxygenNote: 7.3.2

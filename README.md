@@ -288,11 +288,11 @@ workflow.
 
 ## Known limitations
 
-- No `testthat` suite — the `tests/` scripts are console-output checks,
-  not asserted unit tests.
-- Default parameters (charge range, oxidation cap, ppm tolerance) are
-  set independently in `inst/app/app.R` and the CLI driver, so a change
-  in one does not propagate to the other.
+- `tests/test_*.R` remain console-output checks for interactive reading;
+  `tests/testthat/` holds the asserted counterparts for the highest-risk
+  paths (formula engine, isotope pattern, custom-chemistry validation,
+  notation round-trips) and gates every push/PR via
+  `.github/workflows/tests.yml`. Coverage is not yet exhaustive.
 
 ## Bibliography
 

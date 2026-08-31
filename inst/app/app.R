@@ -42,7 +42,8 @@
 .module_dir <- .find_module_dir()
 
 if (!is.null(.module_dir)) {
-  for (.f in c("about.R", "progress_utils.R", "chemistry_dict.R", "oligo_io.R",
+  for (.f in c("about.R", "default_params.R", "progress_utils.R",
+               "chemistry_dict.R", "oligo_io.R",
                "metabolites.R", "mass_isotope.R", "fragments.R",
                "ms_matching.R", "batch_ms_processing.R", "statistics.R",
                "build_workbook.R", "build_report.R",
@@ -114,12 +115,17 @@ library(DT)
 ## ---- Custom chemistry table -> build_dictionary() overrides ----------------
 # Shared by the Run handler and by manual sequence entry, so a code typed
 # into the Custom Chemistry table validates the same way in both.
+# Rows with an invalid formula are skipped here (never reach
+# build_dictionary()) -- see .chem_row_status()/.chem_table_errors() below,
+# which are what block Run and surface the problem to the user instead of
+# it silently producing a zero-mass residue.
 .overrides_from_table <- function(cd) {
   overrides <- list()
   for (i in seq_len(nrow(cd))) {
     code <- trimws(cd$Code[i])
     formula_str <- trimws(cd$Formula[i])
     if (nchar(code) == 0 || nchar(formula_str) == 0) next
+    if (!is_valid_formula_string(formula_str)) next
     entry <- list(
       formula = formula_str,
       name = if (nchar(trimws(cd$Name[i])) > 0) trimws(cd$Name[i]) else code
@@ -130,6 +136,96 @@ library(DT)
   }
   overrides
 }
+
+## ---- Custom chemistry table validation -------------------------------------
+# A blank row is intentionally ignored (see .overrides_from_table() above);
+# any other row must have a code AND a formula that parses to a valid
+# elemental composition, or it is flagged here rather than silently
+# reaching build_dictionary() as an all-zero-mass entry.
+.chem_row_status <- function(cd) {
+  vapply(seq_len(nrow(cd)), function(i) {
+    code <- trimws(cd$Code[i]); formula_str <- trimws(cd$Formula[i])
+    if (!nzchar(code) && !nzchar(formula_str)) return("")
+    if (!nzchar(code)) return("✗ missing code")
+    if (!nzchar(formula_str)) return("✗ missing formula")
+    if (!is_valid_formula_string(formula_str)) return("✗ invalid formula")
+    "✓ valid"
+  }, character(1))
+}
+.chem_table_errors <- function(cd) {
+  st <- .chem_row_status(cd)
+  bad <- which(startsWith(st, "✗"))
+  if (length(bad) == 0) return(character(0))
+  sprintf("row %d (code '%s'): %s", bad, trimws(cd$Code[bad]), st[bad])
+}
+
+## ---- Small inline help icon -------------------------------------------------
+# A native title-attribute tooltip -- no JS dependency, works everywhere --
+# for surfacing the tradeoffs behind a parameter (e.g. "20% NCE is a
+# starting point, not validated") right next to its input instead of only
+# in the README.
+.info_icon <- function(text) {
+  tags$span("ⓘ", title = text,
+            style = "cursor: help; color: #6c757d; margin-left: 4px; font-size: 12px;")
+}
+.with_info <- function(label, ...) tagList(label, .info_icon(paste0(...)))
+
+## ---- Session save/load ------------------------------------------------------
+# "What exactly produced this inclusion list" is a reproducibility question
+# for a tool whose outputs feed instrument methods -- a saved session is the
+# sequence, every parameter below, and the Custom Chemistry table, as one
+# restorable .json file. Uploaded MS/batch files are deliberately excluded
+# (too large to round-trip through a small JSON, and re-uploading is the
+# normal Shiny flow anyway); the file input's own name is not restorable.
+.session_input_ids <- c(
+  "seq", "oligo_name", "output_prefix", "output_dir", "conj5", "conj3",
+  "max_3p", "max_5p", "endo", "endo_sites", "min_frag_len",
+  "z_min", "z_max", "n_iso", "max_oxid", "h_offset", "use_envipat",
+  "method_length", "ms2_z_min", "ms2_z_max", "hcd_nce",
+  "ms1_target_cap", "ms2_target_cap",
+  "enable_ms", "ppm_tol", "adducts", "frag_tol_ppm", "frag_z_max",
+  "enable_batch", "batch_run_ms2", "batch_n_workers", "batch_deconv_ppm",
+  "man_bases", "man_sugars", "man_linkages"
+)
+# One update*Input() call per id above -- dispatch table so loading a
+# session doesn't need a long if/else chain keyed on input type.
+.session_update <- list(
+  seq            = function(s, v) updateTextAreaInput(s, "seq", value = v),
+  oligo_name     = function(s, v) updateTextInput(s, "oligo_name", value = v),
+  output_prefix  = function(s, v) updateTextInput(s, "output_prefix", value = v),
+  output_dir     = function(s, v) updateTextInput(s, "output_dir", value = v),
+  conj5          = function(s, v) updateSelectInput(s, "conj5", selected = v),
+  conj3          = function(s, v) updateSelectInput(s, "conj3", selected = v),
+  max_3p         = function(s, v) updateNumericInput(s, "max_3p", value = v),
+  max_5p         = function(s, v) updateNumericInput(s, "max_5p", value = v),
+  endo           = function(s, v) updateCheckboxInput(s, "endo", value = v),
+  endo_sites     = function(s, v) updateRadioButtons(s, "endo_sites", selected = v),
+  min_frag_len   = function(s, v) updateNumericInput(s, "min_frag_len", value = v),
+  z_min          = function(s, v) updateNumericInput(s, "z_min", value = v),
+  z_max          = function(s, v) updateNumericInput(s, "z_max", value = v),
+  n_iso          = function(s, v) updateNumericInput(s, "n_iso", value = v),
+  max_oxid       = function(s, v) updateNumericInput(s, "max_oxid", value = v),
+  h_offset       = function(s, v) updateNumericInput(s, "h_offset", value = v),
+  use_envipat    = function(s, v) updateCheckboxInput(s, "use_envipat", value = v),
+  method_length  = function(s, v) updateNumericInput(s, "method_length", value = v),
+  ms2_z_min      = function(s, v) updateNumericInput(s, "ms2_z_min", value = v),
+  ms2_z_max      = function(s, v) updateNumericInput(s, "ms2_z_max", value = v),
+  hcd_nce        = function(s, v) updateNumericInput(s, "hcd_nce", value = v),
+  ms1_target_cap = function(s, v) updateNumericInput(s, "ms1_target_cap", value = v),
+  ms2_target_cap = function(s, v) updateNumericInput(s, "ms2_target_cap", value = v),
+  enable_ms      = function(s, v) updateCheckboxInput(s, "enable_ms", value = v),
+  ppm_tol        = function(s, v) updateNumericInput(s, "ppm_tol", value = v),
+  adducts        = function(s, v) updateCheckboxGroupInput(s, "adducts", selected = v),
+  frag_tol_ppm   = function(s, v) updateNumericInput(s, "frag_tol_ppm", value = v),
+  frag_z_max     = function(s, v) updateNumericInput(s, "frag_z_max", value = v),
+  enable_batch   = function(s, v) updateCheckboxInput(s, "enable_batch", value = v),
+  batch_run_ms2  = function(s, v) updateCheckboxInput(s, "batch_run_ms2", value = v),
+  batch_n_workers  = function(s, v) updateNumericInput(s, "batch_n_workers", value = v),
+  batch_deconv_ppm = function(s, v) updateNumericInput(s, "batch_deconv_ppm", value = v),
+  man_bases      = function(s, v) updateTextInput(s, "man_bases", value = v),
+  man_sugars     = function(s, v) updateTextInput(s, "man_sugars", value = v),
+  man_linkages   = function(s, v) updateTextInput(s, "man_linkages", value = v)
+)
 
 ## ---- Help documents ---------------------------------------------------------
 # The guides live in inst/help/, which means they resolve two ways: through
@@ -245,14 +341,36 @@ ui <- fluidPage(
         .about-block h6 { font-weight: 600; color: #2c3e50; font-size: 13px;
                           margin-bottom: 4px; }
         .about-block p { margin-bottom: 8px; }
+        .adv-panel { border: 1px solid #dee2e6; border-radius: 6px;
+                     margin-bottom: 14px; background: #fff; }
+        .adv-panel > summary { cursor: pointer; padding: 8px 12px;
+                               font-weight: 600; color: #2c3e50;
+                               list-style: revert; font-size: 14px; }
+        .adv-panel[open] > summary { border-bottom: 1px solid #dee2e6; }
+        .adv-body { padding: 10px 12px 4px; }
+        .session-row .btn { font-size: 12px; }
+        .chem-hint { font-size: 12px; color: #6c757d; }
+        .summary-sticky { position: sticky; top: 0; z-index: 20;
+                          background: #fff; padding: 6px 0 4px;
+                          border-bottom: 1px solid #ecf0f1; }
+        .landing-placeholder { border: 1px dashed #dee2e6; border-radius: 8px;
+                               padding: 18px 20px; margin: 14px 0; background: #fbfbfc; }
+        .landing-placeholder h5 { font-weight: 600; color: #2c3e50; }
+        .landing-placeholder ul { padding-left: 20px; margin-bottom: 0; font-size: 13px; }
+        .landing-placeholder li { margin-bottom: 6px; }
+        .metric-card.placeholder .value { color: #adb5bd; }
       "))),
 
       ## -- Input section --
       tags$div(class = "sidebar-section",
         tags$h5("Input"),
-        textAreaInput("seq", "Sequence (triplet or OligoDistiller)",
+        textAreaInput("seq",
+                      label = .with_info("Sequence (triplet, OligoDistiller, or FASTA)",
+                        "Notation is auto-detected: starts with '>' = FASTA ",
+                        "(paste a BioPharma Finder-exported record directly), ",
+                        "starts with 'OH-' = OligoDistiller, otherwise triplet."),
                       value = .EXAMPLE_SEQS[[1]]$seq, rows = 3,
-                      placeholder = "e.g. Te-sSe-sAe-sSe-... or OH-Am*-Gm*-...-OH"),
+                      placeholder = "e.g. Te-sSe-sAe-sSe-... or OH-Am*-Gm*-...-OH or a pasted FASTA record"),
         fluidRow(
           column(8, selectInput("example_seq", NULL,
                     choices = c("Choose an example..." = "", names(.EXAMPLE_SEQS)),
@@ -282,30 +400,22 @@ ui <- fluidPage(
         selectInput("conj3", "3' conjugate", choices = .conj3_choices, selected = "none")
       ),
 
-      ## -- Custom chemistry section --
-      tags$div(class = "sidebar-section",
-        tags$h5("Custom Chemistry"),
-        tags$p(style = "font-size: 12px; color: #6c757d;",
-               "Add custom base/sugar/linkage/conjugate entries. Empty rows are ignored."),
-        DT::dataTableOutput("custom_chem", height = "180px"),
-        fluidRow(
-          column(6, actionButton("add_row", "Add Row", class = "btn-sm btn-outline-primary")),
-          column(6, actionButton("remove_row", "Remove Row", class = "btn-sm btn-outline-secondary"))
-        )
-      ),
-
       ## -- Metabolite generation section --
       tags$div(class = "sidebar-section",
         tags$h5("Metabolite Generation"),
         fluidRow(
-          column(6, numericInput("max_3p", "Max 3' trunc.", value = 10, min = 0, max = 50)),
-          column(6, numericInput("max_5p", "Max 5' trunc.", value = 10, min = 0, max = 50))
+          column(6, numericInput("max_3p", "Max 3' trunc.",
+                                 value = DEFAULT_PIPELINE_PARAMS$max_3p, min = 0, max = 50)),
+          column(6, numericInput("max_5p", "Max 5' trunc.",
+                                 value = DEFAULT_PIPELINE_PARAMS$max_5p, min = 0, max = 50))
         ),
-        checkboxInput("endo", "Include endonuclease fragments", value = TRUE),
+        checkboxInput("endo", "Include endonuclease fragments",
+                      value = DEFAULT_PIPELINE_PARAMS$endo),
         radioButtons("endo_sites", "Endo cleavage sites",
                      choices = c("All positions" = "all", "DNA gap only" = "gap"),
-                     selected = "all", inline = TRUE),
-        numericInput("min_frag_len", "Min fragment length (nt)", value = 3, min = 1, max = 20),
+                     selected = DEFAULT_PIPELINE_PARAMS$endo_sites, inline = TRUE),
+        numericInput("min_frag_len", "Min fragment length (nt)",
+                    value = DEFAULT_PIPELINE_PARAMS$min_frag_len, min = 1, max = 20),
         tags$p(style = "font-size: 11px; color: #6c757d; margin-top: 6px;",
                "The Charge Envelopes sheet computes a full isotope pattern for ",
                "every metabolite x PS-oxidation level. Endonuclease fragments ",
@@ -317,87 +427,152 @@ ui <- fluidPage(
       tags$div(class = "sidebar-section",
         tags$h5("Mass & Isotope"),
         fluidRow(
-          column(6, numericInput("z_min", "Min charge z", value = 3, min = 1, max = 20)),
-          column(6, numericInput("z_max", "Max charge z", value = 12, min = 1, max = 30))
+          column(6, numericInput("z_min", "Min charge z",
+                                 value = DEFAULT_PIPELINE_PARAMS$z_min, min = 1, max = 20)),
+          column(6, numericInput("z_max", "Max charge z",
+                                 value = DEFAULT_PIPELINE_PARAMS$z_max, min = 1, max = 30))
         ),
         fluidRow(
-          column(6, numericInput("n_iso", "Isotope peaks", value = 5, min = 1, max = 20)),
-          column(6, numericInput("max_oxid", "Max PS oxid.", value = 6, min = 0, max = 30))
+          column(6, numericInput("n_iso", "Isotope peaks",
+                                 value = DEFAULT_PIPELINE_PARAMS$n_iso, min = 1, max = 20)),
+          column(6, numericInput("max_oxid",
+                    label = .with_info("Max PS oxid.",
+                      "Trades completeness for target count: a higher cap covers deeper ",
+                      "oxidation states but multiplies Charge Envelope rows and PRM/MS1 ",
+                      "targets \u2014 each metabolite is modeled at every oxidation level ",
+                      "from 0 up to this cap."),
+                    value = DEFAULT_PIPELINE_PARAMS$max_oxid, min = 0, max = 30))
         ),
-        numericInput("h_offset", "Envelope offset (Da)", value = 0, step = 0.001),
-        checkboxInput("use_envipat", "Use enviPat for isotopes", value = TRUE)
+        numericInput("h_offset",
+                    label = .with_info("Envelope offset (Da)",
+                      "0 = standard [M-zH]^z- charge envelope. Nonzero only to ",
+                      "reproduce a legacy or lab-specific mass convention."),
+                    value = DEFAULT_PIPELINE_PARAMS$h_offset, step = 0.001),
+        checkboxInput("use_envipat", "Use enviPat for isotopes",
+                      value = DEFAULT_PIPELINE_PARAMS$use_envipat),
+        tags$p(class = "chem-hint", style = "margin-top: -8px;",
+               "Unchecked uses a built-in binomial-convolution approximation; ",
+               "install enviPat (", tags$code("install.packages(\"enviPat\")"),
+               ") for higher-accuracy, literature isotope-abundance patterns.")
       ),
 
-      ## -- Orbitrap Exploris acquisition method section --
-      tags$div(class = "sidebar-section",
-        tags$h5("Orbitrap Acquisition Method"),
-        numericInput("method_length", "Method length (min)", value = 30, min = 1, max = 999),
-        fluidRow(
-          column(6, numericInput("ms2_z_min", "MS2 charge z min", value = 4, min = 1, max = 30)),
-          column(6, numericInput("ms2_z_max", "MS2 charge z max", value = 7, min = 1, max = 30))
-        ),
-        numericInput("hcd_nce", "HCD NCE (%)", value = 20, min = 1, max = 200),
-        fluidRow(
-          column(6, numericInput("ms1_target_cap", "Max MS1 targets", value = 500, min = 1, max = 150000)),
-          column(6, numericInput("ms2_target_cap", "Max MS2 targets", value = 300, min = 1, max = 150000))
-        ),
-        tags$p(style = "font-size: 11px; color: #6c757d; margin-top: -6px;",
-               "MS1/MS2 lists match the Orbitrap Exploris Method Editor's ",
-               "Targeted Mass filter table (m/z & z, Start/End Time mode). ",
-               "HCD NCE is a starting value, not a validated instrument ",
-               "parameter -- optimize per method. PRM duty cycle degrades ",
-               "quickly with target count, so MS2 defaults to a narrower ",
-               "charge range than the full MS1 envelope.")
+      ## -- Orbitrap Exploris acquisition method section (advanced; collapsed
+      ## by default -- most runs never touch these past their defaults) --
+      tags$details(class = "adv-panel",
+        tags$summary("Orbitrap Acquisition Method"),
+        tags$div(class = "adv-body",
+          numericInput("method_length",
+                      label = .with_info("Method length (min)",
+                        "Total LC-MS run time; sets the RT window end (Start/End Time) ",
+                        "for every row in the MS1 inclusion and MS2 PRM target lists."),
+                      value = DEFAULT_PIPELINE_PARAMS$method_length, min = 1, max = 999),
+          fluidRow(
+            column(6, numericInput("ms2_z_min", "MS2 charge z min",
+                                   value = DEFAULT_PIPELINE_PARAMS$ms2_z_min, min = 1, max = 30)),
+            column(6, numericInput("ms2_z_max", "MS2 charge z max",
+                                   value = DEFAULT_PIPELINE_PARAMS$ms2_z_max, min = 1, max = 30))
+          ),
+          numericInput("hcd_nce",
+                      label = .with_info("HCD NCE (%)",
+                        "20% is a PS-backbone starting point, not a validated instrument ",
+                        "parameter \u2014 optimize per method and per instrument before ",
+                        "relying on it."),
+                      value = DEFAULT_PIPELINE_PARAMS$hcd_nce, min = 1, max = 200),
+          fluidRow(
+            column(6, numericInput("ms1_target_cap",
+                      label = .with_info("Max MS1 targets",
+                        "PRM/targeted duty cycle degrades quickly as target count grows; ",
+                        "raising this cap can lengthen the instrument cycle time beyond ",
+                        "what's practical for the method."),
+                      value = DEFAULT_PIPELINE_PARAMS$ms1_target_cap, min = 1, max = 150000)),
+            column(6, numericInput("ms2_target_cap", "Max MS2 targets",
+                      value = DEFAULT_PIPELINE_PARAMS$ms2_target_cap, min = 1, max = 150000))
+          ),
+          tags$p(style = "font-size: 11px; color: #6c757d; margin-top: -6px;",
+                 "MS1/MS2 lists match the Orbitrap Exploris Method Editor's ",
+                 "Targeted Mass filter table (m/z & z, Start/End Time mode). ",
+                 "PRM duty cycle degrades quickly with target count, so MS2 ",
+                 "defaults to a narrower charge range than the full MS1 envelope.")
+        )
       ),
 
       ## -- MS matching section (optional) --
       tags$div(class = "sidebar-section",
         tags$h5("MS Matching (optional)"),
-        checkboxInput("enable_ms", "Enable MS matching", value = FALSE),
+        checkboxInput("enable_ms", "Enable MS matching",
+                      value = DEFAULT_PIPELINE_PARAMS$enable_ms),
         conditionalPanel(
           condition = "input.enable_ms == true",
           fileInput("ms_file", "Upload MS file (.mzML, .mzXML, .csv)",
                     accept = c(".mzML", ".mzXML", ".mzml", ".mzxml", ".csv", ".txt")),
-          numericInput("ppm_tol", "MS1 tolerance (ppm)", value = 10, min = 1, max = 50),
+          numericInput("ppm_tol", "MS1 tolerance (ppm)",
+                      value = DEFAULT_PIPELINE_PARAMS$ppm_tol, min = 1, max = 50),
           checkboxGroupInput("adducts", "Adducts",
                              choices = c("H", "Na", "K", "NH4"),
-                             selected = c("H", "Na", "K", "NH4"), inline = TRUE),
+                             selected = DEFAULT_PIPELINE_PARAMS$adducts, inline = TRUE),
           fluidRow(
-            column(6, numericInput("frag_tol_ppm", "Fragment tol (ppm)", value = 25, min = 5, max = 100)),
-            column(6, numericInput("frag_z_max", "Fragment max z", value = 3, min = 1, max = 5))
+            column(6, numericInput("frag_tol_ppm", "Fragment tol (ppm)",
+                      value = DEFAULT_PIPELINE_PARAMS$frag_tol_ppm, min = 5, max = 100)),
+            column(6, numericInput("frag_z_max", "Fragment max z",
+                      value = DEFAULT_PIPELINE_PARAMS$frag_z_max, min = 1, max = 5))
           )
         )
       ),
 
-      ## -- Batch MS processing section (optional) --
-      ## Independent of the single-file "MS Matching" section above: uploads
-      ## multiple raw files, runs them through the parallel Python
-      ## charge-envelope deconvolution pipeline (inst/python/oligomet_deconv/),
-      ## and matches/confirms/compares across samples. See
-      ## R/batch_ms_processing.R and R/statistics.R.
-      tags$div(class = "sidebar-section",
-        tags$h5("Batch MS Processing (optional)"),
-        checkboxInput("enable_batch", "Enable batch processing", value = FALSE),
-        conditionalPanel(
-          condition = "input.enable_batch == true",
-          fileInput("batch_files", "Upload raw files (.mzML, .mzXML)", multiple = TRUE,
-                    accept = c(".mzML", ".mzml", ".mzXML", ".mzxml")),
-          DT::DTOutput("sample_meta_table"),
-          tags$p(style = "font-size: 11px; color: #6c757d; margin-top: 4px;",
-                 "One row per uploaded file. Fill in Group (2+ groups) or ",
-                 "Timepoint (time series) before running -- leave both blank ",
-                 "to only extract and match features, with no statistics."),
-          checkboxInput("batch_run_ms2", "Confirm hits with MS2", value = TRUE),
-          fluidRow(
-            column(6, numericInput("batch_n_workers", "Parallel workers", value = 4, min = 1, max = 64)),
-            column(6, numericInput("batch_deconv_ppm", "Deconv mass tol (ppm)", value = 20, min = 1, max = 100))
+      ## -- Batch MS processing section (optional, advanced; collapsed by
+      ## default). Independent of the single-file "MS Matching" section
+      ## above: uploads multiple raw files, runs them through the parallel
+      ## Python charge-envelope deconvolution pipeline
+      ## (inst/python/oligomet_deconv/), and matches/confirms/compares
+      ## across samples. See R/batch_ms_processing.R and R/statistics.R.
+      tags$details(class = "adv-panel",
+        tags$summary("Batch MS Processing (optional)"),
+        tags$div(class = "adv-body",
+          checkboxInput("enable_batch", "Enable batch processing",
+                        value = DEFAULT_PIPELINE_PARAMS$enable_batch),
+          conditionalPanel(
+            condition = "input.enable_batch == true",
+            fileInput("batch_files", "Upload raw files (.mzML, .mzXML)", multiple = TRUE,
+                      accept = c(".mzML", ".mzml", ".mzXML", ".mzxml")),
+            DT::DTOutput("sample_meta_table"),
+            tags$p(style = "font-size: 11px; color: #6c757d; margin-top: 4px;",
+                   "One row per uploaded file. Fill in Group (2+ groups) or ",
+                   "Timepoint (time series) before running -- leave both blank ",
+                   "to only extract and match features, with no statistics."),
+            checkboxInput("batch_run_ms2", "Confirm hits with MS2",
+                          value = DEFAULT_PIPELINE_PARAMS$batch_run_ms2),
+            fluidRow(
+              column(6, numericInput("batch_n_workers", "Parallel workers",
+                        value = DEFAULT_PIPELINE_PARAMS$batch_n_workers, min = 1, max = 64)),
+              column(6, numericInput("batch_deconv_ppm", "Deconv mass tol (ppm)",
+                        value = DEFAULT_PIPELINE_PARAMS$batch_deconv_ppm, min = 1, max = 100))
+            )
           )
         )
       ),
 
       ## -- Run button --
       tags$hr(),
-      actionButton("run", "Run Pipeline", class = "btn-primary btn-lg w-100")
+      actionButton("run", "Run Pipeline", class = "btn-primary btn-lg w-100"),
+
+      ## -- Session save/load ---------------------------------------------
+      ## Captures the sequence, every parameter above, and the Custom
+      ## Chemistry table as one JSON file -- "what exactly produced this
+      ## inclusion list" is a reproducibility question for a tool whose
+      ## outputs feed instrument methods. Uploaded MS/batch files are not
+      ## included (re-upload those after loading a session).
+      tags$div(style = "margin-top: 10px;", class = "session-row",
+        fluidRow(
+          column(6, downloadButton("dl_session", "Save session",
+                                   class = "btn-sm btn-outline-secondary w-100")),
+          column(6, tags$div(
+            fileInput("load_session_file", NULL, accept = ".json",
+                      buttonLabel = "Load session...", placeholder = "")))
+        ),
+        tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -8px;",
+               "Saves/restores the sequence, custom chemistry, and all ",
+               "parameters above as a .json file -- not uploaded MS/batch files.")
+      )
     ),
 
     ## ---- Main panel: manual entry + status + summary + downloads ----------
@@ -444,6 +619,30 @@ ui <- fluidPage(
         htmlOutput("man_feedback")
       ),
 
+      ## -- Custom chemistry (advanced) -----------------------------------------
+      ## Moved out of the sidebar and into the main panel: it's an advanced,
+      ## occasional-use feature, and editing DT table cells in a narrow
+      ## width-4 sidebar column was cramped. Full main-panel width gives the
+      ## table room to breathe, and collapsing it by default keeps it out of
+      ## the way of the primary Input -> Run flow for the common case where
+      ## no custom chemistry is needed.
+      tags$details(class = "help-panel",
+        tags$summary("Custom Chemistry (advanced)"),
+        tags$div(class = "help-body",
+          tags$p(class = "chem-hint",
+                 "Add custom base/sugar/linkage/conjugate entries not in the ",
+                 "standard dictionary. Empty rows are ignored; a row with a ",
+                 "code but no valid formula is flagged in the Status column ",
+                 "and blocks Run until it's fixed or cleared."),
+          DT::dataTableOutput("custom_chem"),
+          tags$div(style = "height: 6px;"),
+          fluidRow(
+            column(3, actionButton("add_row", "Add Row", class = "btn-sm btn-outline-primary w-100")),
+            column(3, actionButton("remove_row", "Remove Row", class = "btn-sm btn-outline-secondary w-100"))
+          )
+        )
+      ),
+
       ## -- Help & guides -----------------------------------------------------
       ## The three guides render straight from inst/help/, so they are
       ## available to installed users, not just to people with a checkout.
@@ -464,42 +663,98 @@ ui <- fluidPage(
       ## Status / log
       verbatimTextOutput("status", placeholder = TRUE),
 
+      ## -- Pre-run placeholder --------------------------------------------
+      ## Before the first Run, everything below (metrics, plots, downloads)
+      ## is conditionalPanel-hidden -- correct behavior, since there's
+      ## nothing to show yet, but it leaves a lot of dead whitespace on
+      ## first load. This teaches the output structure instead.
+      conditionalPanel(
+        condition = "!(input.run > 0 && output.status_ready == 'true')",
+        tags$div(class = "landing-placeholder",
+          tags$h5("What this produces"),
+          tags$p(class = "chem-hint",
+                 "Enter a sequence (left) and click Run Pipeline. A run computes:"),
+          fluidRow(
+            column(3, tags$div(class = "metric-card placeholder",
+              tags$div(class = "label", "Formula"), tags$div(class = "value", "—"))),
+            column(2, tags$div(class = "metric-card placeholder",
+              tags$div(class = "label", "Mono Mass (Da)"), tags$div(class = "value", "—"))),
+            column(2, tags$div(class = "metric-card placeholder",
+              tags$div(class = "label", "Avg Mass (Da)"), tags$div(class = "value", "—"))),
+            column(1, tags$div(class = "metric-card placeholder",
+              tags$div(class = "label", "Length"), tags$div(class = "value", "—"))),
+            column(2, tags$div(class = "metric-card placeholder",
+              tags$div(class = "label", "Metabolites"), tags$div(class = "value", "—"))),
+            column(2, tags$div(class = "metric-card placeholder",
+              tags$div(class = "label", "PRM Entries"), tags$div(class = "value", "—")))
+          ),
+          tags$div(style = "height: 8px;"),
+          tags$ul(
+            tags$li(tags$strong("4 plots"), " -- charge envelope, truncation series, ",
+                    "isotope pattern, and PS-oxidation series for the parent oligo, ",
+                    "plus an interactive MS2 spectrum explorer."),
+            tags$li(tags$strong("Downloads"), " -- an Excel workbook, an HTML report, ",
+                    "a PRM inclusion list, Orbitrap Exploris MS1/MS2 acquisition method ",
+                    "lists, and MGF/MSP spectral libraries (bundled as one .zip, or ",
+                    "individually)."),
+            tags$li(tags$strong("MS matching results"), " (if enabled) -- MS1 match ",
+                    "counts and, for batch processing, per-sample feature tables and ",
+                    "group/time-series statistics.")
+          )
+        )
+      ),
+
       ## Summary dashboard (hidden until run completes)
       conditionalPanel(
         condition = "input.run > 0 && output.status_ready == 'true'",
 
         tags$hr(),
-        tags$h4("Summary"),
 
-        ## Metrics row
-        fluidRow(
-          column(3, tags$div(class = "metric-card",
-            tags$div(class = "label", "Formula"), tags$div(class = "value", textOutput("m_formula")))),
-          column(2, tags$div(class = "metric-card",
-            tags$div(class = "label", "Mono Mass (Da)"), tags$div(class = "value", textOutput("m_mono_mass")))),
-          column(2, tags$div(class = "metric-card",
-            tags$div(class = "label", "Avg Mass (Da)"), tags$div(class = "value", textOutput("m_avg_mass")))),
-          column(1, tags$div(class = "metric-card",
-            tags$div(class = "label", "Length"), tags$div(class = "value", textOutput("m_length")))),
-          column(2, tags$div(class = "metric-card",
-            tags$div(class = "label", "Metabolites"), tags$div(class = "value", textOutput("m_n_mets")))),
-          column(2, tags$div(class = "metric-card",
-            tags$div(class = "label", "PRM Entries"), tags$div(class = "value", textOutput("m_n_prm"))))
-        ),
-        tags$div(style = "height: 10px;"),
+        ## Metrics cards: sticky to the top of the viewport, so they stay
+        ## visible while scrolling down through the plot tabs and downloads
+        ## below -- otherwise they scroll out of view exactly when you'd
+        ## want to check them against a plot or a download.
+        tags$div(class = "summary-sticky",
+          tags$h4("Summary"),
 
-        ## MS metrics row (shown only if MS matching was enabled)
-        conditionalPanel(
-          condition = "input.enable_ms == true",
+          ## Metrics row
           fluidRow(
-            column(4, tags$div(class = "metric-card",
-              tags$div(class = "label", "MS1 Matches"), tags$div(class = "value", textOutput("m_ms1_matches")))),
-            column(4, tags$div(class = "metric-card",
-              tags$div(class = "label", "Annotated Mets"), tags$div(class = "value", textOutput("m_annotated")))),
-            column(4, tags$div(class = "metric-card",
-              tags$div(class = "label", "Confident IDs"), tags$div(class = "value", textOutput("m_confident"))))
+            column(3, tags$div(class = "metric-card",
+              tags$div(class = "label", "Formula"), tags$div(class = "value", textOutput("m_formula")))),
+            column(2, tags$div(class = "metric-card",
+              tags$div(class = "label", "Mono Mass (Da)"), tags$div(class = "value", textOutput("m_mono_mass")))),
+            column(2, tags$div(class = "metric-card",
+              tags$div(class = "label", "Avg Mass (Da)"), tags$div(class = "value", textOutput("m_avg_mass")))),
+            column(1, tags$div(class = "metric-card",
+              tags$div(class = "label", "Length"), tags$div(class = "value", textOutput("m_length")))),
+            column(2, tags$div(class = "metric-card",
+              tags$div(class = "label", "Metabolites"), tags$div(class = "value", textOutput("m_n_mets")))),
+            column(2, tags$div(class = "metric-card",
+              tags$div(class = "label", "PRM Entries"), tags$div(class = "value", textOutput("m_n_prm"))))
           ),
-          tags$div(style = "height: 10px;")
+          tags$div(style = "height: 10px;"),
+
+          ## MS metrics row (shown only if MS matching was enabled)
+          conditionalPanel(
+            condition = "input.enable_ms == true",
+            fluidRow(
+              column(4, tags$div(class = "metric-card",
+                tags$div(class = "label", "MS1 Matches"), tags$div(class = "value", textOutput("m_ms1_matches")))),
+              column(4, tags$div(class = "metric-card",
+                tags$div(class = "label", "Annotated Mets"), tags$div(class = "value", textOutput("m_annotated")))),
+              column(4, tags$div(class = "metric-card",
+                tags$div(class = "label",
+                  .with_info("Putative IDs (ppm match)",
+                    "Matched within the configured MS1 ppm tolerance, with a ",
+                    "consistent isotope pattern and charge state. Not confirmed by ",
+                    "retention time. MS/MS-confirmed only when Batch MS Processing's ",
+                    "\"Confirm hits with MS2\" was enabled and a spectrum was found ",
+                    "near the precursor -- otherwise this counts m/z matches only, ",
+                    "not orthogonally-confirmed identifications.")),
+                tags$div(class = "value", textOutput("m_confident"))))
+            ),
+            tags$div(style = "height: 10px;")
+          )
         ),
 
         ## Plot tabs
@@ -636,11 +891,20 @@ ui <- fluidPage(
                                    class = "btn-outline-primary w-100")),
           column(3, downloadButton("dl_ms1_msp", "MS1 (.msp)",
                                    class = "btn-outline-primary w-100")),
-          column(3, downloadButton("dl_ms2_mgf", "MS2 (.mgf)",
-                                   class = "btn-outline-primary w-100")),
-          column(3, downloadButton("dl_ms2_msp", "MS2 (.msp)",
-                                   class = "btn-outline-primary w-100"))
+          column(3, tagAppendAttributes(
+            downloadButton("dl_ms2_mgf", "MS2 (.mgf) ⚠",
+                          class = "btn-outline-primary w-100"),
+            title = "MS2 intensities are placeholders (rule-based heuristic) -- match on m/z only, not for intensity-weighted scoring.")),
+          column(3, tagAppendAttributes(
+            downloadButton("dl_ms2_msp", "MS2 (.msp) ⚠",
+                          class = "btn-outline-primary w-100"),
+            title = "MS2 intensities are placeholders (rule-based heuristic) -- match on m/z only, not for intensity-weighted scoring."))
         ),
+        tags$p(style = "font-size: 11px; color: #a3231b; font-weight: 600; margin-top: 6px; margin-bottom: 2px;",
+               "⚠ MS2 intensities are placeholders, not measured or fitted values -- ",
+               "match on m/z only. Intensity-weighted dot-product scoring (e.g. ",
+               "MS-DIAL) against the MS2 library will produce meaningless confidence ",
+               "values."),
         tags$p(style = "font-size: 11px; color: #6c757d; margin-top: 6px;",
                "Theoretical libraries for MS-DIAL, mzVault/Compound Discoverer, ",
                "MZmine, matchms and similar. MS1 spectra hold the isotope ",
@@ -862,13 +1126,23 @@ server <- function(input, output, session) {
   }
 
   output$custom_chem <- DT::renderDataTable({
-    DT::datatable(custom_chem_data(), editable = "cell", rownames = FALSE,
+    d <- custom_chem_data()
+    disp <- d
+    disp$Status <- .chem_row_status(d)
+    # Status (column index 5, 0-based) is display-only -- disabling it here
+    # keeps DT's cell-edit column indices for Code..Attach (0-4) unchanged,
+    # so the cell_edit handler below needs no adjustment for it.
+    DT::datatable(disp, rownames = FALSE,
+                  editable = list(target = "cell", disable = list(columns = 5)),
                   options = list(dom = "t", paging = FALSE, ordering = FALSE,
                                  autoWidth = TRUE,
                                  columnDefs = list(list(width = "60px", targets = 0),
                                                    list(width = "100px", targets = 1),
-                                                   list(width = "80px", targets = 3))),
-                  selection = "none")
+                                                   list(width = "80px", targets = 3),
+                                                   list(width = "110px", targets = 5))),
+                  selection = "none") |>
+      DT::formatStyle("Status", color = DT::JS(
+        "value.indexOf(String.fromCharCode(10003)) === 0 ? '#18632f' : (value === '' ? '#adb5bd' : '#a3231b')"))
   })
 
   # Capture cell edits
@@ -895,6 +1169,54 @@ server <- function(input, output, session) {
       d <- d[-nrow(d), , drop = FALSE]
       custom_chem_data(d)
     }
+  })
+
+  ## ---- Session save/load -----------------------------------------------------
+  output$dl_session <- downloadHandler(
+    filename = function() paste0(input$oligo_name %||% "oligomet", "_session.json"),
+    content = function(file) {
+      vals <- stats::setNames(lapply(.session_input_ids, function(id) input[[id]]),
+                               .session_input_ids)
+      session_obj <- list(
+        app = "OligoMetProfiler", format_version = 1L,
+        saved_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
+        inputs = vals,
+        custom_chemistry = custom_chem_data()
+      )
+      writeLines(jsonlite::toJSON(session_obj, auto_unbox = TRUE, pretty = TRUE,
+                                  na = "null"), file)
+    }
+  )
+
+  observeEvent(input$load_session_file, {
+    req(input$load_session_file)
+    parsed <- tryCatch(
+      jsonlite::fromJSON(input$load_session_file$datapath, simplifyVector = TRUE),
+      error = function(e) NULL)
+    if (is.null(parsed) || is.null(parsed$inputs)) {
+      rv$status_text <- paste0(
+        "ERROR: could not read '", input$load_session_file$name, "' -- not a ",
+        "valid OligoMet Profiler session .json file.\n")
+      return()
+    }
+    for (id in names(parsed$inputs)) {
+      upd <- .session_update[[id]]
+      v <- parsed$inputs[[id]]
+      if (!is.null(upd) && !is.null(v) && length(v) > 0) {
+        tryCatch(upd(session, v), error = function(e) NULL)
+      }
+    }
+    if (!is.null(parsed$custom_chemistry)) {
+      cc <- tryCatch(as.data.frame(parsed$custom_chemistry, stringsAsFactors = FALSE),
+                     error = function(e) NULL)
+      need_cols <- c("Code", "Formula", "Name", "Type", "Attach")
+      if (!is.null(cc) && all(need_cols %in% names(cc)))
+        custom_chem_data(cc[, need_cols])
+    }
+    rv$status_text <- paste0(
+      "Loaded session from '", input$load_session_file$name, "'. Re-upload any ",
+      "MS/batch files (not saved in a session), review parameters, then click ",
+      "Run Pipeline.\n")
   })
 
   ## ---- About ---------------------------------------------------------------
@@ -937,6 +1259,15 @@ server <- function(input, output, session) {
     }
     if (input$max_3p < 0 || input$max_5p < 0) {
       rv$status_text <- "ERROR: Truncation counts cannot be negative.\n"
+      return()
+    }
+    chem_errors <- .chem_table_errors(custom_chem_data())
+    if (length(chem_errors) > 0) {
+      rv$status_text <- paste0(
+        "ERROR: Custom Chemistry table has invalid row(s):\n  ",
+        paste(chem_errors, collapse = "\n  "),
+        "\nFix or clear these rows before running -- an invalid formula ",
+        "would otherwise silently produce a zero-mass entry.\n")
       return()
     }
 
@@ -1284,7 +1615,7 @@ server <- function(input, output, session) {
         status <- paste0(status,
           "  MS1 matches: ", n_ms1, "\n",
           "  Annotated metabolites: ", n_annot, "\n",
-          "  Confident IDs: ", n_conf, "\n")
+          "  Putative IDs (ppm match): ", n_conf, "\n")
       }
       if (!is.null(saved_to)) {
         status <- paste0(status,
