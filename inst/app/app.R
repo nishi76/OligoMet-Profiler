@@ -79,6 +79,19 @@ library(DT)
 # own front-end request-size ceiling independent of this option.
 options(shiny.maxRequestSize = 20 * 1024^3)  # 20 GB
 
+# Best-effort hosted-deployment detection, for advisory messaging only --
+# Posit Connect sets CONNECT_SERVER for content it runs; shinyapps.io and
+# other managed Shiny hosts set SHINY_PORT (not exclusive to them, but a
+# reasonable signal in combination with the absence of an interactive
+# session). Neither is a guarantee, and there is no way to read the actual
+# admin-configured upload cap from inside the app -- it's enforced by the
+# reverse proxy in front of R, independent of the option above. This only
+# gates a warning telling the user where to look if uploads fail; it never
+# blocks anything itself.
+.is_hosted_deployment <- function() {
+  nzchar(Sys.getenv("CONNECT_SERVER")) || nzchar(Sys.getenv("SHINY_PORT"))
+}
+
 ## ---- Example sequences (illustrative, not the assumed input) --------------
 # A generic gapmer built entirely from standard dictionary codes, plus four
 # approved oligonucleotide therapeutics -- one per modality class in
@@ -543,6 +556,7 @@ ui <- fluidPage(
             condition = "input.enable_batch == true",
             fileInput("batch_files", "Upload raw files (.mzML, .mzXML)", multiple = TRUE,
                       accept = c(".mzML", ".mzml", ".mzXML", ".mzxml")),
+            uiOutput("batch_upload_notice"),
             tags$label("...or point at a local folder (optional)",
                        style = "font-size: 13px; font-weight: 500;"),
             fluidRow(
@@ -1034,6 +1048,40 @@ server <- function(input, output, session) {
     }
     input$batch_files
   }
+
+  # Advisory only -- see .is_hosted_deployment()'s comment on why the actual
+  # server-enforced cap can't be read from inside the app. Shows a general
+  # note as soon as a hosted deployment is detected (before any files are
+  # even chosen), and escalates to a size-specific warning once the
+  # uploaded files' reported sizes (input$batch_files$size, in bytes) cross
+  # a conservative heuristic threshold -- not a known limit, just a point
+  # past which a rejection becomes plausible on a typical hosted setup.
+  output$batch_upload_notice <- renderUI({
+    hosted <- .is_hosted_deployment()
+    files <- input$batch_files
+    total_mb <- if (!is.null(files)) sum(files$size) / 1024^2 else NA_real_
+    large <- !is.na(total_mb) && total_mb > 200
+
+    if (!hosted && !large) return(NULL)
+
+    msg <- if (large) {
+      sprintf(paste0(
+        "⚠ Selected files total %.0f MB. %s can enforce its own upload ",
+        "limit independent of this app's 20GB setting, and large HRMS files ",
+        "may still be rejected. Running this app locally in RStudio (see ",
+        "Quick Start in the README, or `git clone` + `shiny::runApp()`) ",
+        "removes that limit entirely -- or use the local-folder input below ",
+        "if the files already live on this machine."),
+        total_mb, if (hosted) "This hosted deployment" else "A hosted Shiny deployment")
+    } else {
+      paste0(
+        "⚠ This looks like a hosted deployment, which can enforce its ",
+        "own upload limit independent of this app's 20GB setting. If a ",
+        "large upload gets rejected, running this app locally in RStudio ",
+        "removes that limit entirely -- or use the local-folder input below.")
+    }
+    tags$p(style = "font-size: 11px; color: #a3231b; font-weight: 600; margin: 2px 0 6px;", msg)
+  })
 
   output$sample_meta_table <- DT::renderDT({
     DT::datatable(batch_meta_data(), editable = TRUE, rownames = FALSE,
