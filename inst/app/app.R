@@ -71,6 +71,14 @@ if (!requireNamespace("DT", quietly = TRUE)) {
 library(shiny)
 library(DT)
 
+# Shiny's default per-request upload cap is 5MB -- fine for the single-file
+# "MS Matching" section, but batch MS files (esp. HRMS) routinely run from
+# tens of MB to multiple GB, so the unmodified default silently rejects
+# them before batch_files' server logic ever runs. Raised generously here;
+# a hosted deployment (shinyapps.io/Posit Connect) may still enforce its
+# own front-end request-size ceiling independent of this option.
+options(shiny.maxRequestSize = 20 * 1024^3)  # 20 GB
+
 ## ---- Example sequences (illustrative, not the assumed input) --------------
 # A generic gapmer built entirely from standard dictionary codes, plus four
 # approved oligonucleotide therapeutics -- one per modality class in
@@ -184,7 +192,7 @@ library(DT)
   "method_length", "ms2_z_min", "ms2_z_max", "hcd_nce",
   "ms1_target_cap", "ms2_target_cap",
   "enable_ms", "ppm_tol", "adducts", "frag_tol_ppm", "frag_z_max",
-  "enable_batch", "batch_run_ms2", "batch_n_workers", "batch_deconv_ppm",
+  "enable_batch", "batch_run_ms2", "batch_n_workers", "batch_deconv_ppm", "batch_dir",
   "man_bases", "man_sugars", "man_linkages"
 )
 # One update*Input() call per id above -- dispatch table so loading a
@@ -222,6 +230,7 @@ library(DT)
   batch_run_ms2  = function(s, v) updateCheckboxInput(s, "batch_run_ms2", value = v),
   batch_n_workers  = function(s, v) updateNumericInput(s, "batch_n_workers", value = v),
   batch_deconv_ppm = function(s, v) updateNumericInput(s, "batch_deconv_ppm", value = v),
+  batch_dir      = function(s, v) updateTextInput(s, "batch_dir", value = v),
   man_bases      = function(s, v) updateTextInput(s, "man_bases", value = v),
   man_sugars     = function(s, v) updateTextInput(s, "man_sugars", value = v),
   man_linkages   = function(s, v) updateTextInput(s, "man_linkages", value = v)
@@ -534,6 +543,24 @@ ui <- fluidPage(
             condition = "input.enable_batch == true",
             fileInput("batch_files", "Upload raw files (.mzML, .mzXML)", multiple = TRUE,
                       accept = c(".mzML", ".mzml", ".mzXML", ".mzxml")),
+            tags$label("...or point at a local folder (optional)",
+                       style = "font-size: 13px; font-weight: 500;"),
+            fluidRow(
+              column(8, textInput("batch_dir", NULL, value = "",
+                                  placeholder = "e.g. /path/to/mzml_folder")),
+              column(4, if (.have_shinyfiles)
+                shinyFiles::shinyDirButton("browse_batch_dir", "Browse...", "Choose a folder",
+                                           class = "btn-sm btn-outline-secondary w-100"))
+            ),
+            tags$p(style = "font-size: 11px; color: #6c757d; margin-top: -6px;",
+                   "Reads every .mzML/.mzXML file in this folder directly from ",
+                   "disk -- skips the browser upload entirely, so there's no ",
+                   "upload size limit and it's faster for large HRMS files. ",
+                   "Only works when the app and the data are on the same ",
+                   "machine (true if you're running this locally; under a ",
+                   "remote/hosted deployment it's the server's filesystem, ",
+                   "not yours). Takes precedence over the upload above when ",
+                   "both are set."),
             DT::DTOutput("sample_meta_table"),
             tags$p(style = "font-size: 11px; color: #6c757d; margin-top: 4px;",
                    "One row per uploaded file. Fill in Group (2+ groups) or ",
@@ -975,6 +1002,39 @@ server <- function(input, output, session) {
                                 stringsAsFactors = FALSE))
   })
 
+  # Local-folder alternative to the upload above (see the UI section and
+  # the shinyDirChoose wiring further down) -- skips the browser entirely,
+  # so it has no upload-size limit. Triggers on any change to the batch_dir
+  # text field, whether set via "Browse..." or typed directly.
+  observeEvent(input$batch_dir, {
+    dir <- input$batch_dir
+    if (!is.null(dir) && nzchar(dir) && dir.exists(dir)) {
+      paths <- list.files(dir, pattern = "\\.(mzML|mzXML)$", full.names = TRUE, ignore.case = TRUE)
+      if (length(paths) > 0) {
+        samples <- tools::file_path_sans_ext(basename(paths))
+        batch_meta_data(data.frame(sample = samples, group = "", timepoint = "",
+                                    stringsAsFactors = FALSE))
+      }
+    }
+  }, ignoreInit = TRUE)
+
+  # Unified batch-file source: a local folder (input$batch_dir) takes
+  # precedence over the fileInput upload when both are set, since it's
+  # strictly better when available (no size limit, no upload time). Always
+  # returns the same shape fileInput does (a data.frame with $datapath and
+  # $name), so downstream code (the Run handler) doesn't need to know which
+  # source it came from.
+  .batch_input_files <- function() {
+    dir <- input$batch_dir
+    if (!is.null(dir) && nzchar(dir) && dir.exists(dir)) {
+      paths <- list.files(dir, pattern = "\\.(mzML|mzXML)$", full.names = TRUE, ignore.case = TRUE)
+      if (length(paths) > 0) {
+        return(data.frame(datapath = paths, name = basename(paths), stringsAsFactors = FALSE))
+      }
+    }
+    input$batch_files
+  }
+
   output$sample_meta_table <- DT::renderDT({
     DT::datatable(batch_meta_data(), editable = TRUE, rownames = FALSE,
                    options = list(dom = "t", paging = FALSE, scrollY = "180px"))
@@ -1120,6 +1180,17 @@ server <- function(input, output, session) {
         path <- shinyFiles::parseDirPath(volumes, sel)
         if (length(path) == 1 && nzchar(path)) {
           updateTextInput(session, "output_dir", value = path)
+        }
+      }
+    })
+
+    shinyFiles::shinyDirChoose(input, "browse_batch_dir", roots = volumes, session = session)
+    observeEvent(input$browse_batch_dir, {
+      sel <- input$browse_batch_dir
+      if (is.list(sel) && !is.null(sel$path)) {
+        path <- shinyFiles::parseDirPath(volumes, sel)
+        if (length(path) == 1 && nzchar(path)) {
+          updateTextInput(session, "batch_dir", value = path)
         }
       }
     })
@@ -1401,7 +1472,8 @@ server <- function(input, output, session) {
       rv$batch_ms_results <- NULL
       rv$sample_meta <- NULL
       rv$stats_results <- NULL
-      if (input$enable_batch && !is.null(input$batch_files) && nrow(input$batch_files) > 0) {
+      batch_files_df <- .batch_input_files()
+      if (input$enable_batch && !is.null(batch_files_df) && nrow(batch_files_df) > 0) {
         incProgress(0.58, detail = "Batch deconvolution (parallel)")
         batch_out <- tryCatch({
           adducts <- input$adducts
@@ -1416,14 +1488,16 @@ server <- function(input, output, session) {
           }
 
           deconv <- run_batch_deconvolution(
-            input$batch_files$datapath, precursor_watchlist = watchlist_path,
+            batch_files_df$datapath, precursor_watchlist = watchlist_path,
             mass_tol_ppm = input$batch_deconv_ppm, n_workers = input$batch_n_workers,
             progress = function(msg) incProgress(0, detail = msg))
 
-          # Shiny renames uploads to random tmp paths; recover the sample
-          # name from the ORIGINAL filename, not the datapath basename.
-          name_map <- stats::setNames(tools::file_path_sans_ext(input$batch_files$name),
-                                       tools::file_path_sans_ext(basename(input$batch_files$datapath)))
+          # Shiny renames uploads to random tmp paths (local-folder paths
+          # are already their own basename, so this is a no-op there);
+          # recover the sample name from the ORIGINAL filename, not the
+          # datapath basename.
+          name_map <- stats::setNames(tools::file_path_sans_ext(batch_files_df$name),
+                                       tools::file_path_sans_ext(basename(batch_files_df$datapath)))
           feats <- read_batch_features(deconv$features_path)
           feats$sample <- unname(name_map[feats$sample])
           ms2 <- if (!is.null(deconv$ms2_path)) read_batch_ms2(deconv$ms2_path) else NULL
