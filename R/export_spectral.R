@@ -153,10 +153,9 @@ build_ms1_library <- function(mets, dict = STANDARD_DICT, z_range = 3:12,
 # in fragments.R), not measured or calibrated data -- see that function's
 # header for exactly what it does and does not encode.
 build_ms2_library <- function(mets, dict = STANDARD_DICT,
-                              precursor_z_range = 4:7, frag_z_range = 1:3,
-                              ion_types = c("a", "aB", "b", "bB", "c",
-                                            "w", "x", "y"),
-                              include_internal = TRUE, h_offset = 0,
+                              precursor_z_range = 4:7, frag_z_range = 1:2,
+                              ion_types = c("a", "aB", "b", "bB", "w", "y"),
+                              include_internal = FALSE, h_offset = 0,
                               mz_min = 100, mz_max = 6000,
                               oligo_name = NULL, max_spectra = 2000) {
   recs <- list()
@@ -284,8 +283,8 @@ export_spectral_libraries <- function(mets, dict = STANDARD_DICT,
                                       out_dir = ".", prefix = "oligo",
                                       z_range = 3:12, n_iso = 8, max_oxid = 0,
                                       precursor_z_range = 4:7,
-                                      frag_z_range = 1:3,
-                                      include_internal = TRUE, h_offset = 0,
+                                      frag_z_range = 1:2,
+                                      include_internal = FALSE, h_offset = 0,
                                       use_envipat = TRUE, oligo_name = NULL,
                                       max_ms1_spectra = 5000,
                                       max_ms2_spectra = 2000) {

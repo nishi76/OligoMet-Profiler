@@ -44,7 +44,8 @@ DEFAULT_PIPELINE_PARAMS <- list(
   ppm_tol        = 10,                       # MS1 matching tolerance (ppm)
   adducts        = c("H", "Na", "K", "NH4"),
   frag_tol_ppm   = 25,    # fragment matching tolerance (ppm)
-  frag_z_max     = 3,     # max fragment charge state considered
+  frag_z_max     = 2,     # max fragment charge state considered -- z=1 dominates
+                           # oligo MS2, z=2 appears for larger fragments, z=3+ is rare
 
   # -- Batch MS processing (optional) --
   enable_batch      = FALSE,

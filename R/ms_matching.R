@@ -112,6 +112,7 @@ parse_mzml <- function(file) {
 
   ms1_peaks <- list()
   ms2_spectra <- list()
+  profile_mode_detected <- NA  # NA = undetermined; TRUE/FALSE once the first MS1 spectrum settles it
 
   for (i in seq_along(spectra)) {
     sp <- spectra[[i]]
@@ -123,6 +124,15 @@ parse_mzml <- function(file) {
       if (is.na(ms_level)) ms_level <- "1"
     }
     ms_level <- as.integer(ms_level)
+
+    if (ms_level == 1 && is.na(profile_mode_detected)) {
+      # MS:1000128/MS:1000127 (profile/centroid spectrum) are presence-only
+      # flag cvParams -- has_cv() checks for the node existing, not its
+      # (nonexistent) value, so this works the same way as everywhere else
+      # has_cv() is used above.
+      if (has_cv(sp, "MS:1000128")) profile_mode_detected <- TRUE
+      else if (has_cv(sp, "MS:1000127")) profile_mode_detected <- FALSE
+    }
 
     # Get retention time (scan start time, MS:1000016)
     rt <- get_cv(sp, "MS:1000016")
@@ -190,7 +200,8 @@ parse_mzml <- function(file) {
   info <- list(
     file = file, n_spectra = n_spectra,
     n_ms1 = length(ms1_peaks), n_ms2 = length(ms2_spectra),
-    instrument = if (is.na(instrument)) "unknown" else instrument
+    instrument = if (is.na(instrument)) "unknown" else instrument,
+    profile_mode = profile_mode_detected
   )
 
   list(ms1 = ms1_df, ms2 = ms2_df, info = info)
@@ -235,35 +246,64 @@ import_peak_list <- function(file, type = c("ms1", "ms2"), sep = ",") {
 }
 
 ## ---- MS1 feature extraction ------------------------------------------------
-# Extract features from raw MS1 peaks (group nearby m/z values across scans).
-# Simple approach: bin by m/z tolerance, report centroid m/z and max intensity.
-extract_ms1_features <- function(ms1_peaks, ppm = 10, min_intensity = 100) {
+# Extract features from raw MS1 peaks (group nearby m/z values that also
+# co-elute in time). Two-stage grouping -- cluster by RT proximity first,
+# then chain by ppm within each RT cluster -- mirroring the RT-then-mass
+# clustering the Python batch pipeline already uses (_rt_clusters() +
+# mass chaining in inst/python/oligomet_deconv/charge_group.py).
+#
+# Grouping by m/z alone (the previous behavior here) is RT-blind: any two
+# peaks sharing an m/z within tolerance get merged into one "feature"
+# regardless of how far apart in time they actually eluted, silently
+# averaging together unrelated chromatographic events for any real run
+# with more than a handful of scans. rt_tol is in minutes, matching
+# MS:1000016 "scan start time"'s conventional unit (mzML files declare it
+# via unitAccession UO:0000031, but this parser -- like the rest of this
+# module -- doesn't convert units, so a file using different units would
+# need a correspondingly different rt_tol).
+extract_ms1_features <- function(ms1_peaks, ppm = 10, min_intensity = 100,
+                                  rt_tol = 0.15) {
   if (nrow(ms1_peaks) == 0) return(data.frame())
   df <- ms1_peaks[ms1_peaks$intensity >= min_intensity, ]
   if (nrow(df) == 0) return(data.frame())
-  df <- df[order(df$mz), ]
-  # Group by m/z proximity
-  groups <- integer(nrow(df))
-  cur_group <- 1
-  groups[1] <- cur_group
-  for (i in 2:nrow(df)) {
-  tol <- df$mz[i] * ppm / 1e6
-  if (df$mz[i] - df$mz[i - 1] <= tol) {
-    groups[i] <- cur_group
-  } else {
-    cur_group <- cur_group + 1
-    groups[i] <- cur_group
+
+  # Stage 1: cluster by RT proximity (adjacent-gap chaining).
+  df <- df[order(df$rt), ]
+  rt_groups <- integer(nrow(df))
+  cur_rt <- 1L
+  rt_groups[1] <- cur_rt
+  if (nrow(df) > 1) {
+    for (i in 2:nrow(df)) {
+      gap <- df$rt[i] - df$rt[i - 1]
+      if (is.na(gap) || gap > rt_tol) cur_rt <- cur_rt + 1L
+      rt_groups[i] <- cur_rt
+    }
   }
-  }
-  # Aggregate
-  do.call(rbind, lapply(split(df, groups), function(g) {
-    data.frame(
-      mz = weighted.mean(g$mz, g$intensity),
-      rt = mean(g$rt, na.rm = TRUE),
-      max_intensity = max(g$intensity),
-      n_scans = nrow(g),
-      stringsAsFactors = FALSE)
-  }))
+
+  # Stage 2: within each RT cluster, chain by m/z proximity (ppm).
+  out <- lapply(split(df, rt_groups), function(rt_grp) {
+    rt_grp <- rt_grp[order(rt_grp$mz), ]
+    n <- nrow(rt_grp)
+    mz_groups <- integer(n)
+    cur_mz <- 1L
+    mz_groups[1] <- cur_mz
+    if (n > 1) {
+      for (i in 2:n) {
+        tol <- rt_grp$mz[i] * ppm / 1e6
+        if (rt_grp$mz[i] - rt_grp$mz[i - 1] > tol) cur_mz <- cur_mz + 1L
+        mz_groups[i] <- cur_mz
+      }
+    }
+    do.call(rbind, lapply(split(rt_grp, mz_groups), function(g) {
+      data.frame(
+        mz = weighted.mean(g$mz, g$intensity),
+        rt = mean(g$rt, na.rm = TRUE),
+        max_intensity = max(g$intensity),
+        n_scans = nrow(g),
+        stringsAsFactors = FALSE)
+    }))
+  })
+  do.call(rbind, out)
 }
 
 ## ---- Targeted MS1 matching ------------------------------------------------
@@ -365,20 +405,38 @@ match_ms1 <- function(mets, ms1_features, dict = STANDARD_DICT,
 # Check if matched charge states form a consistent envelope.
 # Consistency = the observed m/z values across charge states should all
 # correspond to the same neutral mass within tolerance.
-envelope_consistency <- function(matches) {
+#
+# h_offset must match whatever was used to generate the theoretical m/z
+# these matches were scored against (0 = standard [M-zH]^z-, 3.0046 =
+# legacy workbook offset -- see charge_envelope() in R/mass_isotope.R).
+# It was hardcoded to 0 here previously; with a non-zero h_offset every
+# back-calculated mass was off by z * h_offset (a different amount per
+# charge state), which corrupts the cross-charge-state agreement this
+# function exists to measure.
+envelope_consistency <- function(matches, h_offset = 0) {
   if (nrow(matches) == 0) return(data.frame())
   # Group by metabolite (met_id + k_oxid + adduct)
   matches$group <- paste(matches$met_id, matches$k_oxid, matches$adduct, sep = "_")
+  # Every branch must return the SAME columns -- these frames get rbind()ed
+  # together below (and again by callers grouping across samples), and a
+  # data.frame with fewer/differently-named columns silently made rbind()
+  # error out as soon as a real match set had a mix of single- and multi-
+  # charge-state groups (previously untested: the n_z<2 branch returned
+  # `mass_cv`/no `mean_mass`, the n_z>=2 branch returned `mass_cv_ppm` and
+  # `mean_mass`).
   do.call(rbind, lapply(split(matches, matches$group), function(g) {
-    if (nrow(g) < 2) {
-      return(data.frame(group = g$group[1], n_z = nrow(g),
-                        consistency = NA, mass_cv = NA,
-                        stringsAsFactors = FALSE))
-    }
     # Back-calculate neutral mass from each charge state
     # M = z * mz + z * proton - h_offset - adduct_shift
     ad_shift <- if (g$adduct[1] == "H") 0 else adduct_shift(g$adduct[1])
-    masses <- g$z * g$obs_mz + g$z * .PROTON - 0 - ad_shift  # h_offset=0 for standard
+    masses <- g$z * g$obs_mz + g$z * .PROTON - h_offset - ad_shift
+    if (nrow(g) < 2) {
+      # a single charge state can't confirm envelope consistency, but its
+      # own back-calculated mass is still a useful point estimate
+      return(data.frame(group = g$group[1], n_z = nrow(g),
+                        consistency = NA_real_, mass_cv_ppm = NA_real_,
+                        mean_mass = round(masses[1], 4),
+                        stringsAsFactors = FALSE))
+    }
     cv <- sd(masses) / mean(masses) * 1e6  # coefficient of variation in ppm
     data.frame(group = g$group[1], n_z = nrow(g),
                consistency = 1 / (1 + cv / 100),  # 0-1 scale
@@ -421,8 +479,9 @@ annotate_metabolites <- function(mets, ms1_features, ms2_data = NULL,
                                   ppm_tol = 10, z_range = 3:12,
                                   adducts = c("H", "Na", "K", "NH4"),
                                   max_oxid = 6, h_offset = 0,
-                                  frag_tol_ppm = 25, frag_z_range = 1:3,
-                                  n_iso = 5, use_envipat = TRUE) {
+                                  frag_tol_ppm = 25, frag_z_range = 1:2,
+                                  n_iso = 5, use_envipat = TRUE,
+                                  include_internal = FALSE) {
   # MS1 matching
   ms1_matches <- match_ms1(mets, ms1_features, dict, ppm_tol, z_range,
                             adducts, max_oxid, h_offset, n_iso = n_iso,
@@ -433,7 +492,7 @@ annotate_metabolites <- function(mets, ms1_features, ms2_data = NULL,
   }
 
   # Envelope consistency
-  env_cons <- envelope_consistency(ms1_matches)
+  env_cons <- envelope_consistency(ms1_matches, h_offset = h_offset)
 
   # MS2 fragment confirmation (if MS2 data provided)
   ms2_results <- list()
@@ -450,7 +509,9 @@ annotate_metabolites <- function(mets, ms1_features, ms2_data = NULL,
         best_spec <- spectra[[which.max(sapply(spectra, nrow))]]
         # Generate fragments and match
         frags <- generate_fragments(met, dict, z_range = frag_z_range)
-        frags <- c(frags, generate_internal_fragments(met, dict, z_range = frag_z_range))
+        if (include_internal) {
+          frags <- c(frags, generate_internal_fragments(met, dict, z_range = frag_z_range))
+        }
         matched_frags <- match_fragments(frags, best_spec, frag_tol_ppm, frag_z_range)
         diags <- check_ps_diagnostic(best_spec, max(frag_tol_ppm, 50))
         score <- confirmation_score(matched_frags, met$n, diags)

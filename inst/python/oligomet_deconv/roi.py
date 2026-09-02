@@ -65,29 +65,47 @@ class ROIBuilder:
         self._open.sort(key=lambda r: r.mz_mean)
 
         matched = np.zeros(len(mzs), dtype=bool)
-        for roi in self._open:
-            tol = roi.mz_mean * self.roi_ppm / 1e6
-            best_j, best_d = -1, tol
-            # linear scan is fine here: ROI count and scan peak count are
-            # both small relative to a full file, and both lists are sorted
-            for j in range(len(mzs)):
-                if matched[j]:
-                    continue
-                d = mzs[j] - roi.mz_mean
-                if d < -tol:
-                    continue
-                if d > tol:
-                    break
-                if abs(d) < best_d:
-                    best_d, best_j = abs(d), j
-            if best_j >= 0:
-                matched[best_j] = True
-                roi.mz_sum += mzs[best_j] * ints[best_j]
-                roi.weight_sum += ints[best_j]
-                roi.points.append((rt, mzs[best_j], ints[best_j]))
-                roi.gap = 0
-            else:
-                roi.gap += 1
+        n_open = len(self._open)
+        if n_open > 0:
+            # A prior version scanned every scan point for every open ROI
+            # (a full `for j in range(len(mzs))`, restarting from index 0
+            # each time) -- O(n_open_rois * n_points_per_scan) per scan.
+            # That's fine for a handful of centroided peaks, but profile-
+            # mode HRMS scans routinely carry thousands to tens of
+            # thousands of points, and a real acquisition has thousands of
+            # scans -- the combination made this pipeline appear to hang
+            # indefinitely on real data (a 150-scan x 3000-point/scan
+            # synthetic stress test alone took 86s, 88% of it in this
+            # loop). `mzs` is already sorted, so each ROI's ppm window can
+            # be bounded in O(log n) via searchsorted instead of a full
+            # rescan -- and calling searchsorted once on arrays covering
+            # ALL open ROIs (rather than once per ROI in a Python loop)
+            # avoids per-call numpy dispatch overhead, which otherwise
+            # dominates once there are thousands of ROIs per scan. Only
+            # the (typically tiny) window itself is then linearly scanned
+            # for the closest unmatched point.
+            roi_means = np.fromiter((r.mz_mean for r in self._open), dtype=np.float64, count=n_open)
+            tols = roi_means * (self.roi_ppm / 1e6)
+            los = np.searchsorted(mzs, roi_means - tols, side="left")
+            his = np.searchsorted(mzs, roi_means + tols, side="right")
+
+            for idx, roi in enumerate(self._open):
+                mean, tol, lo, hi = roi_means[idx], tols[idx], los[idx], his[idx]
+                best_j, best_d = -1, tol
+                for j in range(lo, hi):
+                    if matched[j]:
+                        continue
+                    d = abs(mzs[j] - mean)
+                    if d < best_d:
+                        best_d, best_j = d, j
+                if best_j >= 0:
+                    matched[best_j] = True
+                    roi.mz_sum += mzs[best_j] * ints[best_j]
+                    roi.weight_sum += ints[best_j]
+                    roi.points.append((rt, mzs[best_j], ints[best_j]))
+                    roi.gap = 0
+                else:
+                    roi.gap += 1
 
         still_open = []
         for roi in self._open:

@@ -80,9 +80,16 @@ def build_synthetic_mzml(path):
     # Deliberately non-round masses: round numbers here create spurious
     # exact collisions between unrelated (peak, wrong-z) candidate masses
     # when swept across the full z_min..z_max range (e.g. 7000/7 == 5000/5).
-    mz_a = {z: 6543.21 / z + PROTON for z in (5, 6, 7, 8)}
-    mz_b = {z: 8765.43 / z + PROTON for z in (6, 7, 9)}
-    mz_c = 4321.98 / 10 + PROTON
+    # mz = (M - z*PROTON)/z = M/z - PROTON -- same convention as R's
+    # charge_envelope() (R/mass_isotope.R) and charge_group.py's own
+    # back-calculation; an earlier version of both this generator and
+    # charge_group.py used the opposite sign (M/z + PROTON), which was
+    # self-consistent within this synthetic test but didn't match real
+    # theoretical m/z anywhere else in the codebase -- undetected until a
+    # real file's known-mass envelope failed to group correctly.
+    mz_a = {z: 6543.21 / z - PROTON for z in (5, 6, 7, 8)}
+    mz_b = {z: 8765.43 / z - PROTON for z in (6, 7, 9)}
+    mz_c = 4321.98 / 10 - PROTON
 
     w_a = {5: 0.6, 6: 0.8, 7: 1.0, 8: 0.7}
     w_b = {6: 0.5, 7: 1.0, 9: 0.6}
@@ -140,10 +147,10 @@ def main():
 
     params = DeconvParams(roi_ppm=15.0, rt_tol=0.15, mass_tol_ppm=20.0,
                            z_min=3, z_max=20, min_intensity=1e4, min_scans=3,
-                           max_gap_scans=2, ms2_watch_ppm=50.0)
-    features, ms2 = process_file(mzml_path, params, precursor_watchlist_path=watchlist_path)
+                           max_gap_scans=2, ms2_watch_ppm=50.0)  # min_charge_states defaults to 2
+    features, ms2, meta = process_file(mzml_path, params, precursor_watchlist_path=watchlist_path)
 
-    print(f"\n--- MS1 charge-envelope groups ({len(features)}) ---")
+    print(f"\n--- MS1 charge-envelope groups, default min_charge_states=2 ({len(features)}) ---")
     for feat in features:
         print(f"  neutral_mass={feat['neutral_mass']:.3f}  charge={feat['charge']}  "
               f"n_charge_states={feat['n_charge_states']}  mz={feat['mz']:.4f}")
@@ -162,10 +169,41 @@ def main():
         check("envelope B has 3 charge states (not merged with A)", group_b[0]["n_charge_states"] == 3)
         check("envelope B representative charge is one of 6/7/9", group_b[0]["charge"] in (6, 7, 9))
 
-    check("envelope C (M=4321.98) detected exactly once", len(group_c) == 1)
-    if group_c:
-        check("envelope C is single-charge (low confidence)", group_c[0]["n_charge_states"] == 1)
-        check("envelope C charge recovered as 10", group_c[0]["charge"] == 10)
+    # Envelope C is single-charge by construction -- with the default
+    # min_charge_states=2 it must NOT appear at all: a group confirmed by
+    # only one charge-state observation cannot actually confirm a charge,
+    # and sweeping every peak against z=3..20 produces many such
+    # coincidental single-observation "groups" that are pure noise (see
+    # the min_charge_states=1 rerun below for exactly how many).
+    check("envelope C (single charge) is FILTERED OUT by default", len(group_c) == 0)
+    # min_charge_states=2 removes every single-observation "group" outright
+    # (impossible for one observation to coincidentally agree with itself),
+    # but doesn't guarantee zero noise: two independent wrong-z guesses from
+    # two different real peaks can still coincidentally land within
+    # mass_tol_ppm of each other and form a spurious 2-charge-state group.
+    # That's a real, smaller residual, not a bug -- assert the dramatic
+    # reduction this fix delivers, not an unrealistic exact count.
+    check("default output is far smaller than the unfiltered sweep (not exactly 2 -- "
+          "occasional 2-charge coincidences are still possible)", len(features) <= 15)
+
+    # Rerun with min_charge_states=1 to confirm (a) the override parameter
+    # works, (b) the underlying single-charge grouping logic for envelope C
+    # is still correct when explicitly requested, and (c) how large the
+    # false-positive explosion actually is when nothing filters it.
+    params_permissive = DeconvParams(roi_ppm=15.0, rt_tol=0.15, mass_tol_ppm=20.0,
+                                      z_min=3, z_max=20, min_intensity=1e4, min_scans=3,
+                                      max_gap_scans=2, ms2_watch_ppm=50.0, min_charge_states=1)
+    features_permissive, _, _ = process_file(mzml_path, params_permissive,
+                                              precursor_watchlist_path=watchlist_path)
+    group_c_permissive = [f for f in features_permissive if abs(f["neutral_mass"] - 4321.98) < 0.01]
+    print(f"\n--- min_charge_states=1 rerun: {len(features_permissive)} groups total "
+          f"({len(features_permissive) - 2} beyond the 2 real multi-charge envelopes) ---")
+    check("envelope C recovered exactly once with min_charge_states=1", len(group_c_permissive) == 1)
+    if group_c_permissive:
+        check("envelope C is single-charge (low confidence)", group_c_permissive[0]["n_charge_states"] == 1)
+        check("envelope C charge recovered as 10", group_c_permissive[0]["charge"] == 10)
+    check("min_charge_states=1 produces substantially more (noisier) groups than the default",
+          len(features_permissive) > len(features) + 5)
 
     print(f"\n--- Targeted MS2 extraction ({len(ms2)} captured) ---")
     for row in ms2:

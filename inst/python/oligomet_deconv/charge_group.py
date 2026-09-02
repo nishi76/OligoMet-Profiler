@@ -2,9 +2,11 @@
 
 Groups co-eluting ROI peaks (`roi.ROIPeak`) into charge-state envelopes by
 checking whether their back-calculated neutral masses agree, using the same
-formula as the R package's `envelope_consistency()` (R/ms_matching.R):
+formula as the R package's `envelope_consistency()` (R/ms_matching.R) and
+`charge_envelope()` (R/mass_isotope.R: `mz = (M - z*PROTON)/z`, h_offset=0),
+inverted:
 
-    M = z * (mz - PROTON)      # negative-ESI [M-zH]^z-, h_offset = 0
+    M = z * (mz + PROTON)      # negative-ESI [M-zH]^z-, h_offset = 0
 
 This deliberately does NOT use an isotope/averagine model -- for these
 highly charged oligonucleotide species, charge-state agreement across
@@ -54,7 +56,23 @@ def _rt_clusters(peaks: list[ROIPeak], rt_tol: float) -> list[list[ROIPeak]]:
 
 def group_charge_states(peaks: list[ROIPeak], z_min: int = 3, z_max: int = 20,
                          rt_tol: float = 0.15, mass_tol_ppm: float = 20.0,
-                         min_mass: float = 200.0, max_mass: float = 50000.0) -> list[ChargeGroup]:
+                         min_mass: float = 200.0, max_mass: float = 50000.0,
+                         min_charge_states: int = 2) -> list[ChargeGroup]:
+    # Sweeping every peak against every z in [z_min, z_max] deliberately
+    # over-generates candidates: a single real peak's mass, back-calculated
+    # at some WRONG z, will coincidentally land within mass_tol_ppm of some
+    # other unrelated mass purely by chance, especially across a wide
+    # z-range. With only a couple of real peaks these coincidental
+    # single-observation chains vastly outnumber the real, multi-charge-
+    # state groups (observed: 7 real peaks from 2 real envelopes produced
+    # 127 total groups, only 3 genuine). A chain built from a single
+    # charge-state observation cannot actually confirm a charge state --
+    # that's the entire point of requiring envelope agreement -- so it is
+    # not a "low-confidence feature", it is statistical noise from the
+    # sweep itself. Filtering to n_charge_states >= min_charge_states
+    # before returning removes this at the source, before it ever reaches
+    # matching or the "unidentified peaks" table. Set min_charge_states=1
+    # to see everything the sweep produces, e.g. for debugging.
     z_range = range(z_min, z_max + 1)
     groups: list[ChargeGroup] = []
 
@@ -62,7 +80,7 @@ def group_charge_states(peaks: list[ROIPeak], z_min: int = 3, z_max: int = 20,
         candidates = []  # (peak_idx, z, M)
         for idx, p in enumerate(cluster):
             for z in z_range:
-                M = z * (p.mz - PROTON)
+                M = z * (p.mz + PROTON)
                 if min_mass <= M <= max_mass:
                     candidates.append((idx, z, M))
         candidates.sort(key=lambda c: c[2])
@@ -96,6 +114,9 @@ def group_charge_states(peaks: list[ROIPeak], z_min: int = 3, z_max: int = 20,
 
             rep_idx, rep_z, _ = entries[int(np.argmax(intensities))]
             rep_peak = cluster[rep_idx]
+
+            if len(entries) < min_charge_states:
+                continue
 
             groups.append(ChargeGroup(
                 mz=rep_peak.mz, charge=rep_z, neutral_mass=mean_mass,

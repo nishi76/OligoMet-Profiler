@@ -1487,6 +1487,13 @@ server <- function(input, output, session) {
         ms_results <- tryCatch({
           if (grepl("\\.mzML$|\\.mzml$|\\.mzXML$|\\.mzxml$", ms_path, ignore.case = TRUE)) {
             ms_data <- parse_mzml(ms_path)
+            if (isTRUE(ms_data$info$profile_mode)) {
+              rv$status_text <- paste0(rv$status_text,
+                "WARNING: this mzML file appears to be PROFILE mode (not centroided). ",
+                "MS1 feature extraction is designed for centroided peaks and may run slowly ",
+                "and/or produce poor results -- convert with `msconvert --centroid` first for ",
+                "reliable results.\n")
+            }
             ms1_features <- extract_ms1_features(ms_data$ms1, ppm = input$ppm_tol)
             adducts <- input$adducts
             if (is.null(adducts)) adducts <- "H"
@@ -1539,6 +1546,15 @@ server <- function(input, output, session) {
             batch_files_df$datapath, precursor_watchlist = watchlist_path,
             mass_tol_ppm = input$batch_deconv_ppm, n_workers = input$batch_n_workers,
             progress = function(msg) incProgress(0, detail = msg))
+
+          if (!is.null(deconv$profile_mode_files) && nrow(deconv$profile_mode_files) > 0) {
+            rv$status_text <- paste0(rv$status_text,
+              "WARNING: ", nrow(deconv$profile_mode_files), " batch file(s) appear to be PROFILE ",
+              "mode (not centroided): ", paste(deconv$profile_mode_files$sample, collapse = ", "),
+              ". ROI/charge-envelope detection is designed for centroided peaks and may run ",
+              "slowly and/or produce poor results -- convert with `msconvert --centroid` first ",
+              "for reliable results.\n")
+          }
 
           # Shiny renames uploads to random tmp paths (local-folder paths
           # are already their own basename, so this is a no-op there);
@@ -1607,7 +1623,7 @@ server <- function(input, output, session) {
       build_opts <- list(
         z_range = z_range, n_iso = input$n_iso,
         max_oxid = input$max_oxid, h_offset = input$h_offset,
-        use_envipat = input$use_envipat, include_internal = TRUE,
+        use_envipat = input$use_envipat, include_internal = FALSE,
         max_3p = input$max_3p, max_5p = input$max_5p,
         endo = input$endo,
         adducts = if (input$enable_ms && !is.null(input$adducts)) input$adducts else c("H","Na","K","NH4"),

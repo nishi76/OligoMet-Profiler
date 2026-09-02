@@ -82,8 +82,14 @@
 #   z_range    : charge states for m/z calculation (default 1:2)
 #   h_offset   : mass offset for non-standard envelope conventions
 #   include_dz : include d/z ions (approximate, default FALSE)
+#
+# Default ion_types omits c and x: in negative-ion CID of oligonucleotides
+# w and (a-B) ions dominate observed spectra by a wide margin, c/y appear
+# but weaker, and b/x -- x especially -- are rarely the ions actually seen.
+# Pass ion_types = c("a","aB","b","bB","c","w","x","y") for full McLuckey
+# coverage (e.g. HCD, or other fragmentation methods that behave differently).
 generate_fragments <- function(met, dict = STANDARD_DICT,
-                                ion_types = c("a", "aB", "b", "bB", "c", "w", "x", "y"),
+                                ion_types = c("a", "aB", "b", "bB", "w", "y"),
                                 z_range = 1:2, h_offset = 0,
                                 include_dz = FALSE) {
   if (include_dz) ion_types <- union(ion_types, c("d", "z"))
@@ -346,7 +352,7 @@ fragment_table <- function(frags) {
 #
 # Returns data.frame with matched fragments and their scores.
 match_fragments <- function(frags, ms2_peaks, tol_ppm = 25,
-                             z_range = 1:3, h_offset = 0) {
+                             z_range = 1:2, h_offset = 0) {
   if (length(frags) == 0 || nrow(ms2_peaks) == 0) return(data.frame())
 
   matches <- list()
@@ -471,9 +477,9 @@ confirmation_score <- function(matched, n, diagnostics = NULL) {
 # Convenience: generate fragments, match, score in one call.
 # Returns list with fragments, matches, diagnostics, coverage, score.
 confirm_metabolite <- function(met, ms2_peaks, dict = STANDARD_DICT,
-                                tol_ppm = 25, z_range = 1:3,
-                                ion_types = c("a", "aB", "b", "bB", "c", "w", "x", "y"),
-                                include_internal = TRUE,
+                                tol_ppm = 25, z_range = 1:2,
+                                ion_types = c("a", "aB", "b", "bB", "w", "y"),
+                                include_internal = FALSE,
                                 include_dz = FALSE, h_offset = 0) {
   frags <- generate_fragments(met, dict, ion_types, z_range, h_offset, include_dz)
   if (include_internal) {

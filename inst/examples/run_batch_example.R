@@ -120,6 +120,10 @@ run_batch_pipeline <- function() {
   features <- read_batch_features(deconv$features_path)
   ms2_by_sample <- if (!is.null(deconv$ms2_path)) read_batch_ms2(deconv$ms2_path) else NULL
   cat("  Features extracted:", nrow(features), "across", length(unique(features$sample)), "samples\n")
+  if (!is.null(deconv$profile_mode_files) && nrow(deconv$profile_mode_files) > 0) {
+    cat("  WARNING:", nrow(deconv$profile_mode_files), "file(s) appear to be PROFILE mode",
+        "(not centroided):", paste(deconv$profile_mode_files$sample, collapse = ", "), "\n")
+  }
 
   cat("\n--- Matching + MS2 confirmation ---\n")
   batch_results <- annotate_metabolites_batch(
@@ -147,7 +151,7 @@ run_batch_pipeline <- function() {
   cat("\n--- Building Excel workbook ---\n")
   build_opts <- list(z_range = PARAMS$z_range, n_iso = PARAMS$n_iso,
                       max_oxid = PARAMS$max_oxid, h_offset = PARAMS$h_offset,
-                      use_envipat = PARAMS$use_envipat, include_internal = TRUE,
+                      use_envipat = PARAMS$use_envipat, include_internal = FALSE,
                       max_3p = PARAMS$max_3p, max_5p = PARAMS$max_5p, endo = PARAMS$endo,
                       adducts = PARAMS$adducts, ppm_tol = PARAMS$ppm_tol)
   wb_file <- paste0(PARAMS$output_prefix, "_library.xlsx")

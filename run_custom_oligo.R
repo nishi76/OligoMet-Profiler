@@ -260,7 +260,7 @@ run_pipeline <- function() {
   build_opts <- list(
     z_range = PARAMS$z_range, n_iso = PARAMS$n_iso,
     max_oxid = PARAMS$max_oxid, h_offset = PARAMS$h_offset,
-    use_envipat = PARAMS$use_envipat, include_internal = TRUE,
+    use_envipat = PARAMS$use_envipat, include_internal = FALSE,
     max_3p = PARAMS$max_3p, max_5p = PARAMS$max_5p,
     endo = PARAMS$endo, adducts = PARAMS$adducts, ppm_tol = PARAMS$ppm_tol
   )

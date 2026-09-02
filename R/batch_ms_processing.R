@@ -21,12 +21,15 @@ find_python <- function() {
 # Resolve inst/python/ the same way ms_matching.R resolves py-adjacent
 # assets: a source checkout first (so edits take effect without
 # reinstalling), then the installed package, then a couple of interactive
-# working-directory fallbacks.
+# working-directory fallbacks. (The candidate order previously contradicted
+# this comment -- the installed package was checked first, so an installed
+# copy silently shadowed any local edits to inst/python/ until the package
+# was reinstalled.)
 .find_deconv_module_dir <- function() {
   candidates <- c(
-    tryCatch(system.file("python", package = "OligoMetProfiler"), error = function(e) ""),
     file.path(getwd(), "inst", "python"),
-    file.path(getwd(), "..", "inst", "python")
+    file.path(getwd(), "..", "inst", "python"),
+    tryCatch(system.file("python", package = "OligoMetProfiler"), error = function(e) "")
   )
   hit <- candidates[nzchar(candidates) & dir.exists(candidates)]
   if (length(hit) > 0) hit[1] else candidates[1]
@@ -53,7 +56,7 @@ run_batch_deconvolution <- function(files, output_dir = tempdir(),
                                      precursor_watchlist = NULL, ms2_watch_ppm = 50,
                                      roi_ppm = 15, rt_tol = 0.15, mass_tol_ppm = 20,
                                      z_range = 3:20, min_intensity = 1e4, min_scans = 3,
-                                     max_gap_scans = 2, n_workers = NULL,
+                                     max_gap_scans = 2, min_charge_states = 2, n_workers = NULL,
                                      python_bin = find_python(),
                                      module_dir = .find_deconv_module_dir(),
                                      progress = NULL, console_tracker = NULL) {
@@ -76,7 +79,7 @@ run_batch_deconvolution <- function(files, output_dir = tempdir(),
     "--roi-ppm", roi_ppm, "--rt-tol", rt_tol, "--mass-tol-ppm", mass_tol_ppm,
     "--z-min", min(z_range), "--z-max", max(z_range),
     "--min-intensity", min_intensity, "--min-scans", min_scans,
-    "--max-gap-scans", max_gap_scans
+    "--max-gap-scans", max_gap_scans, "--min-charge-states", min_charge_states
   )
   if (!is.null(n_workers)) args <- c(args, "--n-workers", n_workers)
   if (!is.null(precursor_watchlist)) {
@@ -111,9 +114,19 @@ run_batch_deconvolution <- function(files, output_dir = tempdir(),
     stop("Batch deconvolution failed:\n", paste(status, collapse = "\n"))
   }
 
+  # ROI/charge-envelope detection is designed for centroided peaks; a
+  # profile-mode input file still runs (just slowly, treating every raw
+  # sample point as a candidate peak), so the Python side flags it via
+  # this sidecar (present only when at least one file triggered it).
+  profile_warn_path <- file.path(output_dir, "_profile_mode_warnings.tsv")
+  profile_mode_files <- if (file.exists(profile_warn_path)) {
+    utils::read.delim(profile_warn_path, stringsAsFactors = FALSE)
+  } else NULL
+
   list(
     features_path = file.path(output_dir, output_file),
     ms2_path = if (!is.null(precursor_watchlist)) file.path(output_dir, ms2_output_file) else NULL,
+    profile_mode_files = profile_mode_files,
     log = status
   )
 }
@@ -194,8 +207,8 @@ unmatched_features_batch <- function(features, ms1_matches) {
 
 ## ---- MS2 confirmation of matched hits (reuses confirm_metabolite() verbatim)
 confirm_ms2_batch <- function(mets, ms1_matches, ms2_by_sample, dict = STANDARD_DICT,
-                               frag_tol_ppm = 25, frag_z_range = 1:3, h_offset = 0,
-                               ms2_lookup_ppm_tol = 20) {
+                               frag_tol_ppm = 25, frag_z_range = 1:2, h_offset = 0,
+                               ms2_lookup_ppm_tol = 20, include_internal = FALSE) {
   if (is.null(ms1_matches) || nrow(ms1_matches) == 0) return(data.frame())
   if (is.null(ms2_by_sample) || nrow(ms2_by_sample) == 0) return(data.frame())
 
@@ -211,7 +224,7 @@ confirm_ms2_batch <- function(mets, ms1_matches, ms2_by_sample, dict = STANDARD_
     best_spec <- spectra[[which.max(vapply(spectra, nrow, integer(1)))]]
     met <- mets[[which(vapply(mets, function(m) m$id == hit$met_id, logical(1)))]]
     conf <- confirm_metabolite(met, best_spec, dict, tol_ppm = frag_tol_ppm,
-                                z_range = frag_z_range, include_internal = TRUE,
+                                z_range = frag_z_range, include_internal = include_internal,
                                 h_offset = h_offset)
 
     data.frame(sample = hit$sample, met_id = hit$met_id, met_name = hit$met_name,
@@ -232,14 +245,14 @@ annotate_metabolites_batch <- function(mets, features, ms2_by_sample = NULL,
                                         z_range = 3:12, adducts = c("H", "Na", "K", "NH4"),
                                         max_oxid = 6, h_offset = 0, n_iso = 5,
                                         use_envipat = TRUE, frag_tol_ppm = 25,
-                                        frag_z_range = 1:3) {
+                                        frag_z_range = 1:2, include_internal = FALSE) {
   ms1_matches <- match_ms1_batch(mets, features, dict, ppm_tol, z_range, adducts,
                                   max_oxid, h_offset, n_iso, use_envipat)
 
   env <- data.frame()
   if (nrow(ms1_matches) > 0) {
     env <- do.call(rbind, lapply(split(ms1_matches, ms1_matches$sample), function(g) {
-      e <- envelope_consistency(g)
+      e <- envelope_consistency(g, h_offset = h_offset)
       if (nrow(e) > 0) e$sample <- g$sample[1]
       e
     }))
@@ -250,7 +263,8 @@ annotate_metabolites_batch <- function(mets, features, ms2_by_sample = NULL,
   ms2_conf <- data.frame()
   if (!is.null(ms2_by_sample) && nrow(ms1_matches) > 0) {
     ms2_conf <- confirm_ms2_batch(mets, ms1_matches, ms2_by_sample, dict,
-                                   frag_tol_ppm, frag_z_range, h_offset)
+                                   frag_tol_ppm = frag_tol_ppm, frag_z_range = frag_z_range,
+                                   h_offset = h_offset, include_internal = include_internal)
   }
 
   list(ms1_matches = ms1_matches, envelope = env,

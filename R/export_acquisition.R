@@ -124,9 +124,9 @@ thermo_ms2_prm_target_list <- function(mets, dict = STANDARD_DICT, z_range = 3:8
 # precursor->product transition list. This is reference data, not an
 # acquisition input; the instrument records the full MS2 spectrum for each
 # targeted precursor regardless of which fragments are listed here.
-ms2_fragment_reference <- function(mets, dict = STANDARD_DICT, z_range = 1:3,
-                                   include_internal = TRUE,
-                                   ion_types = c("a", "aB", "b", "bB", "c", "w", "x", "y")) {
+ms2_fragment_reference <- function(mets, dict = STANDARD_DICT, z_range = 1:2,
+                                   include_internal = FALSE,
+                                   ion_types = c("a", "aB", "b", "bB", "w", "y")) {
   rows <- list()
   for (met in mets) {
     if (met$n < 3) next

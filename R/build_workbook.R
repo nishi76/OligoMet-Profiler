@@ -198,7 +198,7 @@
 
 ## ---- Sheet 4: Fragment Ions -----------------------------------------------
 .build_fragment_sheet <- function(wb, mets, dict, styles, z_range,
-                                   include_internal = TRUE) {
+                                   include_internal = FALSE) {
   openxlsx::addWorksheet(wb, "Fragment Ions")
   headers <- c("Met ID", "Met Name", "Ion Type", "Direction", "Cleavage Site",
                "Fragment Length", "Formula", "Monoisotopic Mass (Da)",
@@ -502,7 +502,7 @@ build_workbook <- function(spec, mets, dict = STANDARD_DICT,
   max_oxid <- opts$max_oxid %||% 6
   h_offset <- opts$h_offset %||% 0
   use_envipat <- opts$use_envipat %||% TRUE
-  include_internal <- opts$include_internal %||% TRUE
+  include_internal <- opts$include_internal %||% FALSE
 
   styles <- .wb_styles()
   wb <- openxlsx::createWorkbook()

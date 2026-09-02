@@ -96,7 +96,8 @@ PARAMS <- list(
   n_iso         = 5, max_oxid = 6, h_offset = 0, use_envipat = TRUE,
   ppm_tol       = 10,             # MS1 matching tolerance (ppm)
   adducts       = c("H", "Na", "K", "NH4"),
-  frag_tol_ppm  = 25, frag_z_range = 1:3,   # MS2 confirmation tolerance
+  frag_tol_ppm  = 25, frag_z_range = 1:2,   # MS2 confirmation tolerance -- z=1 dominates,
+                                             # z=2 for larger fragments, z=3+ rarely observed
   # Python deconvolution parameters (see inst/python/oligomet_deconv/cli.py):
   deconv_z_range = 3:20, deconv_ppm_tol = 20, roi_ppm = 15, rt_tol = 0.15,
   min_intensity = 1e4, min_scans = 3, max_gap_scans = 2, ms2_watch_ppm = 50,
@@ -150,6 +151,12 @@ run_batch_pipeline <- function() {
   features <- read_batch_features(deconv$features_path)
   ms2_by_sample <- if (!is.null(deconv$ms2_path)) read_batch_ms2(deconv$ms2_path) else NULL
   cat("  Features extracted:", nrow(features), "across", length(unique(features$sample)), "samples\n")
+  if (!is.null(deconv$profile_mode_files) && nrow(deconv$profile_mode_files) > 0) {
+    cat("  WARNING:", nrow(deconv$profile_mode_files), "file(s) appear to be PROFILE mode",
+        "(not centroided):", paste(deconv$profile_mode_files$sample, collapse = ", "), "\n")
+    cat("           ROI/charge-envelope detection is designed for centroided peaks --",
+        "convert with `msconvert --centroid` first for reliable results.\n")
+  }
 
   # Step 4: match against theoretical library + MS2 confirmation
   cat("\n--- Matching + MS2 confirmation ---\n")
@@ -191,7 +198,7 @@ run_batch_pipeline <- function() {
   cat("\n--- Building Excel workbook ---\n")
   build_opts <- list(z_range = PARAMS$z_range, n_iso = PARAMS$n_iso,
                       max_oxid = PARAMS$max_oxid, h_offset = PARAMS$h_offset,
-                      use_envipat = PARAMS$use_envipat, include_internal = TRUE,
+                      use_envipat = PARAMS$use_envipat, include_internal = FALSE,
                       max_3p = PARAMS$max_3p, max_5p = PARAMS$max_5p, endo = PARAMS$endo,
                       adducts = PARAMS$adducts, ppm_tol = PARAMS$ppm_tol)
   wb_file <- paste0(PARAMS$output_prefix, "_library.xlsx")

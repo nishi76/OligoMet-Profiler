@@ -76,6 +76,10 @@ def iter_scans(path: str) -> Iterator[dict]:
             if mz is None or intensity is None or len(mz) == 0:
                 continue
             rt = _scan_start_time(spec)
+            # MS:1000128/MS:1000127 (profile/centroid spectrum) are
+            # valueless flag cvParams -- pyteomics represents a present
+            # flag as an empty string (falsy!), not True, so this must be
+            # a key-presence check, not a truthiness check.
             out = {
                 "scan_id": spec.get("id") or spec.get("num") or str(spec.get("index")),
                 "ms_level": int(ms_level),
@@ -84,6 +88,8 @@ def iter_scans(path: str) -> Iterator[dict]:
                 "intensity": np.asarray(intensity, dtype=np.float64),
                 "precursor_mz": None,
                 "precursor_z": None,
+                "is_profile": "profile spectrum" in spec,
+                "is_centroid": "centroid spectrum" in spec,
             }
             if out["ms_level"] == 2:
                 out["precursor_mz"], out["precursor_z"] = _precursor_info(spec)

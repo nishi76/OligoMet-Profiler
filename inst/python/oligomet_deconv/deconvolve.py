@@ -30,6 +30,7 @@ class DeconvParams:
     min_mass: float = 200.0
     max_mass: float = 50000.0
     ms2_watch_ppm: float = 50.0
+    min_charge_states: int = 2
 
 
 def _load_watchlist(path: Optional[str]) -> Optional[np.ndarray]:
@@ -50,15 +51,30 @@ def _on_watchlist(precursor_mz, watchlist: Optional[np.ndarray], ppm: float) -> 
 
 
 def process_file(path: str, params: DeconvParams, precursor_watchlist_path: Optional[str] = None):
-    """Returns (features: list[dict], ms2: list[dict]) for one file."""
+    """Returns (features: list[dict], ms2: list[dict], meta: dict) for one file.
+
+    meta["profile_mode_detected"] is True/False once the first MS1 scan's
+    profile/centroid flag cvParam settles it, else None (file didn't set
+    either flag -- some exporters omit it even though it's nominally
+    mandatory). ROI/charge-envelope detection is designed for centroided
+    peaks; profile-mode input still runs, just slowly and with every raw
+    sample point treated as a candidate peak, so this is worth surfacing
+    to the caller rather than silently grinding through it.
+    """
     watchlist = _load_watchlist(precursor_watchlist_path)
     roi_builder = ROIBuilder(roi_ppm=params.roi_ppm, max_gap_scans=params.max_gap_scans,
                               min_intensity=params.min_intensity, min_scans=params.min_scans)
     ms2_rows = []
     sample = os.path.splitext(os.path.basename(path))[0]
+    profile_mode_detected = None
 
     for scan in iter_scans(path):
         if scan["ms_level"] == 1:
+            if profile_mode_detected is None:
+                if scan["is_profile"]:
+                    profile_mode_detected = True
+                elif scan["is_centroid"]:
+                    profile_mode_detected = False
             roi_builder.add_scan(scan["rt"], scan["mz"], scan["intensity"])
         elif scan["ms_level"] == 2 and watchlist is not None:
             if _on_watchlist(scan["precursor_mz"], watchlist, params.ms2_watch_ppm):
@@ -74,6 +90,7 @@ def process_file(path: str, params: DeconvParams, precursor_watchlist_path: Opti
     groups = group_charge_states(
         roi_peaks, z_min=params.z_min, z_max=params.z_max, rt_tol=params.rt_tol,
         mass_tol_ppm=params.mass_tol_ppm, min_mass=params.min_mass, max_mass=params.max_mass,
+        min_charge_states=params.min_charge_states,
     )
 
     features = []
@@ -85,4 +102,5 @@ def process_file(path: str, params: DeconvParams, precursor_watchlist_path: Opti
             "n_charge_states": g.n_charge_states, "mass_cv_ppm": g.mass_cv_ppm,
             "rt_start": g.rt_start, "rt_end": g.rt_end, "area": g.area,
         })
-    return features, ms2_rows
+    return features, ms2_rows, {"sample": sample, "source_file": path,
+                                 "profile_mode_detected": profile_mode_detected}
