@@ -68,13 +68,6 @@ if (!requireNamespace("DT", quietly = TRUE)) {
 # loses its folder-browser button.
 .have_shinyfiles <- requireNamespace("shinyFiles", quietly = TRUE)
 
-# Optional: "Download All (.zip)" needs either the zip package or a system
-# zip binary. The zip package is preferred -- it's a self-contained CRAN
-# package, so it works the same on Windows, macOS and Linux without relying
-# on an external zip executable being on PATH.
-.have_zip_pkg <- requireNamespace("zip", quietly = TRUE)
-.have_zip_cmd <- nzchar(Sys.which("zip"))
-
 library(shiny)
 library(DT)
 
