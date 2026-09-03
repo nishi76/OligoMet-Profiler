@@ -244,7 +244,12 @@ write_mgf <- function(records, file) {
 }
 
 ## ---- MSP writer -------------------------------------------------------------
-write_msp <- function(records, file) {
+# measured = TRUE labels records as acquired/annotated data (peaks and
+# precursor mz/intensity are real instrument values; only the per-peak
+# fragment-ion ANNOTATION is a prediction) rather than a fully theoretical
+# spectrum -- see batch_annotated_msp_records() in R/mirror_plot.R for the
+# one caller that uses this.
+write_msp <- function(records, file, measured = FALSE) {
   con <- file(file, open = "wt")
   on.exit(close(con), add = TRUE)
   for (r in records) {
@@ -252,13 +257,22 @@ write_msp <- function(records, file) {
     # record's Comment field rather than in a file header -- a stray "#" block
     # ahead of the first Name: is not something every MSP reader tolerates.
     # Kept to the footer line; the full statement is in DISCLAIMER.md.
-    comment <- paste0("Theoretical ", r$level, " spectrum -- ",
+    comment <- if (measured) {
+      paste0("Acquired ", r$level, " spectrum -- ", OLIGOMET_FOOTER,
+             " Peaks are measured instrument data; per-peak fragment-ion ",
+             "annotations (where present) are a computed match, not a ",
+             "measurement",
+             if (nzchar(.fields_to_string(r$fields)))
+               paste0("; ", .fields_to_string(r$fields)) else "")
+    } else {
+      paste0("Theoretical ", r$level, " spectrum -- ",
                       OLIGOMET_FOOTER,
                       " Computed prediction, not a measurement",
                       if (r$level == "MS2")
                         "; intensities are a rule-based heuristic, not measured" else "",
                       if (nzchar(.fields_to_string(r$fields)))
                         paste0("; ", .fields_to_string(r$fields)) else "")
+    }
     writeLines(c(
       paste0("NAME: ", r$name),
       paste0("PRECURSORMZ: ", sprintf("%.4f", r$precursor_mz)),

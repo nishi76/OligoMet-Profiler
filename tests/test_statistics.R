@@ -121,4 +121,57 @@ stopifnot(inherits(p2, "gg"))
 stopifnot(inherits(p3, "gg"))
 cat("plot_volcano/plot_group_boxplot/plot_trend all return ggplot objects: PASS\n")
 
+## ---- build_kind_abundance_matrix() / kind_abundance_long() (M5) ------------
+# Synthetic data with real, varying `kind` values (unlike the single-kind
+# "truncation" fixture above) and a deliberate per-kind group difference --
+# "exo_3p" boosted under "treated", "parent" and "exo_5p" flat -- so the
+# reused compare_two_groups() has something real to detect at the class
+# level, not just the metabolite level.
+cat("\n--- build_kind_abundance_matrix() / kind_abundance_long() ---\n")
+set.seed(11)
+kind_met_ids <- c("M01", "M02", "M03", "M04")
+kind_met_kinds <- c("parent", "exo_3p", "exo_3p", "exo_5p")
+kind_batch_matches <- do.call(rbind, lapply(seq_along(kind_met_ids), function(i) {
+  do.call(rbind, lapply(seq_along(samples_2g), function(j) {
+    base <- 1e4
+    fc <- if (kind_met_kinds[i] == "exo_3p" && group_2g[j] == "treated") 5 else 1
+    data.frame(met_id = kind_met_ids[i], met_name = kind_met_ids[i],
+               kind = kind_met_kinds[i], sample = samples_2g[j],
+               intensity = base * fc * exp(rnorm(1, 0, 0.05)),
+               stringsAsFactors = FALSE)
+  }))
+}))
+
+kind_abund <- build_kind_abundance_matrix(kind_batch_matches, signal_col = "intensity")
+cat("Kind abundance matrix:", nrow(kind_abund), "kinds x", length(samples_2g), "samples\n")
+stopifnot(nrow(kind_abund) == 3)  # parent, exo_3p, exo_5p
+stopifnot(setequal(kind_abund$kind, c("parent", "exo_3p", "exo_5p")))
+
+# Two metabolites (M02, M03) share kind "exo_3p" -- their SUM (not just one)
+# must land in the exo_3p row, confirming the collapse-then-sum-by-kind
+# behavior (fixed after an earlier draft double-counted multi-charge-state
+# matches by summing raw rows directly).
+exo3p_ctrl1 <- sum(kind_batch_matches$intensity[
+  kind_batch_matches$kind == "exo_3p" & kind_batch_matches$sample == "ctrl_1"])
+stopifnot(abs(kind_abund$ctrl_1[kind_abund$kind == "exo_3p"] - exo3p_ctrl1) < 1e-6)
+cat("exo_3p (2 metabolites) correctly summed per sample: PASS\n")
+
+kind_long <- kind_abundance_long(kind_abund, sample_meta_2g)
+stopifnot(all(c("met_id", "met_name", "kind", "sample", "intensity", "group") %in% names(kind_long)))
+stopifnot(nrow(kind_long) == 3 * 6)
+cat("kind_abundance_long(): expected shape, reuses abundance_long() verbatim: PASS\n")
+
+## ---- compare_two_groups() reused unmodified on kind-level data -------------
+cat("\n--- compare_two_groups() on kind-level data ---\n")
+kind_two_grp <- compare_two_groups(kind_long, "control", "treated")
+stopifnot(nrow(kind_two_grp) == 3)
+exo3p_row <- kind_two_grp[kind_two_grp$met_id == "exo_3p", ]
+parent_row <- kind_two_grp[kind_two_grp$met_id == "parent", ]
+stopifnot(exo3p_row$log2fc > 1.5)  # ~5x boost -> log2fc ~2.3
+stopifnot(exo3p_row$p_adj < 0.05)
+stopifnot(abs(parent_row$log2fc) < 0.5)  # flat between groups
+cat("exo_3p (boosted class): log2fc =", round(exo3p_row$log2fc, 2),
+    " p_adj =", signif(exo3p_row$p_adj, 3), " -- PASS\n")
+cat("parent (flat class): log2fc =", round(parent_row$log2fc, 2), " -- PASS\n")
+
 cat("\n==== All statistics tests passed ====\n")

@@ -16,6 +16,7 @@ source(file.path(.pkg_root, "R", "metabolites.R"))
 source(file.path(.pkg_root, "R", "mass_isotope.R"))
 source(file.path(.pkg_root, "R", "fragments.R"))
 source(file.path(.pkg_root, "R", "ms_matching.R"))
+source(file.path(.pkg_root, "R", "spectra_io.R"))
 
 cat("==== MS matching validation ====\n\n")
 
@@ -199,5 +200,38 @@ stopifnot(nrow(lone) == 1 && lone$n_scans == 1)
 pair <- feat_rt[abs(feat_rt$rt - 40.015) < 0.1, ]
 stopifnot(nrow(pair) == 1 && pair$n_scans == 2)
 cat("extract_ms1_features() RT clustering verified (no cross-event merging): PASS\n")
+
+## ---- read_ms_file(): fallback path parity with parse_mzml() -------------
+# Exercised unconditionally (no Spectra/mzR needed) -- prefer_spectra=FALSE
+# forces read_ms_file() down the same parse_mzml() code path directly, so
+# this just confirms the dispatcher wraps it faithfully (same shape, same
+# content) rather than silently transforming anything.
+cat("\n--- read_ms_file() fallback path ---\n")
+fixture <- file.path(.pkg_root, "inst", "extdata", "batch_example", "ctrl_1.mzML")
+ref <- parse_mzml(fixture)
+fb  <- read_ms_file(fixture, prefer_spectra = FALSE)
+stopifnot(identical(ref$ms1, fb$ms1))
+stopifnot(identical(ref$ms2, fb$ms2))
+stopifnot(identical(ref$info$n_ms1, fb$info$n_ms1))
+stopifnot(identical(ref$info$n_ms2, fb$info$n_ms2))
+cat("read_ms_file(prefer_spectra=FALSE) matches parse_mzml() exactly: PASS\n")
+
+## ---- read_ms_file(): Spectra/mzR path, only if installed -----------------
+# Same fixture, real Spectra::Spectra()/MsBackendMzR() read this time --
+# skipped (not failed) when Spectra/mzR aren't available, so CI without
+# Bioconductor still exercises the fallback above and stays green.
+if (.have_spectra()) {
+  cat("\n--- read_ms_file() Spectra/mzR path ---\n")
+  sp <- read_ms_file(fixture, prefer_spectra = TRUE)
+  stopifnot(nrow(sp$ms1) == nrow(ref$ms1))
+  stopifnot(nrow(sp$ms2) == nrow(ref$ms2))
+  stopifnot(max(abs(sort(sp$ms1$mz) - sort(ref$ms1$mz))) < 1e-6)
+  stopifnot(max(abs(sort(sp$ms1$intensity) - sort(ref$ms1$intensity))) < 1e-6)
+  stopifnot(all(sort(round(sp$ms2$mz, 4)) == sort(round(ref$ms2$mz, 4))))
+  stopifnot(unique(sp$ms2$precursor_z) == unique(ref$ms2$precursor_z))
+  cat("Spectra/mzR peaks agree with parse_mzml() within float tolerance: PASS\n")
+} else {
+  cat("\n--- read_ms_file() Spectra/mzR path: SKIPPED (Spectra/mzR not installed) ---\n")
+}
 
 cat("\n==== All MS matching tests passed ====\n")

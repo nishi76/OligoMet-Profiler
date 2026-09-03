@@ -77,16 +77,22 @@ one strand at a time.
 
 ## 4. Run and collect outputs
 
-Click **Run**. You get the 7-sheet Excel workbook, an HTML report,
-Orbitrap Exploris MS1 inclusion and MS2 PRM target lists (CSV), and
-MGF/MSP spectral libraries.
+Click **1. Generate Library**. You get the 7-sheet Excel workbook, an
+HTML report, Orbitrap Exploris MS1 inclusion and MS2 PRM target lists
+(CSV), and MGF/MSP spectral libraries — no MS data needed yet. Save the
+session (below) if you want to come back and import acquired data later.
 
 ## 5. (Optional) match against LC-MS data
 
-Upload an mzML/mzXML file or two-column peak list in the MS panel.
-Vendor raw files convert automatically when ProteoWizard `msconvert` is
-on the PATH. The MS Matching sheet reports matches with ppm error,
-isotope-fit, envelope-consistency, and MS2 confirmation scores.
+Upload an mzML/mzXML/raw file or two-column peak list in the MS panel,
+then click **2. Import & Process MS Data** (enabled once Step 1 has run).
+Vendor raw files (Thermo `.raw`, Sciex `.wiff`, Bruker `.baf`/`.yep`)
+convert automatically to `.mzML` when ProteoWizard `msconvert` is on the
+PATH (install from proteowizard.org) — without it, upload an `.mzML`/
+`.mzXML` export instead. Agilent/Bruker `.d` folders can only be reached
+through the batch mode's local-folder input, not file upload. The MS
+Matching sheet reports matches with ppm error, isotope-fit,
+envelope-consistency, and MS2 confirmation scores.
 
 ---
 

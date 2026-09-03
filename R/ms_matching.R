@@ -366,6 +366,12 @@ match_ms1 <- function(mets, ms1_features, dict = STANDARD_DICT,
               ppm_error = round(ppm_err, 3),
               rt = ms1_features$rt[best],
               intensity = ms1_features$max_intensity[best],
+              # Peak area (trapezoidal AUC) is only ever present when
+              # ms1_features came from the batch/Python ROI pipeline (see
+              # match_ms1_batch()) -- always emit the column, NA when not,
+              # so every caller (rbind across metabolites/samples, Excel
+              # export, degradation_summary()) sees a stable column set.
+              area = if ("area" %in% names(ms1_features)) ms1_features$area[best] else NA_real_,
               iso_fit = round(iso_fit, 3),
               formula = format_formula(fv),
               stringsAsFactors = FALSE
@@ -518,6 +524,7 @@ annotate_metabolites <- function(mets, ms1_features, ms2_data = NULL,
         ms2_results[[met_id]] <- list(
           met_name = unique_mets$met_name[i],
           n_peaks = nrow(best_spec),
+          best_spec = best_spec,
           matched_frags = matched_frags,
           diagnostics = diags,
           score = score

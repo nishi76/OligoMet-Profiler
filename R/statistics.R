@@ -27,6 +27,30 @@ build_abundance_matrix <- function(batch_matches) {
   out
 }
 
+# Same as build_abundance_matrix(), but on peak area (trapezoidal AUC) --
+# the batch/Python ROI pipeline's alternative to max intensity (see the
+# `area` column threaded through match_ms1()/match_ms1_batch() in
+# R/ms_matching.R and R/batch_ms_processing.R). Returns an empty data.frame
+# if `area` isn't present at all (e.g. single-file-mode features, which the
+# R-native reader doesn't compute AUC for) -- callers (degradation_summary()
+# in R/degradation.R) fall back to build_abundance_matrix()'s intensity in
+# that case.
+build_abundance_matrix_area <- function(batch_matches) {
+  if (is.null(batch_matches) || nrow(batch_matches) == 0) return(data.frame())
+  if (!"area" %in% names(batch_matches) || all(is.na(batch_matches$area))) return(data.frame())
+  met_info <- unique(batch_matches[, c("met_id", "met_name", "kind")])
+  met_info <- met_info[order(met_info$met_id), ]
+  samples <- unique(batch_matches$sample)
+  out <- met_info
+  for (s in samples) {
+    sub <- batch_matches[batch_matches$sample == s & !is.na(batch_matches$area), ]
+    if (nrow(sub) == 0) { out[[s]] <- NA_real_; next }
+    best <- stats::aggregate(area ~ met_id, data = sub, FUN = max)
+    out[[s]] <- best$area[match(out$met_id, best$met_id)]
+  }
+  out
+}
+
 # Long-format companion: sample_meta is data.frame(sample, group) and/or
 # data.frame(sample, timepoint) -- whichever columns are present besides
 # `sample` are carried through untouched.
@@ -46,6 +70,49 @@ abundance_long <- function(abundance_matrix, sample_meta) {
   rows <- rows[!vapply(rows, is.null, logical(1))]
   if (length(rows) == 0) return(data.frame())
   do.call(rbind, rows)
+}
+
+## ---- Kind-level (composition-class) abundance --------------------------------
+# Sums signal (intensity, or area if you have it -- see build_abundance_matrix_area())
+# across all metabolites sharing a `kind` value (parent/exo_3p/exo_5p/
+# endo_5frag/endo_3frag -- the same rollup degradation_summary() does
+# internally, see R/degradation.R), per sample. Exposed here as a standalone
+# long table so it can be run through the EXISTING compare_two_groups()/
+# compare_multi_groups()/compare_time_series() completely unmodified, by
+# presenting `kind` values as if they were `met_id` -- those three
+# functions are structurally generic over "whatever the grouping-ID column
+# is called," so this costs zero new statistical code. The resulting
+# met_id/met_name columns will literally hold "exo_3p"/"endo_5frag" etc.;
+# rename for display at the call site (Shiny/Excel), not here.
+build_kind_abundance_matrix <- function(batch_matches, signal_col = "intensity") {
+  if (is.null(batch_matches) || nrow(batch_matches) == 0) return(data.frame())
+  if (!signal_col %in% names(batch_matches)) return(data.frame())
+  m <- batch_matches[!is.na(batch_matches[[signal_col]]), ]
+  if (nrow(m) == 0) return(data.frame())
+  # Collapse to one row per (sample, met_id) first -- max across charge
+  # states/adducts/oxidation levels of the SAME metabolite, the same rule
+  # build_abundance_matrix()/degradation_summary() use -- so a metabolite
+  # matched at more than one charge state doesn't get double-counted when
+  # summed into its kind's total below.
+  best <- stats::aggregate(stats::as.formula(paste(signal_col, "~ sample + met_id")),
+                            data = m, FUN = max)
+  best <- merge(best, unique(m[, c("met_id", "kind")]), by = "met_id")
+  kinds <- sort(unique(best$kind))
+  samples <- unique(best$sample)
+  out <- data.frame(met_id = kinds, met_name = kinds, kind = kinds, stringsAsFactors = FALSE)
+  for (s in samples) {
+    sub <- best[best$sample == s, ]
+    agg <- stats::aggregate(stats::as.formula(paste(signal_col, "~ kind")), data = sub, FUN = sum)
+    out[[s]] <- agg[[signal_col]][match(out$kind, agg$kind)]
+  }
+  out
+}
+
+# Long-format companion, identical shape/contract to abundance_long() -- a
+# verbatim pass-through, since abundance_long() only ever references
+# met_id/met_name/kind/sample columns generically.
+kind_abundance_long <- function(kind_abundance_matrix, sample_meta) {
+  abundance_long(kind_abundance_matrix, sample_meta)
 }
 
 ## ---- Two-group comparison ---------------------------------------------------

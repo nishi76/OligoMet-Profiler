@@ -56,6 +56,8 @@ Suggests:
     rmarkdown,
     knitr,
     zip,
-    testthat (>= 3.0.0)
+    testthat (>= 3.0.0),
+    Spectra,
+    mzR
 VignetteBuilder: knitr
 RoxygenNote: 7.3.2

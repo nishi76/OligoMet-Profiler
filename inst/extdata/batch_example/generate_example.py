@@ -12,6 +12,16 @@ Each file has:
   - a 7-scan MS1 charge envelope (z=5,6,7,8) for the inotersen parent,
     with realistic per-replicate mass (ppm) and intensity (CV) noise,
     "treated" replicates at ~3x "control" intensity;
+  - a 7-scan MS1 charge envelope (z=5,6,7,8) for each of two truncated
+    degradant forms (3' N-1 and 5' N-1, from theoretical_values.json's
+    "degradants" list), at a lower level than the parent in both groups
+    but noticeably higher under "treated" (~2.3x "control") -- gives the
+    degradation-percentage calculation (R/degradation.R) something
+    non-trivial and non-zero to compute, and gives the kind-level group
+    comparison (R/statistics.R's build_kind_abundance_matrix()) a real,
+    detectable control-vs-treated difference to find. Every charge
+    state's m/z sits tens of Da clear of the parent's and the
+    contaminant's, so ROI extraction keeps all three as separate traces;
   - a 7-scan "contaminant" trace at an unrelated m/z that matches no
     theoretical metabolite at any charge/adduct -- persists across
     enough scans to form a real ROI, so it lands in "unidentified
@@ -41,11 +51,19 @@ def _b64(vals):
 def _binarr(kind, vals):
     acc = "MS:1000514" if kind == "mz" else "MS:1000515"
     name = "m/z array" if kind == "mz" else "intensity array"
+    b64 = _b64(vals)
+    # encodedLength (length of the base64 string, in bytes) is a REQUIRED
+    # attribute of binaryDataArray per the mzML spec. Our own xml2-based
+    # parser (parse_mzml() in R/ms_matching.R) never checks it, but mzR's
+    # stricter parser does and rejects a binaryDataArray missing it -- so it
+    # must be set for these fixtures to be readable by mzR/Spectra as well
+    # as the built-in fallback parser.
     return (
-        f'<binaryDataArray><cvParam accession="{acc}" name="{name}"/>'
+        f'<binaryDataArray encodedLength="{len(b64)}">'
+        f'<cvParam accession="{acc}" name="{name}"/>'
         f'<cvParam accession="MS:1000523" name="64-bit float"/>'
         f'<cvParam accession="MS:1000574" name="zlib compression"/>'
-        f'<binary>{_b64(vals)}</binary></binaryDataArray>'
+        f'<binary>{b64}</binary></binaryDataArray>'
     )
 
 
@@ -84,6 +102,14 @@ def build_file(path, group, replicate, theo, seed):
     rts = [4.7, 4.8, 4.9, 5.0, 5.1, 5.2, 5.3]
 
     per_charge_weight = {5: 0.6, 6: 1.0, 7: 0.9, 8: 0.5}
+    # Degradant level relative to that group's OWN parent base_intensity --
+    # low in both groups (so the parent still dominates), clearly higher
+    # under "treated". At the dominant charge states (z=6,7; weight >= 0.9)
+    # this clears the ROI builder's default min_intensity=1e4 floor in both
+    # groups; the weaker z=5,8 charge states may not, same as the parent.
+    degradant_frac = {"control": 0.15, "treated": 0.35}[group]
+    degradants = theo.get("degradants", [])
+
     spectra, idx = [], 1
     for rt, shape in zip(rts, profile):
         mzs, ints = [], []
@@ -92,6 +118,13 @@ def build_file(path, group, replicate, theo, seed):
             mzs.append(mz * (1 + ppm_noise / 1e6))
             cv_noise = rng.uniform(0.9, 1.1)
             ints.append(base_intensity * shape * per_charge_weight[z] * cv_noise)
+        for degr in degradants:
+            degr_z_mz = {int(k[1:]): v for k, v in degr["mz"].items()}
+            for z, mz in sorted(degr_z_mz.items()):
+                ppm_noise = rng.uniform(-2.5, 2.5)
+                mzs.append(mz * (1 + ppm_noise / 1e6))
+                cv_noise = rng.uniform(0.9, 1.1)
+                ints.append(base_intensity * degradant_frac * shape * per_charge_weight[z] * cv_noise)
         # a contaminant trace present in every scan (own elution shape),
         # unrelated to any theoretical metabolite -- exercises the
         # "unidentified peaks" (retained, not discarded) path downstream

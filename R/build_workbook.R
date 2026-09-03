@@ -349,45 +349,96 @@
   openxlsx::freezePane(wb, "Unidentified Peaks", firstActiveRow = 2)
 }
 
+## ---- Sheet: Degradation (peak-area-based % degradation, R/degradation.R) --
+# degradation is annotate_metabolites_batch()'s $degradation element:
+# list(per_sample, composition, top_degradants, signal_used).
+.build_degradation_sheet <- function(wb, degradation, styles) {
+  if (is.null(degradation) || is.null(degradation$per_sample) ||
+      nrow(degradation$per_sample) == 0) {
+    return()
+  }
+  openxlsx::addWorksheet(wb, "Degradation")
+  openxlsx::writeData(wb, "Degradation",
+                       paste0("% Degradation per Sample (signal: ",
+                              degradation$signal_used, ")"),
+                       startRow = 1, colNames = FALSE)
+  openxlsx::addStyle(wb, "Degradation", styles$subheader,
+                      rows = 1, cols = 1:ncol(degradation$per_sample), gridExpand = TRUE)
+  openxlsx::writeData(wb, "Degradation", degradation$per_sample, startRow = 2, colNames = TRUE)
+  openxlsx::addStyle(wb, "Degradation", styles$header,
+                      rows = 2, cols = 1:ncol(degradation$per_sample), gridExpand = TRUE)
+  next_row <- nrow(degradation$per_sample) + 4
+
+  openxlsx::writeData(wb, "Degradation", "Composition by Class",
+                       startRow = next_row, colNames = FALSE)
+  openxlsx::addStyle(wb, "Degradation", styles$subheader,
+                      rows = next_row, cols = 1:ncol(degradation$composition), gridExpand = TRUE)
+  openxlsx::writeData(wb, "Degradation", degradation$composition,
+                       startRow = next_row + 1, colNames = TRUE)
+  openxlsx::addStyle(wb, "Degradation", styles$header,
+                      rows = next_row + 1, cols = 1:ncol(degradation$composition), gridExpand = TRUE)
+  next_row2 <- next_row + nrow(degradation$composition) + 3
+
+  if (!is.null(degradation$top_degradants) && nrow(degradation$top_degradants) > 0) {
+    openxlsx::writeData(wb, "Degradation", "Top Degradant Species",
+                         startRow = next_row2, colNames = FALSE)
+    openxlsx::addStyle(wb, "Degradation", styles$subheader,
+                        rows = next_row2, cols = 1:ncol(degradation$top_degradants), gridExpand = TRUE)
+    openxlsx::writeData(wb, "Degradation", degradation$top_degradants,
+                         startRow = next_row2 + 1, colNames = TRUE)
+    openxlsx::addStyle(wb, "Degradation", styles$header,
+                        rows = next_row2 + 1, cols = 1:ncol(degradation$top_degradants), gridExpand = TRUE)
+  }
+  openxlsx::setColWidths(wb, "Degradation", cols = 1:10, widths = 16)
+}
+
 ## ---- Sheets: Group Comparison / Time Series (statistics suite) -------------
 # stats_results is list(mode = "two_group"|"multi_group"|"time_series",
-# result = <compare_*() output>) -- see R/statistics.R.
-.build_stats_sheet <- function(wb, stats_results, styles) {
+# result = <compare_*() output>) -- see R/statistics.R. group_sheet_name/
+# time_sheet_name let the same builder serve both the per-metabolite stats
+# (default sheet names) and the kind-level/composition-class stats (M5:
+# build_kind_abundance_matrix() in R/statistics.R) under distinct sheet
+# names, without duplicating this function.
+.build_stats_sheet <- function(wb, stats_results, styles,
+                                group_sheet_name = "Group Comparison",
+                                time_sheet_name = "Time Series") {
   mode <- stats_results$mode
   result <- stats_results$result
 
   if (mode %in% c("two_group", "multi_group")) {
-    openxlsx::addWorksheet(wb, "Group Comparison")
+    sn <- group_sheet_name
+    openxlsx::addWorksheet(wb, sn)
     if (mode == "two_group") {
-      openxlsx::writeData(wb, "Group Comparison", result, startRow = 1, colNames = TRUE)
-      openxlsx::addStyle(wb, "Group Comparison", styles$header,
+      openxlsx::writeData(wb, sn, result, startRow = 1, colNames = TRUE)
+      openxlsx::addStyle(wb, sn, styles$header,
                           rows = 1, cols = 1:ncol(result), gridExpand = TRUE)
     } else {
-      openxlsx::writeData(wb, "Group Comparison", "Omnibus (ANOVA)", startRow = 1, colNames = FALSE)
-      openxlsx::addStyle(wb, "Group Comparison", styles$subheader,
+      openxlsx::writeData(wb, sn, "Omnibus (ANOVA)", startRow = 1, colNames = FALSE)
+      openxlsx::addStyle(wb, sn, styles$subheader,
                           rows = 1, cols = 1:ncol(result$omnibus), gridExpand = TRUE)
-      openxlsx::writeData(wb, "Group Comparison", result$omnibus, startRow = 2, colNames = TRUE)
-      openxlsx::addStyle(wb, "Group Comparison", styles$header,
+      openxlsx::writeData(wb, sn, result$omnibus, startRow = 2, colNames = TRUE)
+      openxlsx::addStyle(wb, sn, styles$header,
                           rows = 2, cols = 1:ncol(result$omnibus), gridExpand = TRUE)
       next_row <- nrow(result$omnibus) + 4
       if (!is.null(result$posthoc) && nrow(result$posthoc) > 0) {
-        openxlsx::writeData(wb, "Group Comparison", "Post-hoc (Tukey HSD)",
+        openxlsx::writeData(wb, sn, "Post-hoc (Tukey HSD)",
                              startRow = next_row, colNames = FALSE)
-        openxlsx::addStyle(wb, "Group Comparison", styles$subheader,
+        openxlsx::addStyle(wb, sn, styles$subheader,
                             rows = next_row, cols = 1:ncol(result$posthoc), gridExpand = TRUE)
-        openxlsx::writeData(wb, "Group Comparison", result$posthoc,
+        openxlsx::writeData(wb, sn, result$posthoc,
                              startRow = next_row + 1, colNames = TRUE)
-        openxlsx::addStyle(wb, "Group Comparison", styles$header,
+        openxlsx::addStyle(wb, sn, styles$header,
                             rows = next_row + 1, cols = 1:ncol(result$posthoc), gridExpand = TRUE)
       }
     }
-    openxlsx::setColWidths(wb, "Group Comparison", cols = 1:12, widths = 14)
+    openxlsx::setColWidths(wb, sn, cols = 1:12, widths = 14)
   } else if (mode == "time_series") {
-    openxlsx::addWorksheet(wb, "Time Series")
-    openxlsx::writeData(wb, "Time Series", result, startRow = 1, colNames = TRUE)
-    openxlsx::addStyle(wb, "Time Series", styles$header,
+    sn <- time_sheet_name
+    openxlsx::addWorksheet(wb, sn)
+    openxlsx::writeData(wb, sn, result, startRow = 1, colNames = TRUE)
+    openxlsx::addStyle(wb, sn, styles$header,
                         rows = 1, cols = 1:ncol(result), gridExpand = TRUE)
-    openxlsx::setColWidths(wb, "Time Series", cols = 1:ncol(result), widths = 14)
+    openxlsx::setColWidths(wb, sn, cols = 1:ncol(result), widths = 14)
   }
 }
 
@@ -496,7 +547,8 @@ build_workbook <- function(spec, mets, dict = STANDARD_DICT,
                            output_file = "oligo_metabolite_library.xlsx",
                            output_dir = tempdir(), progress = NULL,
                            console_tracker = NULL,
-                           batch_ms_results = NULL, stats_results = NULL) {
+                           batch_ms_results = NULL, stats_results = NULL,
+                           kind_stats_results = NULL) {
   z_range <- opts$z_range %||% 3:12
   n_iso <- opts$n_iso %||% 5
   max_oxid <- opts$max_oxid %||% 6
@@ -521,9 +573,15 @@ build_workbook <- function(spec, mets, dict = STANDARD_DICT,
   if (!is.null(batch_ms_results)) {
     .build_batch_matching_sheet(wb, batch_ms_results, styles)
     .build_unmatched_sheet(wb, batch_ms_results, styles)
+    .build_degradation_sheet(wb, batch_ms_results$degradation, styles)
   }
   if (!is.null(stats_results)) {
     .build_stats_sheet(wb, stats_results, styles)
+  }
+  if (!is.null(kind_stats_results)) {
+    .build_stats_sheet(wb, kind_stats_results, styles,
+                        group_sheet_name = "Class Comparison",
+                        time_sheet_name = "Class Time Series")
   }
 
   # Save (write to a scratch dir first for binary format, then copy)

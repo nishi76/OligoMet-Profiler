@@ -179,8 +179,14 @@ match_ms1_batch <- function(mets, features, dict = STANDARD_DICT,
                              n_iso = 5, use_envipat = TRUE) {
   if (is.null(features) || nrow(features) == 0) return(data.frame())
   samples <- unique(features$sample)
+  # `area` (trapezoidal AUC, computed by the Python ROI pipeline -- see
+  # roi.py) is only present when features came from run_batch_deconvolution();
+  # a peak-list-derived feature table won't have it. Pass it through when
+  # available so match_ms1() can carry it onto ms1_matches.
+  feat_cols <- c("mz", "rt", "max_intensity", "n_scans",
+                 if ("area" %in% names(features)) "area")
   out <- lapply(samples, function(s) {
-    feat_s <- features[features$sample == s, c("mz", "rt", "max_intensity", "n_scans"), drop = FALSE]
+    feat_s <- features[features$sample == s, feat_cols, drop = FALSE]
     m <- match_ms1(mets, feat_s, dict, ppm_tol, z_range, adducts,
                     max_oxid, h_offset, n_iso, use_envipat)
     if (nrow(m) > 0) m$sample <- s
@@ -206,6 +212,14 @@ unmatched_features_batch <- function(features, ms1_matches) {
 }
 
 ## ---- MS2 confirmation of matched hits (reuses confirm_metabolite() verbatim)
+# Returns a data.frame -- unchanged from before -- but with the acquired
+# spectrum used for each row's confirmation stashed in a "spectra"
+# attribute, keyed by "sample|met_id|k_oxid|z|adduct". That's for callers
+# (the mirror-plot UI) that want to re-render the acquired-vs-theoretical
+# comparison for a specific row without re-running find_ms2_spectra(); it
+# rides along as an attribute rather than changing the return shape so
+# existing data.frame-only callers (nrow(), $sample, column selection) keep
+# working unmodified.
 confirm_ms2_batch <- function(mets, ms1_matches, ms2_by_sample, dict = STANDARD_DICT,
                                frag_tol_ppm = 25, frag_z_range = 1:2, h_offset = 0,
                                ms2_lookup_ppm_tol = 20, include_internal = FALSE) {
@@ -213,19 +227,23 @@ confirm_ms2_batch <- function(mets, ms1_matches, ms2_by_sample, dict = STANDARD_
   if (is.null(ms2_by_sample) || nrow(ms2_by_sample) == 0) return(data.frame())
 
   unique_hits <- unique(ms1_matches[, c("sample", "met_id", "met_name", "k_oxid", "z", "adduct", "theo_mz")])
+  spectra <- list()
   results <- lapply(seq_len(nrow(unique_hits)), function(i) {
     hit <- unique_hits[i, ]
     ms2_s <- ms2_by_sample[ms2_by_sample$sample == hit$sample,
                             c("rt", "precursor_mz", "precursor_z", "mz", "intensity"), drop = FALSE]
     if (nrow(ms2_s) == 0) return(NULL)
-    spectra <- find_ms2_spectra(ms2_s, hit$theo_mz, hit$z, ms2_lookup_ppm_tol)
-    if (length(spectra) == 0) return(NULL)
+    spec <- find_ms2_spectra(ms2_s, hit$theo_mz, hit$z, ms2_lookup_ppm_tol)
+    if (length(spec) == 0) return(NULL)
 
-    best_spec <- spectra[[which.max(vapply(spectra, nrow, integer(1)))]]
+    best_spec <- spec[[which.max(vapply(spec, nrow, integer(1)))]]
     met <- mets[[which(vapply(mets, function(m) m$id == hit$met_id, logical(1)))]]
     conf <- confirm_metabolite(met, best_spec, dict, tol_ppm = frag_tol_ppm,
                                 z_range = frag_z_range, include_internal = include_internal,
                                 h_offset = h_offset)
+
+    key <- paste(hit$sample, hit$met_id, hit$k_oxid, hit$z, hit$adduct, sep = "|")
+    spectra[[key]] <<- best_spec
 
     data.frame(sample = hit$sample, met_id = hit$met_id, met_name = hit$met_name,
                k_oxid = hit$k_oxid, z = hit$z, adduct = hit$adduct,
@@ -235,8 +253,9 @@ confirm_ms2_batch <- function(mets, ms1_matches, ms2_by_sample, dict = STANDARD_
                stringsAsFactors = FALSE)
   })
   results <- results[!vapply(results, is.null, logical(1))]
-  if (length(results) == 0) return(data.frame())
-  do.call(rbind, results)
+  out <- if (length(results) == 0) data.frame() else do.call(rbind, results)
+  attr(out, "spectra") <- spectra
+  out
 }
 
 ## ---- Full batch annotation pipeline -----------------------------------------
@@ -245,7 +264,8 @@ annotate_metabolites_batch <- function(mets, features, ms2_by_sample = NULL,
                                         z_range = 3:12, adducts = c("H", "Na", "K", "NH4"),
                                         max_oxid = 6, h_offset = 0, n_iso = 5,
                                         use_envipat = TRUE, frag_tol_ppm = 25,
-                                        frag_z_range = 1:2, include_internal = FALSE) {
+                                        frag_z_range = 1:2, include_internal = FALSE,
+                                        compute_degradation = TRUE) {
   ms1_matches <- match_ms1_batch(mets, features, dict, ppm_tol, z_range, adducts,
                                   max_oxid, h_offset, n_iso, use_envipat)
 
@@ -261,12 +281,17 @@ annotate_metabolites_batch <- function(mets, features, ms2_by_sample = NULL,
   unmatched <- unmatched_features_batch(features, ms1_matches)
 
   ms2_conf <- data.frame()
+  ms2_spectra <- list()
   if (!is.null(ms2_by_sample) && nrow(ms1_matches) > 0) {
     ms2_conf <- confirm_ms2_batch(mets, ms1_matches, ms2_by_sample, dict,
                                    frag_tol_ppm = frag_tol_ppm, frag_z_range = frag_z_range,
                                    h_offset = h_offset, include_internal = include_internal)
+    ms2_spectra <- attr(ms2_conf, "spectra") %||% list()
   }
 
+  degradation <- if (compute_degradation) degradation_summary(ms1_matches) else NULL
+
   list(ms1_matches = ms1_matches, envelope = env,
-       unmatched = unmatched, ms2_confirmations = ms2_conf)
+       unmatched = unmatched, ms2_confirmations = ms2_conf,
+       ms2_spectra = ms2_spectra, degradation = degradation)
 }

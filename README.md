@@ -276,15 +276,25 @@ package works without it.
 Required: `openxlsx`, `ggplot2`, `xml2`, `xfun` (installed with the
 package). Dashboard: `shiny`, `DT`, `bslib`, `shinyFiles`. Optional:
 `enviPat` (higher-accuracy isotope patterns; a built-in convolution is
-used if absent) and `rmarkdown` (HTML/PDF reports). `install_packages.R`
-installs the required set and offers the optional one.
+used if absent), `rmarkdown` (HTML/PDF reports), and `Spectra`/`mzR`
+(faster, more robust mzML/mzXML reading — a built-in xml2-based parser is
+used if absent). `install_packages.R` installs the required set and
+offers the optional ones.
 
-mzML import is native R (no external dependency); vendor raw conversion
-uses ProteoWizard `msconvert` if on PATH, optional — the app runs
-without it, with reduced MS-import coverage. Batch/parallel processing of
-many raw files (see above) is a separate, optional Python component —
+mzML/mzXML import prefers Bioconductor's `Spectra`/`mzR` when installed
+(streaming, numpress, indexed-mzML support) and falls back to a built-in
+xml2-based parser otherwise — either way, no external tool is required.
+Vendor raw files (Thermo `.raw`, Sciex `.wiff`, Bruker `.baf`/`.yep`) are
+converted to `.mzML` automatically via ProteoWizard `msconvert` if it's
+found on PATH (install from proteowizard.org); without it, vendor files
+are rejected with an error asking you to convert them externally.
+Agilent/Bruker `.d` folders are directories, not single files, so they
+can't be uploaded through the browser — only the batch mode's local-folder
+input can reach them. Batch/parallel processing of many raw files (see
+above) is a separate, optional Python component —
 `pip install -r inst/python/requirements.txt` — needed only for that
-workflow.
+workflow; it always reads mzML/mzXML (via `pyteomics`), so vendor batch
+files also go through the `msconvert` bridge first.
 
 ## Known limitations
 

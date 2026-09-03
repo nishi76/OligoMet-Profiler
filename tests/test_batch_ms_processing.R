@@ -20,6 +20,8 @@ source(file.path(.pkg_root, "R", "mass_isotope.R"))
 source(file.path(.pkg_root, "R", "fragments.R"))
 source(file.path(.pkg_root, "R", "ms_matching.R"))
 source(file.path(.pkg_root, "R", "batch_ms_processing.R"))
+source(file.path(.pkg_root, "R", "statistics.R"))
+source(file.path(.pkg_root, "R", "degradation.R"))
 
 cat("==== Batch MS processing validation ====\n\n")
 
@@ -52,8 +54,8 @@ for (s in samples) {
       max_intensity = runif(1, 1e4, 1e6) * (if (s == "treat_1") 2.5 else 1),
       n_scans = sample(3:10, 1), charge = z,
       neutral_mass = info$mono_mass, n_charge_states = sample(2:4, 1),
-      mass_cv_ppm = runif(1, 0, 5), rt_start = 0, rt_end = 0, area = 0,
-      stringsAsFactors = FALSE)
+      mass_cv_ppm = runif(1, 0, 5), rt_start = 0, rt_end = 0,
+      area = runif(1, 1e3, 1e5), stringsAsFactors = FALSE)
     matched_feature_ids <- c(matched_feature_ids, fid)
   }
   # deliberately unmatchable noise features (far from any theoretical m/z)
@@ -81,6 +83,32 @@ cat("Matches:", nrow(ms1_matches), " samples represented:",
 stopifnot(nrow(ms1_matches) > 0)
 stopifnot(all(samples %in% ms1_matches$sample))
 stopifnot("sample" %in% names(ms1_matches))
+
+## ---- area threading (M3): match_ms1_batch() carries peak area through ----
+cat("\n--- area column threading ---\n")
+stopifnot("area" %in% names(ms1_matches))
+stopifnot(all(!is.na(ms1_matches$area)))
+cat("area present on every matched row: PASS\n")
+
+area_matrix <- build_abundance_matrix_area(ms1_matches)
+cat("build_abundance_matrix_area():", nrow(area_matrix), "metabolites x",
+    length(samples), "samples\n")
+stopifnot(nrow(area_matrix) > 0)
+stopifnot(all(samples %in% names(area_matrix)))
+cat("build_abundance_matrix_area() produces a matrix: PASS\n")
+
+# Features with no area at all (e.g. single-file R-native path) must not
+# crash the matrix builder -- it should return an empty data.frame so
+# degradation_summary() can fall back to intensity.
+features_no_area <- features
+features_no_area$area <- NULL
+ms1_matches_no_area <- match_ms1_batch(mets, features_no_area, ppm_tol = 10,
+                                        z_range = 3:12, adducts = c("H"),
+                                        max_oxid = 0, n_iso = 0)
+stopifnot("area" %in% names(ms1_matches_no_area))
+stopifnot(all(is.na(ms1_matches_no_area$area)))
+stopifnot(nrow(build_abundance_matrix_area(ms1_matches_no_area)) == 0)
+cat("area-absent features: area column is always NA, matrix is empty: PASS\n")
 
 ## ---- unmatched_features_batch(): retained unidentified peaks ---------------
 cat("\n--- unmatched_features_batch() ---\n")
@@ -132,6 +160,21 @@ cat("ms1_matches:", nrow(batch_results$ms1_matches),
     " ms2_confirmations:", nrow(batch_results$ms2_confirmations), "\n")
 stopifnot(nrow(batch_results$ms1_matches) == nrow(ms1_matches))
 stopifnot(nrow(batch_results$unmatched) == nrow(unmatched))
+
+## ---- degradation summary is computed as part of the full pipeline (M4) ---
+cat("\n--- annotate_metabolites_batch()$degradation ---\n")
+stopifnot(!is.null(batch_results$degradation))
+stopifnot(is.list(batch_results$degradation))
+stopifnot(all(c("per_sample", "composition", "top_degradants", "signal_used") %in%
+              names(batch_results$degradation)))
+cat("degradation element present with expected shape: PASS\n")
+# compute_degradation = FALSE must skip it (additive, opt-out-able)
+batch_results_no_deg <- annotate_metabolites_batch(mets, features, ms2_by_sample,
+                                                    ppm_tol = 10, z_range = 3:12,
+                                                    adducts = c("H"), max_oxid = 0, n_iso = 0,
+                                                    compute_degradation = FALSE)
+stopifnot(is.null(batch_results_no_deg$degradation))
+cat("compute_degradation = FALSE skips it: PASS\n")
 
 ## ---- read_batch_ms2() round-trip (semicolon-list parsing) -------------------
 cat("\n--- read_batch_ms2() TSV round-trip ---\n")
