@@ -16,6 +16,7 @@ source(file.path(.pkg_root, "R", "metabolites.R"))
 source(file.path(.pkg_root, "R", "mass_isotope.R"))
 source(file.path(.pkg_root, "R", "fragments.R"))
 source(file.path(.pkg_root, "R", "ms_matching.R"))
+source(file.path(.pkg_root, "R", "spectra_io.R"))
 
 cat("==== MS matching validation ====\n\n")
 
@@ -148,5 +149,89 @@ cat("PRM entries:", nrow(prm), "\n")
 cat("Unique metabolites:", length(unique(prm$met_id)), "\n")
 cat("Oxidation levels:", paste(sort(unique(prm$k_oxid)), collapse=","), "\n")
 cat("m/z range:", sprintf("%.2f - %.2f\n", min(prm$precursor_mz), max(prm$precursor_mz)))
+
+# ---- Test envelope_consistency() honors a non-zero h_offset ----
+# Previously hardcoded to 0 internally with no way to override it; with
+# the legacy workbook h_offset (3.0046), every reported mean_mass was off
+# by exactly that constant (uniform across charge states -- it doesn't
+# scale with z, since h_offset is subtracted once in the back-calculation
+# formula, not divided by z -- so the *consistency/cv score* itself is
+# actually unaffected, but the reported neutral mass is still wrong).
+cat("\n--- envelope_consistency() h_offset ---\n")
+true_M <- 5000; h_offset_legacy <- 3.0046
+zs_ec <- c(5, 6, 7, 8)
+obs_mz_ec <- (true_M + h_offset_legacy - zs_ec * .PROTON) / zs_ec
+matches_ec <- data.frame(met_id = "M1", k_oxid = 0, adduct = "H", z = zs_ec,
+                          obs_mz = obs_mz_ec, stringsAsFactors = FALSE)
+env_correct <- envelope_consistency(matches_ec, h_offset = h_offset_legacy)
+env_wrong <- envelope_consistency(matches_ec, h_offset = 0)
+env_default <- envelope_consistency(matches_ec)
+cat("true mass:", true_M, " | h_offset=3.0046:", env_correct$mean_mass,
+    " | h_offset=0:", env_wrong$mean_mass, " | default (no arg):", env_default$mean_mass, "\n")
+stopifnot(abs(env_correct$mean_mass - true_M) < 1e-6)
+stopifnot(abs(env_wrong$mean_mass - (true_M + h_offset_legacy)) < 1e-6)
+stopifnot(abs(env_default$mean_mass - env_wrong$mean_mass) < 1e-9)  # default stays h_offset=0, unchanged for standard mode
+cat("envelope_consistency(h_offset=) parameter verified: PASS\n")
+
+# ---- Test extract_ms1_features() clusters by RT, not m/z alone ----
+# Previously grouped purely by m/z proximity across the WHOLE file,
+# merging peaks that share an m/z but come from unrelated elution events
+# anywhere in the run into one feature with a meaningless averaged RT.
+cat("\n--- extract_ms1_features() RT tolerance ---\n")
+same_mz <- 1000.0000
+peaks_rt <- data.frame(
+  mz = c(same_mz, same_mz, same_mz, same_mz + 0.0002, same_mz + 0.0002, same_mz + 0.0002),
+  rt = c(10.00, 10.05, 10.10,    # one real elution event, tightly spaced
+         2.00, 40.00, 40.03),    # rt=2.00 is an unrelated, far-away event;
+                                 # rt=40.00/40.03 is a second real event
+  intensity = c(5e4, 6e4, 5.5e4, 3e4, 4e4, 4.2e4),
+  stringsAsFactors = FALSE)
+feat_rt <- extract_ms1_features(peaks_rt, ppm = 10, min_intensity = 100, rt_tol = 0.15)
+cat("features:", nrow(feat_rt), "\n")
+print(feat_rt[, c("mz", "rt", "max_intensity", "n_scans")])
+stopifnot(nrow(feat_rt) == 3)  # 2 events at same_mz's cluster + 1 lone point at same_mz+0.0002... see below
+# the tight rt=10.00/10.05/10.10 triplet must merge into ONE feature
+merged <- feat_rt[abs(feat_rt$rt - 10.05) < 0.1, ]
+stopifnot(nrow(merged) == 1 && merged$n_scans == 3)
+# rt=2.00 (unrelated, far from everything) must NOT be merged into any other feature
+lone <- feat_rt[abs(feat_rt$rt - 2.00) < 0.01, ]
+stopifnot(nrow(lone) == 1 && lone$n_scans == 1)
+# rt=40.00/40.03 (its own close pair, same m/z bin) must merge into ONE feature, separate from the rt=10 cluster
+pair <- feat_rt[abs(feat_rt$rt - 40.015) < 0.1, ]
+stopifnot(nrow(pair) == 1 && pair$n_scans == 2)
+cat("extract_ms1_features() RT clustering verified (no cross-event merging): PASS\n")
+
+## ---- read_ms_file(): fallback path parity with parse_mzml() -------------
+# Exercised unconditionally (no Spectra/mzR needed) -- prefer_spectra=FALSE
+# forces read_ms_file() down the same parse_mzml() code path directly, so
+# this just confirms the dispatcher wraps it faithfully (same shape, same
+# content) rather than silently transforming anything.
+cat("\n--- read_ms_file() fallback path ---\n")
+fixture <- file.path(.pkg_root, "inst", "extdata", "batch_example", "ctrl_1.mzML")
+ref <- parse_mzml(fixture)
+fb  <- read_ms_file(fixture, prefer_spectra = FALSE)
+stopifnot(identical(ref$ms1, fb$ms1))
+stopifnot(identical(ref$ms2, fb$ms2))
+stopifnot(identical(ref$info$n_ms1, fb$info$n_ms1))
+stopifnot(identical(ref$info$n_ms2, fb$info$n_ms2))
+cat("read_ms_file(prefer_spectra=FALSE) matches parse_mzml() exactly: PASS\n")
+
+## ---- read_ms_file(): Spectra/mzR path, only if installed -----------------
+# Same fixture, real Spectra::Spectra()/MsBackendMzR() read this time --
+# skipped (not failed) when Spectra/mzR aren't available, so CI without
+# Bioconductor still exercises the fallback above and stays green.
+if (.have_spectra()) {
+  cat("\n--- read_ms_file() Spectra/mzR path ---\n")
+  sp <- read_ms_file(fixture, prefer_spectra = TRUE)
+  stopifnot(nrow(sp$ms1) == nrow(ref$ms1))
+  stopifnot(nrow(sp$ms2) == nrow(ref$ms2))
+  stopifnot(max(abs(sort(sp$ms1$mz) - sort(ref$ms1$mz))) < 1e-6)
+  stopifnot(max(abs(sort(sp$ms1$intensity) - sort(ref$ms1$intensity))) < 1e-6)
+  stopifnot(all(sort(round(sp$ms2$mz, 4)) == sort(round(ref$ms2$mz, 4))))
+  stopifnot(unique(sp$ms2$precursor_z) == unique(ref$ms2$precursor_z))
+  cat("Spectra/mzR peaks agree with parse_mzml() within float tolerance: PASS\n")
+} else {
+  cat("\n--- read_ms_file() Spectra/mzR path: SKIPPED (Spectra/mzR not installed) ---\n")
+}
 
 cat("\n==== All MS matching tests passed ====\n")

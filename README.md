@@ -207,25 +207,102 @@ replaced with an in-app `shinyFiles` picker. Separately, the Run handler
 is wrapped in a top-level `tryCatch`, so unexpected errors are reported
 in the status panel instead of silently doing nothing.
 
+## Batch processing and statistical comparison
+
+**Try it now, no data of your own needed:** a bundled example
+(`inst/extdata/batch_example/`) ships 6 synthetic mzML files — 3
+"control" + 3 "treated" replicates of the inotersen reference sequence,
+including a contaminant trace that matches nothing (exercises the
+retained "unidentified peaks" path) and a real MS2 spectrum per file for
+confirmation. Run it end to end with:
+
+```bash
+Rscript inst/examples/run_batch_example.R
+```
+
+which matches, confirms, and statistically compares (Welch t-test) all
+six files in about a minute, writing a workbook, an unmatched-peaks CSV,
+and a statistics CSV to `results_batch_example/`. `inst/extdata/batch_example/generate_example.py`
+shows exactly how the synthetic data was built, with fixed seeds, if you
+want to regenerate or adapt it.
+
+For many raw files at once — a multi-sample experiment rather than one
+sequence against one file — a parallel Python pipeline
+(`inst/python/oligomet_deconv/`) streams each mzML/mzXML file, detects
+chromatographic features, and groups them into charge-state envelopes by
+neutral-mass agreement across observed charge states (the same
+`M = z*(mz - proton)` relationship the R side already uses, not a
+peptide-style isotope/averagine model — oligonucleotides don't fit that).
+One worker process per file, so batches scale with core count; a bad file
+is isolated and logged rather than aborting the run.
+
+R matches the resulting features against the theoretical library
+(reusing `match_ms1()` unchanged), retains anything that didn't match as
+its own "unidentified peaks" table for QC, and — when MS2 confirmation is
+enabled — confirms matched hits against the theoretical fragment library
+using a *targeted* precursor watch-list, so only scans near a real
+candidate are captured (cheap on top of the deconvolution pass, and
+reuses `confirm_metabolite()` unchanged). A small statistics suite then
+compares each confirmed metabolite's abundance across 2+ experimental
+groups (Welch t-test or one-way ANOVA + Tukey HSD, both BH-adjusted) or
+across a time series (linear trend).
+
+```r
+source("R/batch_ms_processing.R"); source("R/statistics.R")
+
+deconv <- run_batch_deconvolution(list.files("raw_data", pattern = "\\.mzML$", full.names = TRUE))
+features <- read_batch_features(deconv$features_path)
+batch <- annotate_metabolites_batch(mets, features, dict = dict)
+
+abund <- build_abundance_matrix(batch$ms1_matches)
+long  <- abundance_long(abund, data.frame(sample = c("ctrl_1","ctrl_2","treat_1","treat_2"),
+                                           group = c("control","control","treated","treated")))
+compare_two_groups(long, "control", "treated")
+```
+
+Or from the command line: copy `run_batch_ms.R`, edit its `CONFIG` block
+(file glob, sample metadata, analysis mode), and run
+`Rscript run_batch_ms.R`. The Shiny app has the same workflow under
+**Batch MS Processing (optional)** — upload multiple files, fill in a
+Group or Timepoint column in the sample table, and the **Batch Results**,
+**Unidentified Peaks**, and **Statistics** tabs populate after Run.
+
+Requires Python 3.9+ with `inst/python/requirements.txt` installed
+(`pip install -r inst/python/requirements.txt`); everything else in the
+package works without it.
+
 ## Dependencies
 
 Required: `openxlsx`, `ggplot2`, `xml2`, `xfun` (installed with the
 package). Dashboard: `shiny`, `DT`, `bslib`, `shinyFiles`. Optional:
 `enviPat` (higher-accuracy isotope patterns; a built-in convolution is
-used if absent) and `rmarkdown` (HTML/PDF reports). `install_packages.R`
-installs the required set and offers the optional one.
+used if absent), `rmarkdown` (HTML/PDF reports), and `Spectra`/`mzR`
+(faster, more robust mzML/mzXML reading — a built-in xml2-based parser is
+used if absent). `install_packages.R` installs the required set and
+offers the optional ones.
 
-mzML import uses `python3` if on PATH; vendor raw conversion uses
-ProteoWizard `msconvert` if on PATH. Both optional — the app runs
-without them, with reduced MS-import coverage.
+mzML/mzXML import prefers Bioconductor's `Spectra`/`mzR` when installed
+(streaming, numpress, indexed-mzML support) and falls back to a built-in
+xml2-based parser otherwise — either way, no external tool is required.
+Vendor raw files (Thermo `.raw`, Sciex `.wiff`, Bruker `.baf`/`.yep`) are
+converted to `.mzML` automatically via ProteoWizard `msconvert` if it's
+found on PATH (install from proteowizard.org); without it, vendor files
+are rejected with an error asking you to convert them externally.
+Agilent/Bruker `.d` folders are directories, not single files, so they
+can't be uploaded through the browser — only the batch mode's local-folder
+input can reach them. Batch/parallel processing of many raw files (see
+above) is a separate, optional Python component —
+`pip install -r inst/python/requirements.txt` — needed only for that
+workflow; it always reads mzML/mzXML (via `pyteomics`), so vendor batch
+files also go through the `msconvert` bridge first.
 
 ## Known limitations
 
-- No `testthat` suite — the `tests/` scripts are console-output checks,
-  not asserted unit tests.
-- Default parameters (charge range, oxidation cap, ppm tolerance) are
-  set independently in `inst/app/app.R` and the CLI driver, so a change
-  in one does not propagate to the other.
+- `tests/test_*.R` remain console-output checks for interactive reading;
+  `tests/testthat/` holds the asserted counterparts for the highest-risk
+  paths (formula engine, isotope pattern, custom-chemistry validation,
+  notation round-trips) and gates every push/PR via
+  `.github/workflows/tests.yml`. Coverage is not yet exhaustive.
 
 ## Bibliography
 

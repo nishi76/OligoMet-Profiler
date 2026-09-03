@@ -82,8 +82,14 @@
 #   z_range    : charge states for m/z calculation (default 1:2)
 #   h_offset   : mass offset for non-standard envelope conventions
 #   include_dz : include d/z ions (approximate, default FALSE)
+#
+# Default ion_types omits c and x: in negative-ion CID of oligonucleotides
+# w and (a-B) ions dominate observed spectra by a wide margin, c/y appear
+# but weaker, and b/x -- x especially -- are rarely the ions actually seen.
+# Pass ion_types = c("a","aB","b","bB","c","w","x","y") for full McLuckey
+# coverage (e.g. HCD, or other fragmentation methods that behave differently).
 generate_fragments <- function(met, dict = STANDARD_DICT,
-                                ion_types = c("a", "aB", "b", "bB", "c", "w", "x", "y"),
+                                ion_types = c("a", "aB", "b", "bB", "w", "y"),
                                 z_range = 1:2, h_offset = 0,
                                 include_dz = FALSE) {
   if (include_dz) ion_types <- union(ion_types, c("d", "z"))
@@ -224,6 +230,103 @@ generate_internal_fragments <- function(met, dict = STANDARD_DICT,
   frags
 }
 
+## ---- Fragment intensity heuristic ------------------------------------------
+# Rule-based *relative* intensity weight for a fragment ion. This is NOT a
+# calibrated intensity model -- there is no oligonucleotide equivalent of
+# the large annotated spectral libraries that peptide tools (Prosit,
+# MS2PIP) train on, so nothing here is fit to data. It only encodes
+# fragmentation propensities that are already well established in the
+# literature already cited at the top of this file:
+#
+#   - PS (phosphorothioate) linkages are markedly more labile than PO under
+#     CID/HCD (this is also why PS_DIAGNOSTIC_MZ exists below), so a
+#     cleavage site sitting on a PS linkage is weighted up.
+#   - Ye et al. 2025 (FMVS) report y/b ions predominant for MOE-PS
+#     chemistry and a-B/w ions predominant for DNA-PS chemistry -- the
+#     sugar immediately adjacent to the cleavage site selects which ion
+#     type gets the boost.
+#   - Purine glycosidic bonds (A/G-type bases) are more labile than
+#     pyrimidine ones under CID, so a-B/b-B/w-d base-loss ions are weighted
+#     up when the lost base is a purine. Purine-ness is read off the base's
+#     formula (>= 4 ring nitrogens) rather than hardcoded letter codes, so
+#     it still works for custom/modified purine bases entered via the
+#     Custom Chemistry table.
+#   - Internal (double-cleavage) ions are consistently minor relative to
+#     terminal ions in reported oligo MS2 spectra, so they carry a fixed
+#     down-weight rather than the ion-type/sugar logic above.
+#
+# Treat the result as a coarse "expect this peak to be relatively taller"
+# ranking, not a predicted abundance -- confirm every real assignment
+# against acquired data (see ../DISCLAIMER.md).
+.PS_LINKAGE_BOOST     <- 1.5  # PS vs PO cleavage-site lability
+.CHEMISTRY_ION_BOOST  <- 1.6  # dominant ion type for the local sugar chemistry
+.PURINE_LOSS_BOOST    <- 1.3  # purine vs pyrimidine base-loss lability
+.INTERNAL_ION_WEIGHT  <- 0.35 # internal ions are minor vs. terminal ions
+.MINOR_ION_WEIGHT     <- 0.7  # ion types with no specific literature boost
+
+# Purines (adenine/guanine-type bases, including modified ones such as
+# 2,6-diaminopurine or hypoxanthine) have a fused 5-/6-membered ring system
+# with >= 4 ring nitrogens; pyrimidines (cytosine/thymine/uracil-type,
+# including 5-methyl/5-hydroxymethyl variants) have at most 3. Reading this
+# off the formula -- rather than matching specific base codes -- keeps the
+# heuristic working for any base the user adds via the Custom Chemistry
+# table.
+.is_purine_base <- function(base_code, dict) {
+  entry <- dict[[base_code]]
+  !is.null(entry) && isTRUE(unname(entry$formula[["N"]]) >= 4)
+}
+
+# PS (phosphorothioate) linkages replace one non-bridging phosphate oxygen
+# with sulfur, so they're identified by formula (any S) rather than the "s"
+# code alone -- this also catches "u" (the PS stereochemistry variant) and
+# any custom PS-like linkage added via the Custom Chemistry table.
+.is_ps_linkage <- function(linkage_code, dict) {
+  if (is.na(linkage_code) || !nzchar(linkage_code)) return(FALSE)
+  entry <- dict[[linkage_code]]
+  !is.null(entry) && isTRUE(unname(entry$formula[["S"]]) > 0)
+}
+
+# Base ion-type weight for one terminal fragment, before the PS-linkage and
+# purine-loss adjustments below. `sugar_code` is the sugar immediately
+# adjacent to the cleavage site (see fragment_intensity_weight()).
+.terminal_ion_weight <- function(ion_type, sugar_code) {
+  is_dna_sugar <- identical(sugar_code, "d")
+  is_moe_ome_sugar <- sugar_code %in% c("e", "MOE", "m")
+  switch(ion_type,
+    "a-B" = if (is_dna_sugar) .CHEMISTRY_ION_BOOST else 1.0,
+    "w"   = if (is_dna_sugar) .CHEMISTRY_ION_BOOST else 1.0,
+    "y"   = if (is_moe_ome_sugar) .CHEMISTRY_ION_BOOST else 1.0,
+    "b"   = if (is_moe_ome_sugar) .CHEMISTRY_ION_BOOST else 1.0,
+    .MINOR_ION_WEIGHT)
+}
+
+# Relative intensity weight for one fragment object (as produced by
+# .make_frag()), independent of fragment charge. Always positive; peaks for
+# a given spectrum should be rescaled (e.g. to a 0-100 max) by the caller,
+# matching the MS1 library's convention -- see build_ms2_library().
+fragment_intensity_weight <- function(f, met, dict = STANDARD_DICT) {
+  if (identical(f$direction, "internal")) {
+    w <- .INTERNAL_ION_WEIGHT
+    if (.is_ps_linkage(met$linkages[f$internal_5], dict)) w <- w * .PS_LINKAGE_BOOST
+    return(w)
+  }
+
+  site <- f$cleavage_site
+  # 5'-ions break the bond just after position `site`; 3'-ions break the
+  # same bond from the other side -- either way, "adjacent sugar" means the
+  # sugar at `site` for 5'-ions and at `site + 1` for 3'-ions.
+  sugar_code <- if (identical(f$direction, "5'")) met$sugars[site] else met$sugars[site + 1]
+  w <- .terminal_ion_weight(f$ion_type, sugar_code)
+
+  if (.is_ps_linkage(met$linkages[site], dict)) w <- w * .PS_LINKAGE_BOOST
+
+  if (!is.na(f$base_loss) && .is_purine_base(f$base_loss, dict)) {
+    w <- w * .PURINE_LOSS_BOOST
+  }
+
+  w
+}
+
 ## ---- Flatten fragments to a display table ---------------------------------
 # Returns data.frame with one row per (fragment, charge state).
 fragment_table <- function(frags) {
@@ -249,7 +352,7 @@ fragment_table <- function(frags) {
 #
 # Returns data.frame with matched fragments and their scores.
 match_fragments <- function(frags, ms2_peaks, tol_ppm = 25,
-                             z_range = 1:3, h_offset = 0) {
+                             z_range = 1:2, h_offset = 0) {
   if (length(frags) == 0 || nrow(ms2_peaks) == 0) return(data.frame())
 
   matches <- list()
@@ -374,9 +477,9 @@ confirmation_score <- function(matched, n, diagnostics = NULL) {
 # Convenience: generate fragments, match, score in one call.
 # Returns list with fragments, matches, diagnostics, coverage, score.
 confirm_metabolite <- function(met, ms2_peaks, dict = STANDARD_DICT,
-                                tol_ppm = 25, z_range = 1:3,
-                                ion_types = c("a", "aB", "b", "bB", "c", "w", "x", "y"),
-                                include_internal = TRUE,
+                                tol_ppm = 25, z_range = 1:2,
+                                ion_types = c("a", "aB", "b", "bB", "w", "y"),
+                                include_internal = FALSE,
                                 include_dz = FALSE, h_offset = 0) {
   frags <- generate_fragments(met, dict, ion_types, z_range, h_offset, include_dz)
   if (include_internal) {

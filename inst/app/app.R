@@ -42,10 +42,12 @@
 .module_dir <- .find_module_dir()
 
 if (!is.null(.module_dir)) {
-  for (.f in c("about.R", "progress_utils.R", "chemistry_dict.R", "oligo_io.R",
+  for (.f in c("about.R", "default_params.R", "progress_utils.R",
+               "chemistry_dict.R", "oligo_io.R",
                "metabolites.R", "mass_isotope.R", "fragments.R",
-               "ms_matching.R", "build_workbook.R", "build_report.R",
-               "export_acquisition.R", "export_spectral.R")) {
+               "ms_matching.R", "spectra_io.R", "batch_ms_processing.R", "statistics.R",
+               "degradation.R", "build_workbook.R", "build_report.R",
+               "export_acquisition.R", "export_spectral.R", "mirror_plot.R")) {
     source(file.path(.module_dir, "R", .f))
   }
 } else if (requireNamespace("OligoMetProfiler", quietly = TRUE)) {
@@ -75,6 +77,27 @@ if (!requireNamespace("DT", quietly = TRUE)) {
 
 library(shiny)
 library(DT)
+
+# Shiny's default per-request upload cap is 5MB -- fine for the single-file
+# "MS Matching" section, but batch MS files (esp. HRMS) routinely run from
+# tens of MB to multiple GB, so the unmodified default silently rejects
+# them before batch_files' server logic ever runs. Raised generously here;
+# a hosted deployment (shinyapps.io/Posit Connect) may still enforce its
+# own front-end request-size ceiling independent of this option.
+options(shiny.maxRequestSize = 20 * 1024^3)  # 20 GB
+
+# Best-effort hosted-deployment detection, for advisory messaging only --
+# Posit Connect sets CONNECT_SERVER for content it runs; shinyapps.io and
+# other managed Shiny hosts set SHINY_PORT (not exclusive to them, but a
+# reasonable signal in combination with the absence of an interactive
+# session). Neither is a guarantee, and there is no way to read the actual
+# admin-configured upload cap from inside the app -- it's enforced by the
+# reverse proxy in front of R, independent of the option above. This only
+# gates a warning telling the user where to look if uploads fail; it never
+# blocks anything itself.
+.is_hosted_deployment <- function() {
+  nzchar(Sys.getenv("CONNECT_SERVER")) || nzchar(Sys.getenv("SHINY_PORT"))
+}
 
 ## ---- Example sequences (illustrative, not the assumed input) --------------
 # A generic gapmer built entirely from standard dictionary codes, plus four
@@ -120,12 +143,17 @@ library(DT)
 ## ---- Custom chemistry table -> build_dictionary() overrides ----------------
 # Shared by the Run handler and by manual sequence entry, so a code typed
 # into the Custom Chemistry table validates the same way in both.
+# Rows with an invalid formula are skipped here (never reach
+# build_dictionary()) -- see .chem_row_status()/.chem_table_errors() below,
+# which are what block Run and surface the problem to the user instead of
+# it silently producing a zero-mass residue.
 .overrides_from_table <- function(cd) {
   overrides <- list()
   for (i in seq_len(nrow(cd))) {
     code <- trimws(cd$Code[i])
     formula_str <- trimws(cd$Formula[i])
     if (nchar(code) == 0 || nchar(formula_str) == 0) next
+    if (!is_valid_formula_string(formula_str)) next
     entry <- list(
       formula = formula_str,
       name = if (nchar(trimws(cd$Name[i])) > 0) trimws(cd$Name[i]) else code
@@ -136,6 +164,97 @@ library(DT)
   }
   overrides
 }
+
+## ---- Custom chemistry table validation -------------------------------------
+# A blank row is intentionally ignored (see .overrides_from_table() above);
+# any other row must have a code AND a formula that parses to a valid
+# elemental composition, or it is flagged here rather than silently
+# reaching build_dictionary() as an all-zero-mass entry.
+.chem_row_status <- function(cd) {
+  vapply(seq_len(nrow(cd)), function(i) {
+    code <- trimws(cd$Code[i]); formula_str <- trimws(cd$Formula[i])
+    if (!nzchar(code) && !nzchar(formula_str)) return("")
+    if (!nzchar(code)) return("✗ missing code")
+    if (!nzchar(formula_str)) return("✗ missing formula")
+    if (!is_valid_formula_string(formula_str)) return("✗ invalid formula")
+    "✓ valid"
+  }, character(1))
+}
+.chem_table_errors <- function(cd) {
+  st <- .chem_row_status(cd)
+  bad <- which(startsWith(st, "✗"))
+  if (length(bad) == 0) return(character(0))
+  sprintf("row %d (code '%s'): %s", bad, trimws(cd$Code[bad]), st[bad])
+}
+
+## ---- Small inline help icon -------------------------------------------------
+# A native title-attribute tooltip -- no JS dependency, works everywhere --
+# for surfacing the tradeoffs behind a parameter (e.g. "20% NCE is a
+# starting point, not validated") right next to its input instead of only
+# in the README.
+.info_icon <- function(text) {
+  tags$span("ⓘ", title = text,
+            style = "cursor: help; color: #6c757d; margin-left: 4px; font-size: 12px;")
+}
+.with_info <- function(label, ...) tagList(label, .info_icon(paste0(...)))
+
+## ---- Session save/load ------------------------------------------------------
+# "What exactly produced this inclusion list" is a reproducibility question
+# for a tool whose outputs feed instrument methods -- a saved session is the
+# sequence, every parameter below, and the Custom Chemistry table, as one
+# restorable .json file. Uploaded MS/batch files are deliberately excluded
+# (too large to round-trip through a small JSON, and re-uploading is the
+# normal Shiny flow anyway); the file input's own name is not restorable.
+.session_input_ids <- c(
+  "seq", "oligo_name", "output_prefix", "output_dir", "conj5", "conj3",
+  "max_3p", "max_5p", "endo", "endo_sites", "min_frag_len",
+  "z_min", "z_max", "n_iso", "max_oxid", "h_offset", "use_envipat",
+  "method_length", "ms2_z_min", "ms2_z_max", "hcd_nce",
+  "ms1_target_cap", "ms2_target_cap",
+  "enable_ms", "ppm_tol", "adducts", "frag_tol_ppm", "frag_z_max",
+  "enable_batch", "batch_run_ms2", "batch_n_workers", "batch_deconv_ppm", "batch_dir",
+  "man_bases", "man_sugars", "man_linkages"
+)
+# One update*Input() call per id above -- dispatch table so loading a
+# session doesn't need a long if/else chain keyed on input type.
+.session_update <- list(
+  seq            = function(s, v) updateTextAreaInput(s, "seq", value = v),
+  oligo_name     = function(s, v) updateTextInput(s, "oligo_name", value = v),
+  output_prefix  = function(s, v) updateTextInput(s, "output_prefix", value = v),
+  output_dir     = function(s, v) updateTextInput(s, "output_dir", value = v),
+  conj5          = function(s, v) updateSelectInput(s, "conj5", selected = v),
+  conj3          = function(s, v) updateSelectInput(s, "conj3", selected = v),
+  max_3p         = function(s, v) updateNumericInput(s, "max_3p", value = v),
+  max_5p         = function(s, v) updateNumericInput(s, "max_5p", value = v),
+  endo           = function(s, v) updateCheckboxInput(s, "endo", value = v),
+  endo_sites     = function(s, v) updateRadioButtons(s, "endo_sites", selected = v),
+  min_frag_len   = function(s, v) updateNumericInput(s, "min_frag_len", value = v),
+  z_min          = function(s, v) updateNumericInput(s, "z_min", value = v),
+  z_max          = function(s, v) updateNumericInput(s, "z_max", value = v),
+  n_iso          = function(s, v) updateNumericInput(s, "n_iso", value = v),
+  max_oxid       = function(s, v) updateNumericInput(s, "max_oxid", value = v),
+  h_offset       = function(s, v) updateNumericInput(s, "h_offset", value = v),
+  use_envipat    = function(s, v) updateCheckboxInput(s, "use_envipat", value = v),
+  method_length  = function(s, v) updateNumericInput(s, "method_length", value = v),
+  ms2_z_min      = function(s, v) updateNumericInput(s, "ms2_z_min", value = v),
+  ms2_z_max      = function(s, v) updateNumericInput(s, "ms2_z_max", value = v),
+  hcd_nce        = function(s, v) updateNumericInput(s, "hcd_nce", value = v),
+  ms1_target_cap = function(s, v) updateNumericInput(s, "ms1_target_cap", value = v),
+  ms2_target_cap = function(s, v) updateNumericInput(s, "ms2_target_cap", value = v),
+  enable_ms      = function(s, v) updateCheckboxInput(s, "enable_ms", value = v),
+  ppm_tol        = function(s, v) updateNumericInput(s, "ppm_tol", value = v),
+  adducts        = function(s, v) updateCheckboxGroupInput(s, "adducts", selected = v),
+  frag_tol_ppm   = function(s, v) updateNumericInput(s, "frag_tol_ppm", value = v),
+  frag_z_max     = function(s, v) updateNumericInput(s, "frag_z_max", value = v),
+  enable_batch   = function(s, v) updateCheckboxInput(s, "enable_batch", value = v),
+  batch_run_ms2  = function(s, v) updateCheckboxInput(s, "batch_run_ms2", value = v),
+  batch_n_workers  = function(s, v) updateNumericInput(s, "batch_n_workers", value = v),
+  batch_deconv_ppm = function(s, v) updateNumericInput(s, "batch_deconv_ppm", value = v),
+  batch_dir      = function(s, v) updateTextInput(s, "batch_dir", value = v),
+  man_bases      = function(s, v) updateTextInput(s, "man_bases", value = v),
+  man_sugars     = function(s, v) updateTextInput(s, "man_sugars", value = v),
+  man_linkages   = function(s, v) updateTextInput(s, "man_linkages", value = v)
+)
 
 ## ---- Help documents ---------------------------------------------------------
 # The guides live in inst/help/, which means they resolve two ways: through
@@ -251,14 +370,36 @@ ui <- fluidPage(
         .about-block h6 { font-weight: 600; color: #2c3e50; font-size: 13px;
                           margin-bottom: 4px; }
         .about-block p { margin-bottom: 8px; }
+        .adv-panel { border: 1px solid #dee2e6; border-radius: 6px;
+                     margin-bottom: 14px; background: #fff; }
+        .adv-panel > summary { cursor: pointer; padding: 8px 12px;
+                               font-weight: 600; color: #2c3e50;
+                               list-style: revert; font-size: 14px; }
+        .adv-panel[open] > summary { border-bottom: 1px solid #dee2e6; }
+        .adv-body { padding: 10px 12px 4px; }
+        .session-row .btn { font-size: 12px; }
+        .chem-hint { font-size: 12px; color: #6c757d; }
+        .summary-sticky { position: sticky; top: 0; z-index: 20;
+                          background: #fff; padding: 6px 0 4px;
+                          border-bottom: 1px solid #ecf0f1; }
+        .landing-placeholder { border: 1px dashed #dee2e6; border-radius: 8px;
+                               padding: 18px 20px; margin: 14px 0; background: #fbfbfc; }
+        .landing-placeholder h5 { font-weight: 600; color: #2c3e50; }
+        .landing-placeholder ul { padding-left: 20px; margin-bottom: 0; font-size: 13px; }
+        .landing-placeholder li { margin-bottom: 6px; }
+        .metric-card.placeholder .value { color: #adb5bd; }
       "))),
 
       ## -- Input section --
       tags$div(class = "sidebar-section",
         tags$h5("Input"),
-        textAreaInput("seq", "Sequence (triplet or OligoDistiller)",
+        textAreaInput("seq",
+                      label = .with_info("Sequence (triplet, OligoDistiller, or FASTA)",
+                        "Notation is auto-detected: starts with '>' = FASTA ",
+                        "(paste a BioPharma Finder-exported record directly), ",
+                        "starts with 'OH-' = OligoDistiller, otherwise triplet."),
                       value = .EXAMPLE_SEQS[[1]]$seq, rows = 3,
-                      placeholder = "e.g. Te-sSe-sAe-sSe-... or OH-Am*-Gm*-...-OH"),
+                      placeholder = "e.g. Te-sSe-sAe-sSe-... or OH-Am*-Gm*-...-OH or a pasted FASTA record"),
         fluidRow(
           column(8, selectInput("example_seq", NULL,
                     choices = c("Choose an example..." = "", names(.EXAMPLE_SEQS)),
@@ -288,30 +429,22 @@ ui <- fluidPage(
         selectInput("conj3", "3' conjugate", choices = .conj3_choices, selected = "none")
       ),
 
-      ## -- Custom chemistry section --
-      tags$div(class = "sidebar-section",
-        tags$h5("Custom Chemistry"),
-        tags$p(style = "font-size: 12px; color: #6c757d;",
-               "Add custom base/sugar/linkage/conjugate entries. Empty rows are ignored."),
-        DT::dataTableOutput("custom_chem", height = "180px"),
-        fluidRow(
-          column(6, actionButton("add_row", "Add Row", class = "btn-sm btn-outline-primary")),
-          column(6, actionButton("remove_row", "Remove Row", class = "btn-sm btn-outline-secondary"))
-        )
-      ),
-
       ## -- Metabolite generation section --
       tags$div(class = "sidebar-section",
         tags$h5("Metabolite Generation"),
         fluidRow(
-          column(6, numericInput("max_3p", "Max 3' trunc.", value = 10, min = 0, max = 50)),
-          column(6, numericInput("max_5p", "Max 5' trunc.", value = 10, min = 0, max = 50))
+          column(6, numericInput("max_3p", "Max 3' trunc.",
+                                 value = DEFAULT_PIPELINE_PARAMS$max_3p, min = 0, max = 50)),
+          column(6, numericInput("max_5p", "Max 5' trunc.",
+                                 value = DEFAULT_PIPELINE_PARAMS$max_5p, min = 0, max = 50))
         ),
-        checkboxInput("endo", "Include endonuclease fragments", value = TRUE),
+        checkboxInput("endo", "Include endonuclease fragments",
+                      value = DEFAULT_PIPELINE_PARAMS$endo),
         radioButtons("endo_sites", "Endo cleavage sites",
                      choices = c("All positions" = "all", "DNA gap only" = "gap"),
-                     selected = "all", inline = TRUE),
-        numericInput("min_frag_len", "Min fragment length (nt)", value = 3, min = 1, max = 20),
+                     selected = DEFAULT_PIPELINE_PARAMS$endo_sites, inline = TRUE),
+        numericInput("min_frag_len", "Min fragment length (nt)",
+                    value = DEFAULT_PIPELINE_PARAMS$min_frag_len, min = 1, max = 20),
         tags$p(style = "font-size: 11px; color: #6c757d; margin-top: 6px;",
                "The Charge Envelopes sheet computes a full isotope pattern for ",
                "every metabolite x PS-oxidation level. Endonuclease fragments ",
@@ -323,61 +456,212 @@ ui <- fluidPage(
       tags$div(class = "sidebar-section",
         tags$h5("Mass & Isotope"),
         fluidRow(
-          column(6, numericInput("z_min", "Min charge z", value = 3, min = 1, max = 20)),
-          column(6, numericInput("z_max", "Max charge z", value = 12, min = 1, max = 30))
+          column(6, numericInput("z_min", "Min charge z",
+                                 value = DEFAULT_PIPELINE_PARAMS$z_min, min = 1, max = 20)),
+          column(6, numericInput("z_max", "Max charge z",
+                                 value = DEFAULT_PIPELINE_PARAMS$z_max, min = 1, max = 30))
         ),
         fluidRow(
-          column(6, numericInput("n_iso", "Isotope peaks", value = 5, min = 1, max = 20)),
-          column(6, numericInput("max_oxid", "Max PS oxid.", value = 6, min = 0, max = 30))
+          column(6, numericInput("n_iso", "Isotope peaks",
+                                 value = DEFAULT_PIPELINE_PARAMS$n_iso, min = 1, max = 20)),
+          column(6, numericInput("max_oxid",
+                    label = .with_info("Max PS oxid.",
+                      "Trades completeness for target count: a higher cap covers deeper ",
+                      "oxidation states but multiplies Charge Envelope rows and PRM/MS1 ",
+                      "targets \u2014 each metabolite is modeled at every oxidation level ",
+                      "from 0 up to this cap."),
+                    value = DEFAULT_PIPELINE_PARAMS$max_oxid, min = 0, max = 30))
         ),
-        numericInput("h_offset", "Envelope offset (Da)", value = 0, step = 0.001),
-        checkboxInput("use_envipat", "Use enviPat for isotopes", value = TRUE)
+        numericInput("h_offset",
+                    label = .with_info("Envelope offset (Da)",
+                      "0 = standard [M-zH]^z- charge envelope. Nonzero only to ",
+                      "reproduce a legacy or lab-specific mass convention."),
+                    value = DEFAULT_PIPELINE_PARAMS$h_offset, step = 0.001),
+        checkboxInput("use_envipat", "Use enviPat for isotopes",
+                      value = DEFAULT_PIPELINE_PARAMS$use_envipat),
+        tags$p(class = "chem-hint", style = "margin-top: -8px;",
+               "Unchecked uses a built-in binomial-convolution approximation; ",
+               "install enviPat (", tags$code("install.packages(\"enviPat\")"),
+               ") for higher-accuracy, literature isotope-abundance patterns.")
       ),
 
-      ## -- Orbitrap Exploris acquisition method section --
-      tags$div(class = "sidebar-section",
-        tags$h5("Orbitrap Acquisition Method"),
-        numericInput("method_length", "Method length (min)", value = 30, min = 1, max = 999),
-        fluidRow(
-          column(6, numericInput("ms2_z_min", "MS2 charge z min", value = 4, min = 1, max = 30)),
-          column(6, numericInput("ms2_z_max", "MS2 charge z max", value = 7, min = 1, max = 30))
-        ),
-        numericInput("hcd_nce", "HCD NCE (%)", value = 20, min = 1, max = 200),
-        fluidRow(
-          column(6, numericInput("ms1_target_cap", "Max MS1 targets", value = 500, min = 1, max = 150000)),
-          column(6, numericInput("ms2_target_cap", "Max MS2 targets", value = 300, min = 1, max = 150000))
-        ),
-        tags$p(style = "font-size: 11px; color: #6c757d; margin-top: -6px;",
-               "MS1/MS2 lists match the Orbitrap Exploris Method Editor's ",
-               "Targeted Mass filter table (m/z & z, Start/End Time mode). ",
-               "HCD NCE is a starting value, not a validated instrument ",
-               "parameter -- optimize per method. PRM duty cycle degrades ",
-               "quickly with target count, so MS2 defaults to a narrower ",
-               "charge range than the full MS1 envelope.")
+      ## -- Orbitrap Exploris acquisition method section (advanced; collapsed
+      ## by default -- most runs never touch these past their defaults) --
+      tags$details(class = "adv-panel",
+        tags$summary("Orbitrap Acquisition Method"),
+        tags$div(class = "adv-body",
+          numericInput("method_length",
+                      label = .with_info("Method length (min)",
+                        "Total LC-MS run time; sets the RT window end (Start/End Time) ",
+                        "for every row in the MS1 inclusion and MS2 PRM target lists."),
+                      value = DEFAULT_PIPELINE_PARAMS$method_length, min = 1, max = 999),
+          fluidRow(
+            column(6, numericInput("ms2_z_min", "MS2 charge z min",
+                                   value = DEFAULT_PIPELINE_PARAMS$ms2_z_min, min = 1, max = 30)),
+            column(6, numericInput("ms2_z_max", "MS2 charge z max",
+                                   value = DEFAULT_PIPELINE_PARAMS$ms2_z_max, min = 1, max = 30))
+          ),
+          numericInput("hcd_nce",
+                      label = .with_info("HCD NCE (%)",
+                        "20% is a PS-backbone starting point, not a validated instrument ",
+                        "parameter \u2014 optimize per method and per instrument before ",
+                        "relying on it."),
+                      value = DEFAULT_PIPELINE_PARAMS$hcd_nce, min = 1, max = 200),
+          fluidRow(
+            column(6, numericInput("ms1_target_cap",
+                      label = .with_info("Max MS1 targets",
+                        "PRM/targeted duty cycle degrades quickly as target count grows; ",
+                        "raising this cap can lengthen the instrument cycle time beyond ",
+                        "what's practical for the method."),
+                      value = DEFAULT_PIPELINE_PARAMS$ms1_target_cap, min = 1, max = 150000)),
+            column(6, numericInput("ms2_target_cap", "Max MS2 targets",
+                      value = DEFAULT_PIPELINE_PARAMS$ms2_target_cap, min = 1, max = 150000))
+          ),
+          tags$p(style = "font-size: 11px; color: #6c757d; margin-top: -6px;",
+                 "MS1/MS2 lists match the Orbitrap Exploris Method Editor's ",
+                 "Targeted Mass filter table (m/z & z, Start/End Time mode). ",
+                 "PRM duty cycle degrades quickly with target count, so MS2 ",
+                 "defaults to a narrower charge range than the full MS1 envelope.")
+        )
       ),
+
+      ## -- Phase 1: generate the predicted library -------------------------
+      ## Runs steps 1-6 (dictionary, sequence parsing, metabolite generation,
+      ## masses, fragments, PRM list) plus a library-only workbook/report --
+      ## no MS data needed. This is the artifact you'd save/share before any
+      ## data is acquired; Phase 2 below (MS matching) becomes available once
+      ## this has run.
+      tags$hr(),
+      actionButton("run_phase1", "1. Generate Library",
+                   class = "btn-primary btn-lg w-100"),
+      tags$p(style = "font-size: 11px; color: #6c757d; margin: 4px 0 10px;",
+             "Builds the metabolite library, PRM inclusion list, and spectral ",
+             "libraries from the sequence and parameters above -- no MS data ",
+             "needed yet. Re-run this after changing any parameter above."),
 
       ## -- MS matching section (optional) --
       tags$div(class = "sidebar-section",
         tags$h5("MS Matching (optional)"),
-        checkboxInput("enable_ms", "Enable MS matching", value = FALSE),
+        checkboxInput("enable_ms", "Enable MS matching",
+                      value = DEFAULT_PIPELINE_PARAMS$enable_ms),
         conditionalPanel(
           condition = "input.enable_ms == true",
-          fileInput("ms_file", "Upload MS file (.mzML, .mzXML, .csv)",
-                    accept = c(".mzML", ".mzXML", ".mzml", ".mzxml", ".csv", ".txt")),
-          numericInput("ppm_tol", "MS1 tolerance (ppm)", value = 10, min = 1, max = 50),
+          fileInput("ms_file", "Upload MS file (.mzML, .mzXML, .raw, .csv)",
+                    accept = c(".mzML", ".mzXML", ".mzml", ".mzxml", ".raw", ".csv", ".txt")),
+          tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -10px;",
+                 "Vendor .raw files are converted to .mzML automatically via ",
+                 "ProteoWizard msconvert if it's on PATH (proteowizard.org) -- ",
+                 "otherwise upload an .mzML/.mzXML export instead."),
+          numericInput("ppm_tol", "MS1 tolerance (ppm)",
+                      value = DEFAULT_PIPELINE_PARAMS$ppm_tol, min = 1, max = 50),
           checkboxGroupInput("adducts", "Adducts",
                              choices = c("H", "Na", "K", "NH4"),
-                             selected = c("H", "Na", "K", "NH4"), inline = TRUE),
+                             selected = DEFAULT_PIPELINE_PARAMS$adducts, inline = TRUE),
           fluidRow(
-            column(6, numericInput("frag_tol_ppm", "Fragment tol (ppm)", value = 25, min = 5, max = 100)),
-            column(6, numericInput("frag_z_max", "Fragment max z", value = 3, min = 1, max = 5))
+            column(6, numericInput("frag_tol_ppm", "Fragment tol (ppm)",
+                      value = DEFAULT_PIPELINE_PARAMS$frag_tol_ppm, min = 5, max = 100)),
+            column(6, numericInput("frag_z_max", "Fragment max z",
+                      value = DEFAULT_PIPELINE_PARAMS$frag_z_max, min = 1, max = 5))
           )
         )
       ),
 
-      ## -- Run button --
+      ## -- Batch MS processing section (optional, advanced; collapsed by
+      ## default). Independent of the single-file "MS Matching" section
+      ## above: uploads multiple raw files, runs them through the parallel
+      ## Python charge-envelope deconvolution pipeline
+      ## (inst/python/oligomet_deconv/), and matches/confirms/compares
+      ## across samples. See R/batch_ms_processing.R and R/statistics.R.
+      tags$details(class = "adv-panel",
+        tags$summary("Batch MS Processing (optional)"),
+        tags$div(class = "adv-body",
+          checkboxInput("enable_batch", "Enable batch processing",
+                        value = DEFAULT_PIPELINE_PARAMS$enable_batch),
+          conditionalPanel(
+            condition = "input.enable_batch == true",
+            fileInput("batch_files", "Upload raw files (.mzML, .mzXML, .raw)", multiple = TRUE,
+                      accept = c(".mzML", ".mzml", ".mzXML", ".mzxml", ".raw")),
+            tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -10px;",
+                   "Vendor .raw files are converted to .mzML automatically via ",
+                   "ProteoWizard msconvert if it's on PATH. Agilent/Bruker .d ",
+                   "folders can't be uploaded (they're directories, not files) ",
+                   "-- use the local-folder option below instead."),
+            uiOutput("batch_upload_notice"),
+            tags$label("...or point at a local folder (optional)",
+                       style = "font-size: 13px; font-weight: 500;"),
+            fluidRow(
+              column(8, textInput("batch_dir", NULL, value = "",
+                                  placeholder = "e.g. /path/to/mzml_folder")),
+              column(4, if (.have_shinyfiles)
+                shinyFiles::shinyDirButton("browse_batch_dir", "Browse...", "Choose a folder",
+                                           class = "btn-sm btn-outline-secondary w-100"))
+            ),
+            tags$p(style = "font-size: 11px; color: #6c757d; margin-top: -6px;",
+                   "Reads every .mzML/.mzXML file in this folder directly from ",
+                   "disk -- skips the browser upload entirely, so there's no ",
+                   "upload size limit and it's faster for large HRMS files. ",
+                   "Only works when the app and the data are on the same ",
+                   "machine (true if you're running this locally; under a ",
+                   "remote/hosted deployment it's the server's filesystem, ",
+                   "not yours). Takes precedence over the upload above when ",
+                   "both are set."),
+            DT::DTOutput("sample_meta_table"),
+            tags$p(style = "font-size: 11px; color: #6c757d; margin-top: 4px;",
+                   "One row per uploaded file. Fill in Group (2+ groups) or ",
+                   "Timepoint (time series) before running -- leave both blank ",
+                   "to only extract and match features, with no statistics."),
+            checkboxInput("batch_run_ms2", "Confirm hits with MS2",
+                          value = DEFAULT_PIPELINE_PARAMS$batch_run_ms2),
+            fluidRow(
+              column(6, numericInput("batch_n_workers", "Parallel workers",
+                        value = DEFAULT_PIPELINE_PARAMS$batch_n_workers, min = 1, max = 64)),
+              column(6, numericInput("batch_deconv_ppm", "Deconv mass tol (ppm)",
+                        value = DEFAULT_PIPELINE_PARAMS$batch_deconv_ppm, min = 1, max = 100))
+            )
+          )
+        )
+      ),
+
+      ## -- Phase 2: import & process MS data --------------------------------
+      ## Runs steps 7/7b (single-file and/or batch MS matching) against the
+      ## library Phase 1 just built, then rebuilds the workbook/report with
+      ## the MS-matching results included. Disabled until Phase 1 has
+      ## produced a library this session -- see rv$library_ready below.
       tags$hr(),
-      actionButton("run", "Run Pipeline", class = "btn-primary btn-lg w-100")
+      conditionalPanel(
+        condition = "output.library_ready == 'true'",
+        actionButton("run_phase2", "2. Import & Process MS Data",
+                     class = "btn-primary btn-lg w-100"),
+        tags$p(style = "font-size: 11px; color: #6c757d; margin: 4px 0 10px;",
+               "Matches the uploaded/local MS file(s) above against the ",
+               "library from Step 1, then rebuilds the workbook/report with ",
+               "identification, ROI, and (in batch mode) statistics results.")
+      ),
+      conditionalPanel(
+        condition = "output.library_ready != 'true'",
+        tags$p(style = "font-size: 11px; color: #6c757d; margin: 4px 0 10px;",
+               "Run \"1. Generate Library\" above first to enable MS data ",
+               "import and processing.")
+      ),
+
+      ## -- Session save/load ---------------------------------------------
+      ## Captures the sequence, every parameter above, and the Custom
+      ## Chemistry table as one JSON file -- "what exactly produced this
+      ## inclusion list" is a reproducibility question for a tool whose
+      ## outputs feed instrument methods. Uploaded MS/batch files are not
+      ## included (re-upload those after loading a session).
+      tags$div(style = "margin-top: 10px;", class = "session-row",
+        fluidRow(
+          column(6, downloadButton("dl_session", "Save session",
+                                   class = "btn-sm btn-outline-secondary w-100")),
+          column(6, tags$div(
+            fileInput("load_session_file", NULL, accept = ".json",
+                      buttonLabel = "Load session...", placeholder = "")))
+        ),
+        tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -8px;",
+               "Saves/restores the sequence, custom chemistry, and all ",
+               "parameters above as a .json file -- not uploaded MS/batch files.")
+      )
     ),
 
     ## ---- Main panel: manual entry + status + summary + downloads ----------
@@ -399,7 +683,7 @@ ui <- fluidPage(
                "(\"e\" = all MOE, \"s\" = all phosphorothioate). Separate ",
                "multi-character codes with commas or dashes ",
                "(\"MOE-MOE-d-d\"). Submit fills in the sequence box on the ",
-               "left; then click Run Pipeline. New to this? Open ",
+               "left; then click \"1. Generate Library\". New to this? Open ",
                tags$strong("Help & guides"), " below -- the sequence guide ",
                "walks through reading a chemical analysis file and filling ",
                "in these three fields."),
@@ -424,6 +708,30 @@ ui <- fluidPage(
         htmlOutput("man_feedback")
       ),
 
+      ## -- Custom chemistry (advanced) -----------------------------------------
+      ## Moved out of the sidebar and into the main panel: it's an advanced,
+      ## occasional-use feature, and editing DT table cells in a narrow
+      ## width-4 sidebar column was cramped. Full main-panel width gives the
+      ## table room to breathe, and collapsing it by default keeps it out of
+      ## the way of the primary Input -> Run flow for the common case where
+      ## no custom chemistry is needed.
+      tags$details(class = "help-panel",
+        tags$summary("Custom Chemistry (advanced)"),
+        tags$div(class = "help-body",
+          tags$p(class = "chem-hint",
+                 "Add custom base/sugar/linkage/conjugate entries not in the ",
+                 "standard dictionary. Empty rows are ignored; a row with a ",
+                 "code but no valid formula is flagged in the Status column ",
+                 "and blocks Run until it's fixed or cleared."),
+          DT::dataTableOutput("custom_chem"),
+          tags$div(style = "height: 6px;"),
+          fluidRow(
+            column(3, actionButton("add_row", "Add Row", class = "btn-sm btn-outline-primary w-100")),
+            column(3, actionButton("remove_row", "Remove Row", class = "btn-sm btn-outline-secondary w-100"))
+          )
+        )
+      ),
+
       ## -- Help & guides -----------------------------------------------------
       ## The three guides render straight from inst/help/, so they are
       ## available to installed users, not just to people with a checkout.
@@ -444,42 +752,98 @@ ui <- fluidPage(
       ## Status / log
       verbatimTextOutput("status", placeholder = TRUE),
 
+      ## -- Pre-run placeholder --------------------------------------------
+      ## Before the first Run, everything below (metrics, plots, downloads)
+      ## is conditionalPanel-hidden -- correct behavior, since there's
+      ## nothing to show yet, but it leaves a lot of dead whitespace on
+      ## first load. This teaches the output structure instead.
+      conditionalPanel(
+        condition = "!((input.run_phase1 > 0 || input.run_phase2 > 0) && output.status_ready == 'true')",
+        tags$div(class = "landing-placeholder",
+          tags$h5("What this produces"),
+          tags$p(class = "chem-hint",
+                 "Enter a sequence (left) and click \"1. Generate Library\". A run computes:"),
+          fluidRow(
+            column(3, tags$div(class = "metric-card placeholder",
+              tags$div(class = "label", "Formula"), tags$div(class = "value", "—"))),
+            column(2, tags$div(class = "metric-card placeholder",
+              tags$div(class = "label", "Mono Mass (Da)"), tags$div(class = "value", "—"))),
+            column(2, tags$div(class = "metric-card placeholder",
+              tags$div(class = "label", "Avg Mass (Da)"), tags$div(class = "value", "—"))),
+            column(1, tags$div(class = "metric-card placeholder",
+              tags$div(class = "label", "Length"), tags$div(class = "value", "—"))),
+            column(2, tags$div(class = "metric-card placeholder",
+              tags$div(class = "label", "Metabolites"), tags$div(class = "value", "—"))),
+            column(2, tags$div(class = "metric-card placeholder",
+              tags$div(class = "label", "PRM Entries"), tags$div(class = "value", "—")))
+          ),
+          tags$div(style = "height: 8px;"),
+          tags$ul(
+            tags$li(tags$strong("4 plots"), " -- charge envelope, truncation series, ",
+                    "isotope pattern, and PS-oxidation series for the parent oligo, ",
+                    "plus an interactive MS2 spectrum explorer."),
+            tags$li(tags$strong("Downloads"), " -- an Excel workbook, an HTML report, ",
+                    "a PRM inclusion list, Orbitrap Exploris MS1/MS2 acquisition method ",
+                    "lists, and MGF/MSP spectral libraries (bundled as one .zip, or ",
+                    "individually)."),
+            tags$li(tags$strong("MS matching results"), " (if enabled) -- MS1 match ",
+                    "counts and, for batch processing, per-sample feature tables and ",
+                    "group/time-series statistics.")
+          )
+        )
+      ),
+
       ## Summary dashboard (hidden until run completes)
       conditionalPanel(
-        condition = "input.run > 0 && output.status_ready == 'true'",
+        condition = "(input.run_phase1 > 0 || input.run_phase2 > 0) && output.status_ready == 'true'",
 
         tags$hr(),
-        tags$h4("Summary"),
 
-        ## Metrics row
-        fluidRow(
-          column(3, tags$div(class = "metric-card",
-            tags$div(class = "label", "Formula"), tags$div(class = "value", textOutput("m_formula")))),
-          column(2, tags$div(class = "metric-card",
-            tags$div(class = "label", "Mono Mass (Da)"), tags$div(class = "value", textOutput("m_mono_mass")))),
-          column(2, tags$div(class = "metric-card",
-            tags$div(class = "label", "Avg Mass (Da)"), tags$div(class = "value", textOutput("m_avg_mass")))),
-          column(1, tags$div(class = "metric-card",
-            tags$div(class = "label", "Length"), tags$div(class = "value", textOutput("m_length")))),
-          column(2, tags$div(class = "metric-card",
-            tags$div(class = "label", "Metabolites"), tags$div(class = "value", textOutput("m_n_mets")))),
-          column(2, tags$div(class = "metric-card",
-            tags$div(class = "label", "PRM Entries"), tags$div(class = "value", textOutput("m_n_prm"))))
-        ),
-        tags$div(style = "height: 10px;"),
+        ## Metrics cards: sticky to the top of the viewport, so they stay
+        ## visible while scrolling down through the plot tabs and downloads
+        ## below -- otherwise they scroll out of view exactly when you'd
+        ## want to check them against a plot or a download.
+        tags$div(class = "summary-sticky",
+          tags$h4("Summary"),
 
-        ## MS metrics row (shown only if MS matching was enabled)
-        conditionalPanel(
-          condition = "input.enable_ms == true",
+          ## Metrics row
           fluidRow(
-            column(4, tags$div(class = "metric-card",
-              tags$div(class = "label", "MS1 Matches"), tags$div(class = "value", textOutput("m_ms1_matches")))),
-            column(4, tags$div(class = "metric-card",
-              tags$div(class = "label", "Annotated Mets"), tags$div(class = "value", textOutput("m_annotated")))),
-            column(4, tags$div(class = "metric-card",
-              tags$div(class = "label", "Confident IDs"), tags$div(class = "value", textOutput("m_confident"))))
+            column(3, tags$div(class = "metric-card",
+              tags$div(class = "label", "Formula"), tags$div(class = "value", textOutput("m_formula")))),
+            column(2, tags$div(class = "metric-card",
+              tags$div(class = "label", "Mono Mass (Da)"), tags$div(class = "value", textOutput("m_mono_mass")))),
+            column(2, tags$div(class = "metric-card",
+              tags$div(class = "label", "Avg Mass (Da)"), tags$div(class = "value", textOutput("m_avg_mass")))),
+            column(1, tags$div(class = "metric-card",
+              tags$div(class = "label", "Length"), tags$div(class = "value", textOutput("m_length")))),
+            column(2, tags$div(class = "metric-card",
+              tags$div(class = "label", "Metabolites"), tags$div(class = "value", textOutput("m_n_mets")))),
+            column(2, tags$div(class = "metric-card",
+              tags$div(class = "label", "PRM Entries"), tags$div(class = "value", textOutput("m_n_prm"))))
           ),
-          tags$div(style = "height: 10px;")
+          tags$div(style = "height: 10px;"),
+
+          ## MS metrics row (shown only if MS matching was enabled)
+          conditionalPanel(
+            condition = "input.enable_ms == true",
+            fluidRow(
+              column(4, tags$div(class = "metric-card",
+                tags$div(class = "label", "MS1 Matches"), tags$div(class = "value", textOutput("m_ms1_matches")))),
+              column(4, tags$div(class = "metric-card",
+                tags$div(class = "label", "Annotated Mets"), tags$div(class = "value", textOutput("m_annotated")))),
+              column(4, tags$div(class = "metric-card",
+                tags$div(class = "label",
+                  .with_info("Putative IDs (ppm match)",
+                    "Matched within the configured MS1 ppm tolerance, with a ",
+                    "consistent isotope pattern and charge state. Not confirmed by ",
+                    "retention time. MS/MS-confirmed only when Batch MS Processing's ",
+                    "\"Confirm hits with MS2\" was enabled and a spectrum was found ",
+                    "near the precursor -- otherwise this counts m/z matches only, ",
+                    "not orthogonally-confirmed identifications.")),
+                tags$div(class = "value", textOutput("m_confident"))))
+            ),
+            tags$div(style = "height: 10px;")
+          )
         ),
 
         ## Plot tabs
@@ -487,7 +851,176 @@ ui <- fluidPage(
           tabPanel("Charge Envelope", plotOutput("plot_envelope", height = "400px")),
           tabPanel("Truncation Series", plotOutput("plot_truncation", height = "400px")),
           tabPanel("Isotope Pattern", plotOutput("plot_isotope", height = "400px")),
-          tabPanel("Oxidation Series", plotOutput("plot_oxidation", height = "400px"))
+          tabPanel("Oxidation Series", plotOutput("plot_oxidation", height = "400px")),
+          tabPanel("MS2 Explorer",
+            tags$div(style = "padding-top: 12px;",
+              fluidRow(
+                column(8, tags$p(style = "font-size: 12px; color: #6c757d;",
+                  "Builds the full MS2 spectral library (one spectrum per ",
+                  "metabolite x precursor charge) for interactive browsing -- ",
+                  "the same computation as the MS2 library download below, ",
+                  "so it can take a while for long sequences or a wide charge ",
+                  "range.")),
+                column(4, actionButton("build_ms2_explorer",
+                  "Build / Refresh Library",
+                  class = "btn-sm btn-outline-primary w-100"))
+              ),
+              conditionalPanel(
+                condition = "output.ms2_explorer_ready == 'true'",
+                tags$p(style = "font-size: 12px; color: #6c757d;",
+                  "Filter by precursor m/z with the range slider, or by ",
+                  "charge with the dropdown, in the column headers below. ",
+                  "Click a row to plot its predicted MS2 spectrum."),
+                DT::dataTableOutput("ms2_explorer_table"),
+                tags$hr(),
+                uiOutput("ms2_explorer_title"),
+                fluidRow(
+                  column(7, plotOutput("ms2_explorer_plot", height = "320px")),
+                  column(5, DT::dataTableOutput("ms2_explorer_peaks"))
+                )
+              )
+            )
+          ),
+          tabPanel("MS2 Mirror Plot",
+            tags$div(style = "padding-top: 12px;",
+              conditionalPanel(
+                condition = "output.ms2_mirror_ready == 'true'",
+                tags$p(style = "font-size: 12px; color: #6c757d;",
+                  "Acquired MS/MS spectrum (top) vs. theoretical fragment library ",
+                  "(bottom) for each metabolite MS2-confirmed against the uploaded ",
+                  "MS data (single-file mode) -- matched ions colored and labeled, ",
+                  "unmatched ions gray. Click a row to plot it."),
+                DT::dataTableOutput("ms2_mirror_table"),
+                tags$hr(),
+                plotOutput("ms2_mirror_plot", height = "420px")
+              ),
+              conditionalPanel(
+                condition = "output.ms2_mirror_ready != 'true'",
+                tags$p(style = "color: #6c757d;",
+                  "Enable MS matching, upload an MS2-containing mzML/mzXML file, ",
+                  "and run the pipeline to see acquired-vs-theoretical mirror ",
+                  "plots for MS2-confirmed metabolites here.")
+              )
+            )
+          ),
+          tabPanel("Batch Results",
+            conditionalPanel(
+              condition = "output.batch_ready == 'true'",
+              tags$div(style = "padding-top: 12px;",
+                tags$p(style = "font-size: 12px; color: #6c757d;",
+                  "One row per matched (sample, metabolite, charge, adduct) hit. ",
+                  "Confirmation columns are populated only when MS2 confirmation ",
+                  "was enabled and a spectrum was found near that precursor."),
+                DT::DTOutput("batch_matches_table"),
+                tags$div(style = "height: 8px;"),
+                downloadButton("dl_batch_tsv", "Download combined features (.tsv)",
+                               class = "btn-outline-primary"),
+                tags$hr(),
+                tags$h6("MS2 Mirror Plot"),
+                tags$p(style = "font-size: 12px; color: #6c757d;",
+                  "Select a row above with MS2 confirmation data (n_ms2_peaks > 0) ",
+                  "to plot its acquired-vs-theoretical mirror spectrum."),
+                plotOutput("batch_mirror_plot", height = "420px"),
+                tags$div(style = "height: 8px;"),
+                fluidRow(
+                  column(6, downloadButton("dl_batch_mirror_pdf",
+                           "Download all mirror plots (.pdf)",
+                           class = "btn-outline-primary w-100")),
+                  column(6, downloadButton("dl_batch_annotated_msp",
+                           "Download annotated MS2 spectra (.msp)",
+                           class = "btn-outline-primary w-100"))
+                ),
+                tags$p(style = "font-size: 11px; color: #6c757d; margin-top: 6px;",
+                  "One mirror plot / MSP spectrum per confirmed batch hit -- ",
+                  "acquired peaks (real instrument data), with matched-fragment ",
+                  "annotations from the same in-memory confirmation shown in the ",
+                  "table above.")
+              )
+            ),
+            conditionalPanel(
+              condition = "output.batch_ready != 'true'",
+              tags$p(style = "padding-top: 12px; color: #6c757d;",
+                     "Enable batch processing, upload files, and run the pipeline to see results here.")
+            )
+          ),
+          tabPanel("Unidentified Peaks",
+            conditionalPanel(
+              condition = "output.batch_ready == 'true'",
+              tags$div(style = "padding-top: 12px;",
+                tags$p(style = "font-size: 12px; color: #6c757d;",
+                  "Deconvolved features that matched no theoretical metabolite ",
+                  "within the MS1 tolerance -- retained for QC and follow-up, ",
+                  "not discarded."),
+                DT::DTOutput("unmatched_table"),
+                tags$div(style = "height: 8px;"),
+                downloadButton("dl_unmatched_csv", "Download unidentified peaks (.csv)",
+                               class = "btn-outline-primary")
+              )
+            )
+          ),
+          tabPanel("Degradation",
+            conditionalPanel(
+              condition = "output.batch_ready == 'true'",
+              tags$div(style = "padding-top: 12px;",
+                tags$p(style = "font-size: 12px; color: #6c757d;",
+                  "% degradation = 1 - (parent peak area / total peak area of ",
+                  "parent + all identified degradants), per sample -- falls ",
+                  "back to max intensity if peak area isn't available. Uses ",
+                  "the metabolite classification already computed above ",
+                  "(5' exonuclease / 3' exonuclease / endonuclease truncations)."),
+                tags$h6("% Degradation per sample"),
+                DT::DTOutput("degradation_per_sample_table"),
+                tags$div(style = "height: 8px;"),
+                tags$h6("Composition by class"),
+                plotOutput("plot_degradation_composition", height = "320px"),
+                DT::DTOutput("degradation_composition_table"),
+                tags$div(style = "height: 8px;"),
+                tags$h6("Top degradant species"),
+                DT::DTOutput("degradation_top_table"),
+                tags$div(style = "height: 8px;"),
+                downloadButton("dl_degradation_csv", "Download degradation summary (.csv)",
+                               class = "btn-outline-primary")
+              )
+            ),
+            conditionalPanel(
+              condition = "output.batch_ready != 'true'",
+              tags$p(style = "padding-top: 12px; color: #6c757d;",
+                     "Enable batch processing, upload files, and run the pipeline to see results here.")
+            )
+          ),
+          tabPanel("Statistics",
+            conditionalPanel(
+              condition = "output.stats_ready == 'true'",
+              tags$div(style = "padding-top: 12px;",
+                tags$h6("Per-metabolite comparison"),
+                uiOutput("stats_met_selector"),
+                plotOutput("plot_stats_main", height = "360px"),
+                DT::DTOutput("stats_table"),
+                tags$div(style = "height: 8px;"),
+                downloadButton("dl_stats_csv", "Download statistics table (.csv)",
+                               class = "btn-outline-primary")
+              )
+            ),
+            conditionalPanel(
+              condition = "output.stats_ready != 'true'",
+              tags$p(style = "padding-top: 12px; color: #6c757d;",
+                     "Fill in Group or Timepoint in the batch sample table to see comparisons here.")
+            ),
+            conditionalPanel(
+              condition = "output.kind_stats_ready == 'true'",
+              tags$hr(),
+              tags$h6("Composition-class comparison"),
+              tags$p(style = "font-size: 12px; color: #6c757d;",
+                "Same comparison, rolled up by metabolite class (parent / ",
+                "5' exonuclease / 3' exonuclease / endonuclease) instead of ",
+                "per-metabolite -- the same signal (peak area if available, ",
+                "else max intensity) the Degradation tab uses."),
+              DT::DTOutput("kind_stats_table"),
+              tags$div(style = "height: 8px;"),
+              downloadButton("dl_kind_stats_csv", "Download class comparison table (.csv)",
+                             class = "btn-outline-primary")
+            )
+          )
         ),
 
         tags$hr(),
@@ -495,13 +1028,14 @@ ui <- fluidPage(
         ## Download buttons
         tags$h5("Download"),
         fluidRow(
-          column(12, downloadButton("dl_all_zip", "Download All Outputs (.zip)",
+          column(12, downloadButton("dl_all", "Download All Outputs (.zip)",
                                     class = "btn-dark w-100"))
         ),
-        tags$p(style = "font-size: 11px; color: #6c757d; margin: 6px 0 12px;",
+        tags$p(style = "font-size: 11px; color: #6c757d; margin: 4px 0 10px;",
                "Bundles every file below -- workbook, report, PRM list, ",
-               "acquisition method lists, and spectral libraries -- into ",
-               "one archive."),
+               "acquisition method lists, and spectral libraries -- into a ",
+               "single .zip for local download. Individual files are also ",
+               "available one at a time below."),
         fluidRow(
           column(4, downloadButton("dl_workbook", "Excel Workbook (.xlsx)",
                                    class = "btn-success w-100")),
@@ -533,20 +1067,32 @@ ui <- fluidPage(
                                    class = "btn-outline-primary w-100")),
           column(3, downloadButton("dl_ms1_msp", "MS1 (.msp)",
                                    class = "btn-outline-primary w-100")),
-          column(3, downloadButton("dl_ms2_mgf", "MS2 (.mgf)",
-                                   class = "btn-outline-primary w-100")),
-          column(3, downloadButton("dl_ms2_msp", "MS2 (.msp)",
-                                   class = "btn-outline-primary w-100"))
+          column(3, tagAppendAttributes(
+            downloadButton("dl_ms2_mgf", "MS2 (.mgf) ⚠",
+                          class = "btn-outline-primary w-100"),
+            title = "MS2 intensities are placeholders (rule-based heuristic) -- match on m/z only, not for intensity-weighted scoring.")),
+          column(3, tagAppendAttributes(
+            downloadButton("dl_ms2_msp", "MS2 (.msp) ⚠",
+                          class = "btn-outline-primary w-100"),
+            title = "MS2 intensities are placeholders (rule-based heuristic) -- match on m/z only, not for intensity-weighted scoring."))
         ),
+        tags$p(style = "font-size: 11px; color: #a3231b; font-weight: 600; margin-top: 6px; margin-bottom: 2px;",
+               "⚠ MS2 intensities are placeholders, not measured or fitted values -- ",
+               "match on m/z only. Intensity-weighted dot-product scoring (e.g. ",
+               "MS-DIAL) against the MS2 library will produce meaningless confidence ",
+               "values."),
         tags$p(style = "font-size: 11px; color: #6c757d; margin-top: 6px;",
                "Theoretical libraries for MS-DIAL, mzVault/Compound Discoverer, ",
                "MZmine, matchms and similar. MS1 spectra hold the isotope ",
                "cluster of each metabolite at each charge state, with real ",
                "relative abundances. MS2 spectra hold the McLuckey fragment ",
-               "ions for each precursor charge state; there is no fragment ",
-               "intensity model here, so every MS2 peak is written at a flat ",
-               "100 -- match on m/z, and don't use intensity-weighted ",
-               "dot-product scoring against them."),
+               "ions for each precursor charge state, with a rule-based ",
+               "relative-intensity heuristic (PS-linkage lability, MOE-PS vs ",
+               "DNA-PS dominant ion series, purine base-loss lability -- see ",
+               "fragment_intensity_weight() in R/fragments.R) -- it is not ",
+               "fit to any measured spectra, so match on m/z and treat it as ",
+               "a coarse ranking, not a predicted abundance for quantitative ",
+               "dot-product scoring."),
         tags$div(style = "height: 20px;")
       ),
 
@@ -586,8 +1132,113 @@ server <- function(input, output, session) {
   rv <- reactiveValues(
     spec = NULL, mets = NULL, dict = NULL, prm = NULL,
     ms_results = NULL, wb_path = NULL, report_path = NULL,
-    plots = list(), ready = FALSE, status_text = "Enter a sequence and click Run Pipeline.\n"
+    plots = list(), ready = FALSE,
+    status_text = "Enter a sequence and click \"1. Generate Library\".\n",
+    batch_features = NULL, batch_ms_results = NULL,
+    sample_meta = NULL, stats_results = NULL, kind_stats_results = NULL,
+    library_ready = FALSE
   )
+
+  ## ---- Batch sample metadata table (group/timepoint assignment) -------------
+  # Seeded from the uploaded batch_files' original filenames; edited in place
+  # via DT's edit feature. Blank group/timepoint columns mean "extract and
+  # match only, no statistics" -- see the Run handler below.
+  batch_meta_data <- reactiveVal(data.frame(
+    sample = character(0), group = character(0), timepoint = character(0),
+    stringsAsFactors = FALSE))
+
+  observeEvent(input$batch_files, {
+    samples <- tools::file_path_sans_ext(input$batch_files$name)
+    batch_meta_data(data.frame(sample = samples, group = "", timepoint = "",
+                                stringsAsFactors = FALSE))
+  })
+
+  # Local-folder alternative to the upload above (see the UI section and
+  # the shinyDirChoose wiring further down) -- skips the browser entirely,
+  # so it has no upload-size limit. Triggers on any change to the batch_dir
+  # text field, whether set via "Browse..." or typed directly.
+  observeEvent(input$batch_dir, {
+    dir <- input$batch_dir
+    if (!is.null(dir) && nzchar(dir) && dir.exists(dir)) {
+      paths <- list.files(dir, pattern = "\\.(mzML|mzXML|raw|wiff|baf|yep)$",
+                          full.names = TRUE, ignore.case = TRUE)
+      if (length(paths) > 0) {
+        samples <- tools::file_path_sans_ext(basename(paths))
+        batch_meta_data(data.frame(sample = samples, group = "", timepoint = "",
+                                    stringsAsFactors = FALSE))
+      }
+    }
+  }, ignoreInit = TRUE)
+
+  # Unified batch-file source: a local folder (input$batch_dir) takes
+  # precedence over the fileInput upload when both are set, since it's
+  # strictly better when available (no size limit, no upload time). Always
+  # returns the same shape fileInput does (a data.frame with $datapath and
+  # $name), so downstream code (the Run handler) doesn't need to know which
+  # source it came from.
+  .batch_input_files <- function() {
+    dir <- input$batch_dir
+    if (!is.null(dir) && nzchar(dir) && dir.exists(dir)) {
+      paths <- list.files(dir, pattern = "\\.(mzML|mzXML|raw|wiff|baf|yep)$",
+                          full.names = TRUE, ignore.case = TRUE)
+      if (length(paths) > 0) {
+        return(data.frame(datapath = paths, name = basename(paths), stringsAsFactors = FALSE))
+      }
+    }
+    input$batch_files
+  }
+
+  # Advisory only -- see .is_hosted_deployment()'s comment on why the actual
+  # server-enforced cap can't be read from inside the app. Shows a general
+  # note as soon as a hosted deployment is detected (before any files are
+  # even chosen), and escalates to a size-specific warning once the
+  # uploaded files' reported sizes (input$batch_files$size, in bytes) cross
+  # a conservative heuristic threshold -- not a known limit, just a point
+  # past which a rejection becomes plausible on a typical hosted setup.
+  output$batch_upload_notice <- renderUI({
+    hosted <- .is_hosted_deployment()
+    files <- input$batch_files
+    total_mb <- if (!is.null(files)) sum(files$size) / 1024^2 else NA_real_
+    large <- !is.na(total_mb) && total_mb > 200
+
+    if (!hosted && !large) return(NULL)
+
+    msg <- if (large) {
+      sprintf(paste0(
+        "⚠ Selected files total %.0f MB. %s can enforce its own upload ",
+        "limit independent of this app's 20GB setting, and large HRMS files ",
+        "may still be rejected. Running this app locally in RStudio (see ",
+        "Quick Start in the README, or `git clone` + `shiny::runApp()`) ",
+        "removes that limit entirely -- or use the local-folder input below ",
+        "if the files already live on this machine."),
+        total_mb, if (hosted) "This hosted deployment" else "A hosted Shiny deployment")
+    } else {
+      paste0(
+        "⚠ This looks like a hosted deployment, which can enforce its ",
+        "own upload limit independent of this app's 20GB setting. If a ",
+        "large upload gets rejected, running this app locally in RStudio ",
+        "removes that limit entirely -- or use the local-folder input below.")
+    }
+    tags$p(style = "font-size: 11px; color: #a3231b; font-weight: 600; margin: 2px 0 6px;", msg)
+  })
+
+  output$sample_meta_table <- DT::renderDT({
+    DT::datatable(batch_meta_data(), editable = TRUE, rownames = FALSE,
+                   options = list(dom = "t", paging = FALSE, scrollY = "180px"))
+  })
+  observeEvent(input$sample_meta_table_cell_edit, {
+    df <- batch_meta_data()
+    edit <- input$sample_meta_table_cell_edit
+    df[edit$row, edit$col + 1] <- edit$value
+    batch_meta_data(df)
+  })
+
+  ## ---- MS2 library explorer --------------------------------------------------
+  # Cached separately from rv$ms_results etc.: building the full MS2 library
+  # is expensive (see .ms2_library() below), so it's built once on demand via
+  # the "Build / Refresh Library" button rather than on every Run, and stays
+  # cached until the next Run invalidates it or the user rebuilds it.
+  ms2_lib_rv <- reactiveVal(NULL)
 
   ## ---- Custom chemistry table ----------------------------------------------
   custom_chem_data <- reactiveVal(.custom_chem_init)
@@ -653,7 +1304,7 @@ server <- function(input, output, session) {
     info <- tryCatch(metabolite_mass_info(spec, dict), error = function(e) NULL)
     output$man_feedback <- renderUI(tagList(
       tags$p(class = "man-ok",
-             sprintf("Built a %d-mer (%d linkages) and loaded it into the sequence box. Click Run Pipeline.",
+             sprintf("Built a %d-mer (%d linkages) and loaded it into the sequence box. Click \"1. Generate Library\".",
                      spec$n, spec$n - 1L)),
       tags$p(class = "man-seq", triplet),
       if (!is.null(info)) tags$p(class = "hint",
@@ -719,16 +1370,37 @@ server <- function(input, output, session) {
         }
       }
     })
+
+    shinyFiles::shinyDirChoose(input, "browse_batch_dir", roots = volumes, session = session)
+    observeEvent(input$browse_batch_dir, {
+      sel <- input$browse_batch_dir
+      if (is.list(sel) && !is.null(sel$path)) {
+        path <- shinyFiles::parseDirPath(volumes, sel)
+        if (length(path) == 1 && nzchar(path)) {
+          updateTextInput(session, "batch_dir", value = path)
+        }
+      }
+    })
   }
 
   output$custom_chem <- DT::renderDataTable({
-    DT::datatable(custom_chem_data(), editable = "cell", rownames = FALSE,
+    d <- custom_chem_data()
+    disp <- d
+    disp$Status <- .chem_row_status(d)
+    # Status (column index 5, 0-based) is display-only -- disabling it here
+    # keeps DT's cell-edit column indices for Code..Attach (0-4) unchanged,
+    # so the cell_edit handler below needs no adjustment for it.
+    DT::datatable(disp, rownames = FALSE,
+                  editable = list(target = "cell", disable = list(columns = 5)),
                   options = list(dom = "t", paging = FALSE, ordering = FALSE,
                                  autoWidth = TRUE,
                                  columnDefs = list(list(width = "60px", targets = 0),
                                                    list(width = "100px", targets = 1),
-                                                   list(width = "80px", targets = 3))),
-                  selection = "none")
+                                                   list(width = "80px", targets = 3),
+                                                   list(width = "110px", targets = 5))),
+                  selection = "none") |>
+      DT::formatStyle("Status", color = DT::JS(
+        "value.indexOf(String.fromCharCode(10003)) === 0 ? '#18632f' : (value === '' ? '#adb5bd' : '#a3231b')"))
   })
 
   # Capture cell edits
@@ -757,6 +1429,61 @@ server <- function(input, output, session) {
     }
   })
 
+  ## ---- Session save/load -----------------------------------------------------
+  output$dl_session <- downloadHandler(
+    filename = function() paste0(input$oligo_name %||% "oligomet", "_session.json"),
+    content = function(file) {
+      vals <- stats::setNames(lapply(.session_input_ids, function(id) input[[id]]),
+                               .session_input_ids)
+      session_obj <- list(
+        app = "OligoMetProfiler", format_version = 1L,
+        saved_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
+        inputs = vals,
+        custom_chemistry = custom_chem_data()
+      )
+      writeLines(jsonlite::toJSON(session_obj, auto_unbox = TRUE, pretty = TRUE,
+                                  na = "null"), file)
+    }
+  )
+
+  observeEvent(input$load_session_file, {
+    req(input$load_session_file)
+    parsed <- tryCatch(
+      jsonlite::fromJSON(input$load_session_file$datapath, simplifyVector = TRUE),
+      error = function(e) NULL)
+    if (is.null(parsed) || is.null(parsed$inputs)) {
+      rv$status_text <- paste0(
+        "ERROR: could not read '", input$load_session_file$name, "' -- not a ",
+        "valid OligoMet Profiler session .json file.\n")
+      return()
+    }
+    for (id in names(parsed$inputs)) {
+      upd <- .session_update[[id]]
+      v <- parsed$inputs[[id]]
+      if (!is.null(upd) && !is.null(v) && length(v) > 0) {
+        tryCatch(upd(session, v), error = function(e) NULL)
+      }
+    }
+    if (!is.null(parsed$custom_chemistry)) {
+      cc <- tryCatch(as.data.frame(parsed$custom_chemistry, stringsAsFactors = FALSE),
+                     error = function(e) NULL)
+      need_cols <- c("Code", "Formula", "Name", "Type", "Attach")
+      if (!is.null(cc) && all(need_cols %in% names(cc)))
+        custom_chem_data(cc[, need_cols])
+    }
+    # A restored session only has form parameters (see the module header
+    # comment above) -- any library from a PRIOR run in this same session is
+    # now stale relative to the just-restored parameters, so the Phase 2
+    # button must go back behind Phase 1 until it's re-run.
+    rv$library_ready <- FALSE
+    rv$status_text <- paste0(
+      "Loaded session from '", input$load_session_file$name, "'. Review the ",
+      "restored parameters, then click \"1. Generate Library\" to regenerate ",
+      "the library (fast, deterministic -- reproduces exactly what the saved ",
+      "session would have produced). Re-upload any MS/batch files (not saved ",
+      "in a session), then click \"2. Import & Process MS Data\".\n")
+  })
+
   ## ---- About ---------------------------------------------------------------
   output$about_version <- renderText({
     v <- tryCatch(as.character(utils::packageVersion("OligoMetProfiler")),
@@ -775,14 +1502,74 @@ server <- function(input, output, session) {
   output$status <- renderText({ rv$status_text })
 
   # Hidden flag for conditionalPanel
-  output$status_ready <- reactive({ rv$ready })
+  output$status_ready <- reactive({ if (rv$ready) "true" else "false" })
   outputOptions(output, "status_ready", suspendWhenHidden = FALSE)
 
+  # Hidden flag gating the Phase 2 button -- TRUE once Phase 1 has produced
+  # a library (rv$spec/mets/dict/prm) this session.
+  output$library_ready <- reactive({ if (rv$library_ready) "true" else "false" })
+  outputOptions(output, "library_ready", suspendWhenHidden = FALSE)
+
   ## ---- Run pipeline --------------------------------------------------------
-  observeEvent(input$run, {
+  ## ---- Shared: save copies directly to a user-chosen local folder ----------
+  # Called at the end of BOTH Phase 1 (library-only) and Phase 2 (rebuilds
+  # the workbook/report with MS results, so the local-folder copy should be
+  # refreshed too). PRM/acquisition-method CSVs and spectral libraries only
+  # ever depend on mets/dict/prm, not on whether MS data has been processed
+  # yet, so this one helper covers both phases unmodified.
+  .save_to_local_folder <- function(mets, dict, prm, z_range) {
+    out_dir <- trimws(input$output_dir %||% "")
+    if (!nzchar(out_dir)) return(NULL)
+    tryCatch({
+      if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+      if (!dir.exists(out_dir)) stop("could not create folder")
+      wb_dest <- file.path(out_dir, paste0(input$output_prefix, "_library.xlsx"))
+      rp_dest <- file.path(out_dir, paste0(input$output_prefix, "_report.html"))
+      prm_dest <- file.path(out_dir, paste0(input$output_prefix, "_prm_list.csv"))
+      file.copy(rv$wb_path, wb_dest, overwrite = TRUE)
+      if (!is.null(rv$report_path) && file.exists(rv$report_path)) {
+        file.copy(rv$report_path, rp_dest, overwrite = TRUE)
+      }
+      utils::write.csv(prm, prm_dest, row.names = FALSE)
+      ms1_dest <- file.path(out_dir, paste0(input$output_prefix, "_MS1_inclusion_list.csv"))
+      ms2_dest <- file.path(out_dir, paste0(input$output_prefix, "_MS2_PRM_target_list.csv"))
+      frag_dest <- file.path(out_dir, paste0(input$output_prefix, "_MS2_fragment_reference.csv"))
+      z2 <- min(input$ms2_z_min, input$ms2_z_max):max(input$ms2_z_min, input$ms2_z_max)
+      utils::write.csv(
+        thermo_ms1_inclusion_list(mets, dict, z_range = z_range,
+          h_offset = input$h_offset, max_oxid = input$max_oxid,
+          rt_end = input$method_length, max_targets = input$ms1_target_cap),
+        ms1_dest, row.names = FALSE)
+      utils::write.csv(
+        thermo_ms2_prm_target_list(mets, dict, z_range = z2,
+          h_offset = input$h_offset, max_oxid = input$max_oxid,
+          rt_end = input$method_length, nce = input$hcd_nce,
+          max_targets = input$ms2_target_cap),
+        ms2_dest, row.names = FALSE)
+      utils::write.csv(ms2_fragment_reference(mets, dict, z_range = z2),
+                       frag_dest, row.names = FALSE)
+      export_spectral_libraries(
+        mets, dict, out_dir = out_dir, prefix = input$output_prefix,
+        z_range = z_range, n_iso = input$n_iso, max_oxid = input$max_oxid,
+        precursor_z_range = z2, frag_z_range = 1:input$frag_z_max,
+        h_offset = input$h_offset, use_envipat = input$use_envipat,
+        oligo_name = input$oligo_name)
+      normalizePath(out_dir)
+    }, error = function(e) {
+      paste0("WARNING: could not save to '", out_dir, "': ", conditionMessage(e))
+    })
+  }
+
+  ## ---- Phase 1: generate the predicted library ------------------------------
+  # Steps 1-6 (dictionary, sequence parsing, metabolite generation, masses,
+  # fragments, PRM list) plus a library-only workbook/report build -- no MS
+  # data needed. Sets rv$library_ready, which gates the Phase 2 button.
+  observeEvent(input$run_phase1, {
     # Reset
     rv$ready <- FALSE
+    rv$library_ready <- FALSE
     rv$status_text <- "Running...\n"
+    ms2_lib_rv(NULL)
 
     # Validate inputs
     seq_str <- trimws(input$seq)
@@ -798,15 +1585,23 @@ server <- function(input, output, session) {
       rv$status_text <- "ERROR: Truncation counts cannot be negative.\n"
       return()
     }
+    chem_errors <- .chem_table_errors(custom_chem_data())
+    if (length(chem_errors) > 0) {
+      rv$status_text <- paste0(
+        "ERROR: Custom Chemistry table has invalid row(s):\n  ",
+        paste(chem_errors, collapse = "\n  "),
+        "\nFix or clear these rows before running -- an invalid formula ",
+        "would otherwise silently produce a zero-mass entry.\n")
+      return()
+    }
 
-    # Wrap the whole pipeline in a top-level tryCatch: any error anywhere
-    # below (not just the points with their own tryCatch) gets reported
-    # here instead of silently stopping the reactive with nothing visible
-    # in the status panel -- previously an uncaught error from any single
-    # step would make the app look like Run had done nothing at all.
+    # Wrap the whole phase in a top-level tryCatch: any error anywhere below
+    # (not just the points with their own tryCatch) gets reported here
+    # instead of silently stopping the reactive with nothing visible in the
+    # status panel.
     tryCatch({
 
-    withProgress(message = "Running pipeline...", value = 0, {
+    withProgress(message = "Generating library...", value = 0, {
 
       prog <- progress_tracker(c(
         "Building dictionary" = 1,
@@ -815,7 +1610,6 @@ server <- function(input, output, session) {
         "Computing masses" = 1,
         "Generating fragment ions" = 2,
         "Generating PRM list" = 1,
-        "MS data import and matching" = 3,
         "Building Excel workbook" = 15,
         "Building report" = 4,
         "Generating plots" = 2
@@ -886,15 +1680,183 @@ server <- function(input, output, session) {
                                  h_offset = input$h_offset)
       rv$prm <- prm
 
+      # A fresh (or regenerated) library invalidates any MS/batch results
+      # from a previous Phase 2 run in this session -- they were matched
+      # against the OLD library and are no longer valid to show alongside it.
+      rv$ms_results <- NULL
+      rv$batch_features <- NULL
+      rv$batch_ms_results <- NULL
+      rv$sample_meta <- NULL
+      rv$stats_results <- NULL
+      rv$kind_stats_results <- NULL
+
+      # Library-only workbook/report build (ms_results = NULL, no batch
+      # results) -- this is the "save the library" deliverable; Phase 2
+      # rebuilds both with MS-matching results once data is imported.
+      incProgress(0.60, detail = "Building Excel workbook")
+      progress_next(prog)
+      build_opts <- list(
+        z_range = z_range, n_iso = input$n_iso,
+        max_oxid = input$max_oxid, h_offset = input$h_offset,
+        use_envipat = input$use_envipat, include_internal = FALSE,
+        max_3p = input$max_3p, max_5p = input$max_5p,
+        endo = input$endo,
+        adducts = if (input$enable_ms && !is.null(input$adducts)) input$adducts else c("H","Na","K","NH4"),
+        ppm_tol = if (input$enable_ms) input$ppm_tol else 10
+      )
+      wb_file <- paste0(input$output_prefix, "_library.xlsx")
+      wb_path <- tryCatch({
+        build_workbook(spec, mets, dict, NULL, NULL, NULL,
+                        build_opts, wb_file,  # build_workbook writes to a scratch dir; download handler reads rv$wb_path
+                        progress = function(msg) incProgress(0, detail = msg),
+                        console_tracker = prog)
+      }, error = function(e) {
+        rv$status_text <- paste0("ERROR building workbook: ", conditionMessage(e), "\n")
+        NULL
+      })
+      if (is.null(wb_path)) return()
+      rv$wb_path <- wb_path
+
+      incProgress(0.75, detail = "Building report")
+      progress_next(prog)
+      report_file <- paste0(input$output_prefix, "_report")
+      report_path <- tryCatch({
+        build_report(spec, mets, dict, NULL, NULL, NULL,
+                      build_opts, output_file = report_file,
+                      output_format = "html", plot_dir = tempdir())
+      }, error = function(e) {
+        file.path(tempdir(), paste0(report_file, ".html"))  # fallback
+      })
+      rv$report_path <- report_path
+
+      # Plots (theoretical only -- don't depend on MS data)
+      incProgress(0.85, detail = "Generating plots")
+      progress_next(prog)
+      z_rep <- min(max(round(median(z_range)), z_range[1]), z_range[length(z_range)])
+      plots <- tryCatch({
+        list(
+          envelope = plot_charge_envelope(mets[[1]], dict, z_range = z_range,
+                                           h_offset = input$h_offset,
+                                           max_oxid = min(input$max_oxid, 3)),
+          truncation = plot_truncation_series(mets, dict),
+          isotope = plot_isotope_pattern(mets[[1]], dict, z = z_rep,
+                                          n_iso = max(input$n_iso, 8),
+                                          h_offset = input$h_offset,
+                                          use_envipat = input$use_envipat),
+          oxidation = plot_oxidation_series(mets[[1]], dict,
+                                             max_oxid = input$max_oxid)
+        )
+      }, error = function(e) {
+        rv$status_text <- paste0(rv$status_text,
+          "WARNING: Some plots failed: ", conditionMessage(e), "\n")
+        list()
+      })
+      rv$plots <- plots
+
+      # Optional: save copies directly to a user-chosen local folder.
+      saved_to <- .save_to_local_folder(mets, dict, prm, z_range)
+
+      # Done
+      incProgress(1.0, detail = "Complete")
+      progress_finish(prog)
+
+      # Build status summary
+      n_mets <- length(mets)
+      n_prm <- nrow(prm)
+      status <- paste0(
+        "Library generated.\n",
+        "  Formula: ", parent_info$formula_str, "\n",
+        "  Mono mass: ", sprintf("%.6f Da", parent_info$mono_mass), "\n",
+        "  Avg mass: ", sprintf("%.4f Da", parent_info$avg_mass), "\n",
+        "  Length: ", spec$n, " nucleotides\n",
+        "  Metabolites: ", n_mets, "\n",
+        "  Fragment ions: ", n_frags, "\n",
+        "  PRM entries: ", n_prm, "\n"
+      )
+      if (!is.null(saved_to)) {
+        status <- paste0(status,
+          if (startsWith(saved_to, "WARNING")) paste0("  ", saved_to, "\n")
+          else paste0("  Saved to: ", saved_to, "\n"))
+      }
+      status <- paste0(status,
+        "\nDownload the library now, or upload MS data above and click ",
+        "\"2. Import & Process MS Data\" to identify metabolites.\n")
+      # Prepend rather than overwrite: rv$status_text may already carry
+      # WARNING lines appended earlier in this same run (e.g. some plots
+      # failed) -- losing those here would hide a real problem behind a
+      # clean-looking "Library generated" message.
+      warnings_so_far <- sub("^Running\\.\\.\\.\n", "", rv$status_text)
+      rv$status_text <- paste0(warnings_so_far, status)
+      rv$ready <- TRUE
+      rv$library_ready <- TRUE
+
+    })  # end withProgress
+
+    }, error = function(e) {
+      rv$status_text <- paste0(
+        "ERROR: unexpected failure -- ", conditionMessage(e), "\n",
+        "Check the R console for a full traceback.\n")
+      rv$ready <- FALSE
+      rv$library_ready <- FALSE
+    })
+  })  # end observeEvent(input$run_phase1)
+
+  ## ---- Phase 2: import & process MS data ------------------------------------
+  # Steps 7/7b (single-file and/or batch MS matching) against the library
+  # Phase 1 built, then rebuilds the workbook/report with those results
+  # included. Requires rv$library_ready (Phase 1 having run this session).
+  observeEvent(input$run_phase2, {
+    if (!isTRUE(rv$library_ready)) {
+      rv$status_text <- "ERROR: generate the library first (\"1. Generate Library\").\n"
+      return()
+    }
+
+    rv$ready <- FALSE
+    rv$status_text <- "Running...\n"
+
+    tryCatch({
+
+    withProgress(message = "Importing and processing MS data...", value = 0, {
+
+      prog <- progress_tracker(c(
+        "MS data import and matching" = 3,
+        "Batch MS processing (parallel)" = 10,
+        "Building Excel workbook" = 15,
+        "Building report" = 4
+      ))
+
+      # Re-derive the (cheap, deterministic) locals Phase 1 already computed
+      # and stored on rv -- steps 7/7b need them, but each observeEvent is
+      # its own closure so they aren't visible here directly.
+      spec <- rv$spec
+      mets <- rv$mets
+      dict <- rv$dict
+      prm <- rv$prm
+      z_range <- input$z_min:input$z_max
+      parent_info <- metabolite_mass_info(mets[[1]], dict)
+      frags <- generate_fragments(mets[[1]], dict)
+      ifrags <- generate_internal_fragments(mets[[1]], dict)
+      n_frags <- length(frags) + length(ifrags)
+
       # Step 7: Optional MS matching
       progress_next(prog)
       ms_results <- NULL
       if (input$enable_ms && !is.null(input$ms_file)) {
-        incProgress(0.55, detail = "Importing MS data")
-        ms_path <- input$ms_file$datapath
+        incProgress(0.10, detail = "Importing MS data")
         ms_results <- tryCatch({
+          # Vendor .raw (or other vendor formats) is converted to .mzML via
+          # msconvert first, if needed -- resolve_ms_input_file() passes
+          # .mzML/.mzXML/.csv/.txt straight through unchanged.
+          ms_path <- resolve_ms_input_file(input$ms_file$datapath)
           if (grepl("\\.mzML$|\\.mzml$|\\.mzXML$|\\.mzxml$", ms_path, ignore.case = TRUE)) {
-            ms_data <- parse_mzml(ms_path)
+            ms_data <- read_ms_file(ms_path)
+            if (isTRUE(ms_data$info$profile_mode)) {
+              rv$status_text <- paste0(rv$status_text,
+                "WARNING: this mzML file appears to be PROFILE mode (not centroided). ",
+                "MS1 feature extraction is designed for centroided peaks and may run slowly ",
+                "and/or produce poor results -- convert with `msconvert --centroid` first for ",
+                "reliable results.\n")
+            }
             ms1_features <- extract_ms1_features(ms_data$ms1, ppm = input$ppm_tol)
             adducts <- input$adducts
             if (is.null(adducts)) adducts <- "H"
@@ -922,13 +1884,160 @@ server <- function(input, output, session) {
       }
       rv$ms_results <- ms_results
 
-      # Step 8: Build workbook
-      incProgress(0.65, detail = "Building Excel workbook")
+      # Step 7b: Optional batch MS processing (parallel, multi-file)
+      progress_next(prog)
+      rv$batch_features <- NULL
+      rv$batch_ms_results <- NULL
+      rv$sample_meta <- NULL
+      rv$stats_results <- NULL
+      rv$kind_stats_results <- NULL
+      batch_files_df <- .batch_input_files()
+      if (input$enable_batch && !is.null(batch_files_df) && nrow(batch_files_df) > 0) {
+        incProgress(0.25, detail = "Batch deconvolution (parallel)")
+        batch_out <- tryCatch({
+          adducts <- input$adducts
+          if (is.null(adducts)) adducts <- "H"
+
+          watchlist_path <- NULL
+          if (isTRUE(input$batch_run_ms2)) {
+            watchlist_path <- tempfile(fileext = ".txt")
+            write_precursor_watchlist(mets, dict, z_range = z_range,
+                                       max_oxid = input$max_oxid, h_offset = input$h_offset,
+                                       out_path = watchlist_path)
+          }
+
+          # Resolve each input file to an .mzML path first (vendor formats
+          # go through the msconvert bridge). Each conversion is wrapped
+          # individually so one bad/unconvertible file doesn't abort the
+          # whole batch -- it's dropped with a warning instead.
+          resolved <- vapply(seq_len(nrow(batch_files_df)), function(i) {
+            tryCatch(resolve_ms_input_file(batch_files_df$datapath[i]),
+                     error = function(e) {
+                       rv$status_text <- paste0(rv$status_text,
+                         "WARNING: skipping '", batch_files_df$name[i], "': ",
+                         conditionMessage(e), "\n")
+                       NA_character_
+                     })
+          }, character(1))
+          ok <- !is.na(resolved)
+          if (!any(ok)) stop("no batch files could be read (all failed vendor conversion)")
+          resolved_paths <- resolved[ok]
+          resolved_names <- batch_files_df$name[ok]
+
+          deconv <- run_batch_deconvolution(
+            resolved_paths, precursor_watchlist = watchlist_path,
+            mass_tol_ppm = input$batch_deconv_ppm, n_workers = input$batch_n_workers,
+            progress = function(msg) incProgress(0, detail = msg))
+
+          if (!is.null(deconv$profile_mode_files) && nrow(deconv$profile_mode_files) > 0) {
+            rv$status_text <- paste0(rv$status_text,
+              "WARNING: ", nrow(deconv$profile_mode_files), " batch file(s) appear to be PROFILE ",
+              "mode (not centroided): ", paste(deconv$profile_mode_files$sample, collapse = ", "),
+              ". ROI/charge-envelope detection is designed for centroided peaks and may run ",
+              "slowly and/or produce poor results -- convert with `msconvert --centroid` first ",
+              "for reliable results.\n")
+          }
+
+          # Shiny renames uploads to random tmp paths (local-folder paths
+          # are already their own basename, so this is a no-op there);
+          # recover the sample name from the ORIGINAL filename, not the
+          # (possibly msconvert-generated) resolved datapath basename.
+          name_map <- stats::setNames(tools::file_path_sans_ext(resolved_names),
+                                       tools::file_path_sans_ext(basename(resolved_paths)))
+          feats <- read_batch_features(deconv$features_path)
+          feats$sample <- unname(name_map[feats$sample])
+          ms2 <- if (!is.null(deconv$ms2_path)) read_batch_ms2(deconv$ms2_path) else NULL
+          if (!is.null(ms2) && nrow(ms2) > 0) ms2$sample <- unname(name_map[ms2$sample])
+
+          incProgress(0, detail = "Matching + MS2 confirmation")
+          batch_results <- annotate_metabolites_batch(
+            mets, feats, ms2, dict = dict, ppm_tol = input$ppm_tol, z_range = z_range,
+            adducts = adducts, max_oxid = input$max_oxid, h_offset = input$h_offset,
+            n_iso = input$n_iso, use_envipat = input$use_envipat,
+            frag_tol_ppm = input$frag_tol_ppm, frag_z_range = 1:input$frag_z_max)
+
+          list(features = feats, results = batch_results, meta = batch_meta_data())
+        }, error = function(e) {
+          rv$status_text <- paste0(rv$status_text,
+            "WARNING: Batch MS processing failed: ", conditionMessage(e), "\n")
+          NULL
+        })
+
+        if (!is.null(batch_out)) {
+          rv$batch_features <- batch_out$features
+          rv$batch_ms_results <- batch_out$results
+          rv$sample_meta <- batch_out$meta
+
+          meta <- batch_out$meta
+          has_group <- !is.null(meta$group) && any(nzchar(meta$group))
+          has_time <- !is.null(meta$timepoint) && any(nzchar(meta$timepoint))
+          if (nrow(batch_out$results$ms1_matches) > 0 && (has_group || has_time)) {
+            abund <- build_abundance_matrix(batch_out$results$ms1_matches)
+            stats_res <- tryCatch({
+              if (has_time) {
+                sm <- meta[, c("sample", "timepoint")]
+                sm$timepoint <- suppressWarnings(as.numeric(sm$timepoint))
+                long <- abundance_long(abund, sm[!is.na(sm$timepoint), ])
+                list(mode = "time_series", result = compare_time_series(long))
+              } else {
+                sm <- meta[nzchar(meta$group), c("sample", "group")]
+                groups <- unique(sm$group)
+                long <- abundance_long(abund, sm)
+                if (length(groups) == 2) {
+                  list(mode = "two_group", result = compare_two_groups(long, groups[1], groups[2]))
+                } else if (length(groups) > 2) {
+                  list(mode = "multi_group", result = compare_multi_groups(long, groups))
+                } else NULL
+              }
+            }, error = function(e) {
+              rv$status_text <- paste0(rv$status_text,
+                "WARNING: statistical comparison failed: ", conditionMessage(e), "\n")
+              NULL
+            })
+            rv$stats_results <- stats_res
+
+            # Same comparison, but on kind-level (composition-class) totals
+            # instead of per-metabolite abundance -- reuses the same
+            # compare_*() functions unmodified (see build_kind_abundance_matrix()
+            # in R/statistics.R for why that works), so this mirrors the
+            # per-metabolite block above almost exactly.
+            signal_col <- if ("area" %in% names(batch_out$results$ms1_matches) &&
+                               any(!is.na(batch_out$results$ms1_matches$area))) "area" else "intensity"
+            kind_abund <- build_kind_abundance_matrix(batch_out$results$ms1_matches,
+                                                       signal_col = signal_col)
+            kind_stats_res <- tryCatch({
+              if (has_time) {
+                sm <- meta[, c("sample", "timepoint")]
+                sm$timepoint <- suppressWarnings(as.numeric(sm$timepoint))
+                long <- kind_abundance_long(kind_abund, sm[!is.na(sm$timepoint), ])
+                list(mode = "time_series", result = compare_time_series(long))
+              } else {
+                sm <- meta[nzchar(meta$group), c("sample", "group")]
+                groups <- unique(sm$group)
+                long <- kind_abundance_long(kind_abund, sm)
+                if (length(groups) == 2) {
+                  list(mode = "two_group", result = compare_two_groups(long, groups[1], groups[2]))
+                } else if (length(groups) > 2) {
+                  list(mode = "multi_group", result = compare_multi_groups(long, groups))
+                } else NULL
+              }
+            }, error = function(e) {
+              rv$status_text <- paste0(rv$status_text,
+                "WARNING: kind-level statistical comparison failed: ", conditionMessage(e), "\n")
+              NULL
+            })
+            rv$kind_stats_results <- kind_stats_res
+          }
+        }
+      }
+
+      # Step 8: Rebuild the workbook, now WITH MS-matching results
+      incProgress(0.60, detail = "Building Excel workbook")
       progress_next(prog)
       build_opts <- list(
         z_range = z_range, n_iso = input$n_iso,
         max_oxid = input$max_oxid, h_offset = input$h_offset,
-        use_envipat = input$use_envipat, include_internal = TRUE,
+        use_envipat = input$use_envipat, include_internal = FALSE,
         max_3p = input$max_3p, max_5p = input$max_5p,
         endo = input$endo,
         adducts = if (input$enable_ms && !is.null(input$adducts)) input$adducts else c("H","Na","K","NH4"),
@@ -940,7 +2049,10 @@ server <- function(input, output, session) {
                         if (input$enable_ms) list(n_ms1 = 0, n_ms2 = 0) else NULL,
                         build_opts, wb_file,  # build_workbook writes to a scratch dir; download handler reads rv$wb_path
                         progress = function(msg) incProgress(0, detail = msg),
-                        console_tracker = prog)
+                        console_tracker = prog,
+                        batch_ms_results = rv$batch_ms_results,
+                        stats_results = rv$stats_results,
+                        kind_stats_results = rv$kind_stats_results)
       }, error = function(e) {
         rv$status_text <- paste0("ERROR building workbook: ", conditionMessage(e), "\n")
         NULL
@@ -948,8 +2060,8 @@ server <- function(input, output, session) {
       if (is.null(wb_path)) return()
       rv$wb_path <- wb_path
 
-      # Step 9: Build report
-      incProgress(0.75, detail = "Building report")
+      # Step 9: Rebuild the report
+      incProgress(0.80, detail = "Building report")
       progress_next(prog)
       report_file <- paste0(input$output_prefix, "_report")
       report_path <- tryCatch({
@@ -962,75 +2074,8 @@ server <- function(input, output, session) {
       })
       rv$report_path <- report_path
 
-      # Step 10: Generate plots
-      incProgress(0.85, detail = "Generating plots")
-      progress_next(prog)
-      z_rep <- min(max(round(median(z_range)), z_range[1]), z_range[length(z_range)])
-      plots <- tryCatch({
-        list(
-          envelope = plot_charge_envelope(mets[[1]], dict, z_range = z_range,
-                                           h_offset = input$h_offset,
-                                           max_oxid = min(input$max_oxid, 3)),
-          truncation = plot_truncation_series(mets, dict),
-          isotope = plot_isotope_pattern(mets[[1]], dict, z = z_rep,
-                                          n_iso = max(input$n_iso, 8),
-                                          h_offset = input$h_offset,
-                                          use_envipat = input$use_envipat),
-          oxidation = plot_oxidation_series(mets[[1]], dict,
-                                             max_oxid = input$max_oxid)
-        )
-      }, error = function(e) {
-        rv$status_text <- paste0(rv$status_text,
-          "WARNING: Some plots failed: ", conditionMessage(e), "\n")
-        list()
-      })
-      rv$plots <- plots
-
-      # Optional: save copies directly to a user-chosen local folder,
-      # for local RStudio/Rscript sessions where relying on the browser's
-      # download flow isn't convenient.
-      saved_to <- NULL
-      out_dir <- trimws(input$output_dir %||% "")
-      if (nzchar(out_dir)) {
-        saved_to <- tryCatch({
-          if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
-          if (!dir.exists(out_dir)) stop("could not create folder")
-          wb_dest <- file.path(out_dir, paste0(input$output_prefix, "_library.xlsx"))
-          rp_dest <- file.path(out_dir, paste0(input$output_prefix, "_report.html"))
-          prm_dest <- file.path(out_dir, paste0(input$output_prefix, "_prm_list.csv"))
-          file.copy(rv$wb_path, wb_dest, overwrite = TRUE)
-          if (!is.null(rv$report_path) && file.exists(rv$report_path)) {
-            file.copy(rv$report_path, rp_dest, overwrite = TRUE)
-          }
-          utils::write.csv(prm, prm_dest, row.names = FALSE)
-          ms1_dest <- file.path(out_dir, paste0(input$output_prefix, "_MS1_inclusion_list.csv"))
-          ms2_dest <- file.path(out_dir, paste0(input$output_prefix, "_MS2_PRM_target_list.csv"))
-          frag_dest <- file.path(out_dir, paste0(input$output_prefix, "_MS2_fragment_reference.csv"))
-          z2 <- min(input$ms2_z_min, input$ms2_z_max):max(input$ms2_z_min, input$ms2_z_max)
-          utils::write.csv(
-            thermo_ms1_inclusion_list(mets, dict, z_range = z_range,
-              h_offset = input$h_offset, max_oxid = input$max_oxid,
-              rt_end = input$method_length, max_targets = input$ms1_target_cap),
-            ms1_dest, row.names = FALSE)
-          utils::write.csv(
-            thermo_ms2_prm_target_list(mets, dict, z_range = z2,
-              h_offset = input$h_offset, max_oxid = input$max_oxid,
-              rt_end = input$method_length, nce = input$hcd_nce,
-              max_targets = input$ms2_target_cap),
-            ms2_dest, row.names = FALSE)
-          utils::write.csv(ms2_fragment_reference(mets, dict, z_range = z2),
-                           frag_dest, row.names = FALSE)
-          export_spectral_libraries(
-            mets, dict, out_dir = out_dir, prefix = input$output_prefix,
-            z_range = z_range, n_iso = input$n_iso, max_oxid = input$max_oxid,
-            precursor_z_range = z2, frag_z_range = 1:input$frag_z_max,
-            h_offset = input$h_offset, use_envipat = input$use_envipat,
-            oligo_name = input$oligo_name)
-          normalizePath(out_dir)
-        }, error = function(e) {
-          paste0("WARNING: could not save to '", out_dir, "': ", conditionMessage(e))
-        })
-      }
+      # Optional: refresh copies in the user-chosen local folder.
+      saved_to <- .save_to_local_folder(mets, dict, prm, z_range)
 
       # Done
       incProgress(1.0, detail = "Complete")
@@ -1056,14 +2101,20 @@ server <- function(input, output, session) {
         status <- paste0(status,
           "  MS1 matches: ", n_ms1, "\n",
           "  Annotated metabolites: ", n_annot, "\n",
-          "  Confident IDs: ", n_conf, "\n")
+          "  Putative IDs (ppm match): ", n_conf, "\n")
       }
       if (!is.null(saved_to)) {
         status <- paste0(status,
           if (startsWith(saved_to, "WARNING")) paste0("  ", saved_to, "\n")
           else paste0("  Saved to: ", saved_to, "\n"))
       }
-      rv$status_text <- status
+      # Prepend rather than overwrite: rv$status_text may already carry
+      # WARNING lines appended earlier in this same run (MS matching
+      # failures, skipped batch files, profile-mode notices, ...) -- losing
+      # those here would silently hide a real problem behind a clean-looking
+      # "Pipeline complete" message.
+      warnings_so_far <- sub("^Running\\.\\.\\.\n", "", rv$status_text)
+      rv$status_text <- paste0(warnings_so_far, status)
       rv$ready <- TRUE
 
     })  # end withProgress
@@ -1074,7 +2125,7 @@ server <- function(input, output, session) {
         "Check the R console for a full traceback.\n")
       rv$ready <- FALSE
     })
-  })  # end observeEvent(input$run)
+  })  # end observeEvent(input$run_phase2)
 
   ## ---- Summary metrics outputs ---------------------------------------------
   output$m_formula <- renderText({
@@ -1220,81 +2271,442 @@ server <- function(input, output, session) {
   output$dl_ms2_msp <- .spectral_download(.ms2_library, write_msp,
                                           "_MS2_library.msp")
 
-  ## ---- Download all as a single ZIP ----------------------------------------
-  # Writes every file the individual buttons above offer into a scratch
-  # directory, reusing the same builder calls, then zips it. Built on
-  # demand like the spectral libraries -- most runs never touch this
-  # button, so there's no point building it during Run Pipeline.
-  .write_all_outputs <- function(dir) {
-    prefix <- input$output_prefix
-    z_range <- input$z_min:input$z_max
-    z2 <- min(input$ms2_z_min, input$ms2_z_max):max(input$ms2_z_min, input$ms2_z_max)
-    files <- character(0)
-    add <- function(name, write) {
-      dest <- file.path(dir, name)
-      write(dest)
-      files <<- c(files, dest)
+  ## ---- MS2 library explorer -------------------------------------------------
+  # Builds the MS2 library once (via the button below) and caches it in
+  # ms2_lib_rv, so filtering the table afterwards is instant instead of
+  # rebuilding the library on every click.
+  observeEvent(input$build_ms2_explorer, {
+    req(rv$ready, rv$mets, rv$dict)
+    withProgress(message = "Building MS2 library for exploration...", value = 0.3, {
+      ms2_lib_rv(.ms2_library())
+    })
+  })
+
+  output$ms2_explorer_ready <- reactive({
+    if (!is.null(ms2_lib_rv()) && length(ms2_lib_rv()) > 0) "true" else "false"
+  })
+  outputOptions(output, "ms2_explorer_ready", suspendWhenHidden = FALSE)
+
+  # One row per precursor spectrum (metabolite x charge); the row order here
+  # matches ms2_lib_rv() exactly, so a DT row-selection index can be used to
+  # index straight into the library list below.
+  ms2_explorer_summary <- reactive({
+    lib <- ms2_lib_rv()
+    req(lib, length(lib) > 0)
+    data.frame(
+      Metabolite = vapply(lib, function(r)
+        sub(" \\[z=.*\\] MS2$", "", r$name), ""),
+      Charge = factor(vapply(lib, function(r) r$z, numeric(1))),
+      `Precursor m/z` = round(vapply(lib, function(r) r$precursor_mz, numeric(1)), 4),
+      Formula = vapply(lib, function(r) r$formula, ""),
+      `Mono mass (Da)` = round(vapply(lib, function(r) r$mono_mass, numeric(1)), 4),
+      `N fragments` = vapply(lib, function(r) nrow(r$peaks), numeric(1)),
+      check.names = FALSE, stringsAsFactors = FALSE
+    )
+  })
+
+  output$ms2_explorer_table <- DT::renderDataTable({
+    DT::datatable(ms2_explorer_summary(), filter = "top", rownames = FALSE,
+                  selection = "single",
+                  options = list(pageLength = 10,
+                                 order = list(list(2, "asc"))))
+  })
+
+  output$ms2_explorer_title <- renderUI({
+    sel <- input$ms2_explorer_table_rows_selected
+    if (is.null(sel))
+      return(tags$p(class = "hint",
+        "Select a row above to plot its predicted MS2 spectrum."))
+    tags$h6(ms2_lib_rv()[[sel]]$name)
+  })
+
+  # Basic stick plot: every fragment ion at its m/z, height set by the
+  # rule-based intensity heuristic (fragment_intensity_weight() in
+  # R/fragments.R) -- a coarse relative ranking, not a predicted abundance
+  # (see that function's header for exactly what it does and does not
+  # encode). Exact per-peak annotations are in the paired table, not on the
+  # plot itself, since a precursor can carry hundreds to thousands of
+  # internal-fragment peaks that would make on-plot labels unreadable.
+  output$ms2_explorer_plot <- renderPlot({
+    sel <- input$ms2_explorer_table_rows_selected
+    req(sel)
+    r <- ms2_lib_rv()[[sel]]
+    ggplot2::ggplot(r$peaks, ggplot2::aes(x = mz, y = intensity)) +
+      ggplot2::geom_segment(ggplot2::aes(xend = mz, yend = 0),
+                            color = "#2c3e50", linewidth = 0.3, alpha = 0.7) +
+      ggplot2::labs(x = "m/z", y = "Relative intensity (rule-based heuristic)",
+                    title = r$name,
+                    subtitle = paste0(nrow(r$peaks), " predicted fragment ions")) +
+      ggplot2::ylim(0, 110) +
+      ggplot2::theme_bw()
+  })
+
+  output$ms2_explorer_peaks <- DT::renderDataTable({
+    sel <- input$ms2_explorer_table_rows_selected
+    req(sel)
+    pk <- ms2_lib_rv()[[sel]]$peaks
+    pk <- pk[order(pk$mz), ]
+    DT::datatable(
+      data.frame(`m/z` = round(pk$mz, 4), Annotation = pk$annotation,
+                check.names = FALSE, stringsAsFactors = FALSE),
+      rownames = FALSE, options = list(pageLength = 15, dom = "tip"))
+  })
+
+  ## ---- MS2 mirror plot (single-file mode) ------------------------------------
+  # Acquired-vs-theoretical mirror plot for metabolites MS2-confirmed during
+  # single-file MS matching (rv$ms_results, built by annotate_metabolites()
+  # in R/ms_matching.R -- distinct from the pure-theoretical MS2 Explorer
+  # above, which never sees acquired data).
+  output$ms2_mirror_ready <- reactive({
+    if (!is.null(rv$ms_results) && length(rv$ms_results$ms2_results) > 0) "true" else "false"
+  })
+  outputOptions(output, "ms2_mirror_ready", suspendWhenHidden = FALSE)
+
+  .ms2_mirror_hits <- reactive({
+    req(rv$ms_results)
+    s <- rv$ms_results$summary
+    req(nrow(s) > 0)
+    s[s$has_ms2, , drop = FALSE]
+  })
+
+  output$ms2_mirror_table <- DT::renderDataTable({
+    hits <- .ms2_mirror_hits()
+    req(nrow(hits) > 0)
+    df <- data.frame(
+      Metabolite = hits$met_name, Kind = hits$kind, n = hits$n,
+      `MS2 score` = hits$ms2_score, `Coverage %` = round(100 * hits$ms2_coverage, 1),
+      `N frag. matches` = hits$n_ms2_frags, Confident = hits$confident,
+      check.names = FALSE, stringsAsFactors = FALSE)
+    DT::datatable(df, rownames = FALSE, selection = "single",
+                  options = list(pageLength = 10, dom = "tip"))
+  })
+
+  output$ms2_mirror_plot <- renderPlot({
+    hits <- .ms2_mirror_hits()
+    sel <- input$ms2_mirror_table_rows_selected
+    req(sel)
+    met_id <- hits$met_id[sel]
+    r <- rv$ms_results$ms2_results[[met_id]]
+    req(r, r$best_spec)
+    met <- .find_met(rv$mets, met_id)
+    req(met)
+    spec <- mirror_spectrum_data(met, r$best_spec, rv$dict,
+                                  tol_ppm = input$frag_tol_ppm,
+                                  z_range = 1:input$frag_z_max)
+    plot_mirror_spectrum(spec, title = paste0(met$name, " -- MS2 mirror plot"))
+  })
+
+  ## ---- Batch MS Processing / Unidentified Peaks / Statistics tabs -----------
+  output$batch_ready <- reactive({
+    if (!is.null(rv$batch_ms_results) && nrow(rv$batch_ms_results$ms1_matches) >= 0) "true" else "false"
+  })
+  outputOptions(output, "batch_ready", suspendWhenHidden = FALSE)
+
+  output$stats_ready <- reactive({
+    if (!is.null(rv$stats_results) && !is.null(rv$stats_results$result)) "true" else "false"
+  })
+  outputOptions(output, "stats_ready", suspendWhenHidden = FALSE)
+
+  output$kind_stats_ready <- reactive({
+    if (!is.null(rv$kind_stats_results) && !is.null(rv$kind_stats_results$result)) "true" else "false"
+  })
+  outputOptions(output, "kind_stats_ready", suspendWhenHidden = FALSE)
+
+  # Merges in the MS2 confirmation columns (n_ms2_peaks, coverage,
+  # confirmation_score, confident, ...) when batch MS2 confirmation ran --
+  # shared between the table render and the mirror-plot row lookup below so
+  # a DT row-selection index always resolves against the same row order.
+  .batch_matches_display <- reactive({
+    req(rv$batch_ms_results)
+    m <- rv$batch_ms_results$ms1_matches
+    ms2c <- rv$batch_ms_results$ms2_confirmations
+    if (!is.null(ms2c) && nrow(ms2c) > 0) {
+      ms2c$met_name <- NULL
+      m <- merge(m, ms2c, by = c("sample", "met_id", "k_oxid", "z", "adduct"),
+                 all.x = TRUE, sort = FALSE)
     }
+    m
+  })
 
-    if (!is.null(rv$wb_path) && file.exists(rv$wb_path))
-      add(paste0(prefix, "_library.xlsx"),
-          function(dest) file.copy(rv$wb_path, dest))
-    if (!is.null(rv$report_path) && file.exists(rv$report_path))
-      add(paste0(prefix, "_report.html"),
-          function(dest) file.copy(rv$report_path, dest))
-    if (!is.null(rv$prm))
-      add(paste0(prefix, "_prm_list.csv"),
-          function(dest) write.csv(rv$prm, dest, row.names = FALSE))
+  output$batch_matches_table <- DT::renderDT({
+    m <- .batch_matches_display()
+    DT::datatable(m, filter = "top", rownames = FALSE, selection = "single",
+                  options = list(pageLength = 10, scrollX = TRUE))
+  })
 
-    add(paste0(prefix, "_MS1_inclusion_list.csv"), function(dest) write.csv(
-      thermo_ms1_inclusion_list(rv$mets, rv$dict, z_range = z_range,
-        h_offset = input$h_offset, max_oxid = input$max_oxid,
-        rt_start = 0, rt_end = input$method_length,
-        max_targets = input$ms1_target_cap),
-      dest, row.names = FALSE))
-    add(paste0(prefix, "_MS2_PRM_target_list.csv"), function(dest) write.csv(
-      thermo_ms2_prm_target_list(rv$mets, rv$dict, z_range = z2,
-        h_offset = input$h_offset, max_oxid = input$max_oxid,
-        rt_start = 0, rt_end = input$method_length,
-        nce = input$hcd_nce, max_targets = input$ms2_target_cap),
-      dest, row.names = FALSE))
-    add(paste0(prefix, "_MS2_fragment_reference.csv"), function(dest) write.csv(
-      ms2_fragment_reference(rv$mets, rv$dict, z_range = z2),
-      dest, row.names = FALSE))
+  output$batch_mirror_plot <- renderPlot({
+    m <- .batch_matches_display()
+    sel <- input$batch_matches_table_rows_selected
+    req(sel)
+    row <- m[sel, ]
+    req(!is.null(row$n_ms2_peaks), !is.na(row$n_ms2_peaks), row$n_ms2_peaks > 0)
+    key <- paste(row$sample, row$met_id, row$k_oxid, row$z, row$adduct, sep = "|")
+    best_spec <- rv$batch_ms_results$ms2_spectra[[key]]
+    req(best_spec)
+    met <- .find_met(rv$mets, row$met_id)
+    req(met)
+    spec <- mirror_spectrum_data(met, best_spec, rv$dict,
+                                  tol_ppm = input$frag_tol_ppm,
+                                  z_range = 1:input$frag_z_max)
+    plot_mirror_spectrum(spec, title = paste0(row$met_name, " (", row$sample,
+                                               ") -- MS2 mirror plot"))
+  })
 
-    ms1_lib <- .ms1_library()
-    add(paste0(prefix, "_MS1_library.mgf"), function(dest) write_mgf(ms1_lib, dest))
-    add(paste0(prefix, "_MS1_library.msp"), function(dest) write_msp(ms1_lib, dest))
-    ms2_lib <- .ms2_library()
-    add(paste0(prefix, "_MS2_library.mgf"), function(dest) write_mgf(ms2_lib, dest))
-    add(paste0(prefix, "_MS2_library.msp"), function(dest) write_msp(ms2_lib, dest))
+  output$dl_batch_mirror_pdf <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_batch_MS2_mirror_plots.pdf"),
+    content = function(file) {
+      req(rv$batch_ms_results, rv$mets, rv$dict)
+      batch_mirror_plots_pdf(rv$mets, rv$dict,
+                              rv$batch_ms_results$ms2_confirmations,
+                              rv$batch_ms_results$ms2_spectra,
+                              file = file, tol_ppm = input$frag_tol_ppm,
+                              z_range = 1:input$frag_z_max, h_offset = input$h_offset)
+    }
+  )
 
-    files
-  }
+  output$dl_batch_annotated_msp <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_batch_MS2_annotated.msp"),
+    content = function(file) {
+      req(rv$batch_ms_results, rv$mets, rv$dict)
+      recs <- batch_annotated_msp_records(rv$mets, rv$dict,
+                                           rv$batch_ms_results$ms2_confirmations,
+                                           rv$batch_ms_results$ms2_spectra,
+                                           tol_ppm = input$frag_tol_ppm,
+                                           z_range = 1:input$frag_z_max,
+                                           h_offset = input$h_offset)
+      write_msp(recs, file, measured = TRUE)
+    }
+  )
 
-  output$dl_all_zip <- downloadHandler(
+  output$unmatched_table <- DT::renderDT({
+    req(rv$batch_ms_results)
+    DT::datatable(rv$batch_ms_results$unmatched, filter = "top", rownames = FALSE,
+                  options = list(pageLength = 10, scrollX = TRUE))
+  })
+
+  ## ---- Degradation tab (M4: R/degradation.R) --------------------------------
+  output$degradation_per_sample_table <- DT::renderDT({
+    req(rv$batch_ms_results$degradation)
+    DT::datatable(rv$batch_ms_results$degradation$per_sample, rownames = FALSE,
+                  options = list(pageLength = 10, scrollX = TRUE))
+  })
+
+  output$plot_degradation_composition <- renderPlot({
+    req(rv$batch_ms_results$degradation)
+    plot_degradation_composition(rv$batch_ms_results$degradation)
+  })
+
+  output$degradation_composition_table <- DT::renderDT({
+    req(rv$batch_ms_results$degradation)
+    DT::datatable(rv$batch_ms_results$degradation$composition, rownames = FALSE,
+                  options = list(pageLength = 10, scrollX = TRUE))
+  })
+
+  output$degradation_top_table <- DT::renderDT({
+    req(rv$batch_ms_results$degradation)
+    DT::datatable(rv$batch_ms_results$degradation$top_degradants, rownames = FALSE,
+                  options = list(pageLength = 10, scrollX = TRUE))
+  })
+
+  output$dl_degradation_csv <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_degradation_summary.csv"),
+    content = function(file) {
+      req(rv$batch_ms_results$degradation)
+      utils::write.csv(rv$batch_ms_results$degradation$per_sample, file, row.names = FALSE)
+    }
+  )
+
+  # Flattens compare_multi_groups()'s list(omnibus, posthoc) to a single
+  # table for display; two_group/time_series results are already flat.
+  .stats_display_table <- reactive({
+    sr <- rv$stats_results
+    req(sr)
+    if (sr$mode == "multi_group") sr$result$omnibus else sr$result
+  })
+
+  output$stats_met_selector <- renderUI({
+    df <- .stats_display_table()
+    req(nrow(df) > 0)
+    selectInput("stats_met_select", "Metabolite", choices = stats::setNames(df$met_id, df$met_name))
+  })
+
+  output$plot_stats_main <- renderPlot({
+    sr <- rv$stats_results
+    req(sr, input$stats_met_select)
+    if (sr$mode == "two_group") {
+      plot_volcano(sr$result)
+    } else if (sr$mode == "time_series") {
+      abund <- build_abundance_matrix(rv$batch_ms_results$ms1_matches)
+      long <- abundance_long(abund, rv$sample_meta[, c("sample", "timepoint")])
+      plot_trend(long, input$stats_met_select)
+    } else {
+      abund <- build_abundance_matrix(rv$batch_ms_results$ms1_matches)
+      long <- abundance_long(abund, rv$sample_meta[, c("sample", "group")])
+      plot_group_boxplot(long, input$stats_met_select)
+    }
+  })
+
+  output$stats_table <- DT::renderDT({
+    DT::datatable(.stats_display_table(), rownames = FALSE,
+                  options = list(pageLength = 10, scrollX = TRUE))
+  })
+
+  # Same flatten as .stats_display_table(), for the kind-level (composition-
+  # class) comparison -- its met_id/met_name columns hold "exo_3p"/
+  # "endo_5frag"/etc rather than real metabolite IDs (see
+  # build_kind_abundance_matrix() in R/statistics.R for why that's fine).
+  .kind_stats_display_table <- reactive({
+    sr <- rv$kind_stats_results
+    req(sr)
+    if (sr$mode == "multi_group") sr$result$omnibus else sr$result
+  })
+
+  output$kind_stats_table <- DT::renderDT({
+    df <- .kind_stats_display_table()
+    # met_id and met_name are identical here (both hold the kind string --
+    # see build_kind_abundance_matrix()) -- show one column, labeled "kind".
+    df$met_name <- NULL
+    names(df)[names(df) == "met_id"] <- "kind"
+    DT::datatable(df, rownames = FALSE,
+                  options = list(pageLength = 10, scrollX = TRUE))
+  })
+
+  output$dl_kind_stats_csv <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_class_comparison.csv"),
+    content = function(file) {
+      utils::write.csv(.kind_stats_display_table(), file, row.names = FALSE)
+    }
+  )
+
+  output$dl_batch_tsv <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_batch_features.tsv"),
+    content = function(file) {
+      req(rv$batch_features)
+      utils::write.table(rv$batch_features, file, sep = "\t", row.names = FALSE, quote = FALSE)
+    }
+  )
+  output$dl_unmatched_csv <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_unidentified_peaks.csv"),
+    content = function(file) {
+      req(rv$batch_ms_results)
+      utils::write.csv(rv$batch_ms_results$unmatched, file, row.names = FALSE)
+    }
+  )
+  output$dl_stats_csv <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_statistics.csv"),
+    content = function(file) {
+      req(rv$stats_results)
+      utils::write.csv(.stats_display_table(), file, row.names = FALSE)
+    }
+  )
+
+  ## ---- Download all outputs as a single .zip -------------------------------
+  # Re-derives the CSV/spectral-library files rather than reusing the
+  # download handlers above (downloadHandlers aren't callable as plain
+  # functions), writing everything into one scratch directory before zipping.
+  # Uses the "zip" package when available (pure R, no external binary) and
+  # falls back to utils::zip() (shells out to a system "zip") otherwise.
+  output$dl_all <- downloadHandler(
     filename = function() paste0(input$output_prefix, "_all_outputs.zip"),
     content = function(file) {
-      req(rv$ready, rv$mets, rv$dict)
-      validate(need(.have_zip_pkg || .have_zip_cmd,
-        paste("Zipping needs either the 'zip' R package",
-              "(install.packages(\"zip\")) or a 'zip' command available",
-              "on the server's PATH.")))
-      withProgress(message = "Building complete output bundle...", value = 0.15, {
-        out_dir <- file.path(tempdir(), paste0("omp_zip_", as.integer(Sys.time())))
-        dir.create(out_dir)
-        on.exit(unlink(out_dir, recursive = TRUE), add = TRUE)
+      req(rv$ready, rv$mets, rv$dict, rv$prm)
+      withProgress(message = "Bundling all outputs...", value = 0, {
+        prefix <- input$output_prefix
+        bundle_dir <- tempfile("oligomet_bundle_")
+        dir.create(bundle_dir)
+        on.exit(unlink(bundle_dir, recursive = TRUE), add = TRUE)
 
-        incProgress(0.15, detail = "Collecting output files")
-        out_files <- .write_all_outputs(out_dir)
+        incProgress(0.05, detail = "Workbook")
+        if (!is.null(rv$wb_path) && file.exists(rv$wb_path))
+          file.copy(rv$wb_path, file.path(bundle_dir, paste0(prefix, "_library.xlsx")))
 
-        incProgress(0.6, detail = "Compressing")
-        if (.have_zip_pkg) {
-          zip::zip(file, files = basename(out_files), root = out_dir)
+        incProgress(0.05, detail = "Report")
+        if (!is.null(rv$report_path) && file.exists(rv$report_path))
+          file.copy(rv$report_path, file.path(bundle_dir, paste0(prefix, "_report.html")))
+
+        incProgress(0.05, detail = "PRM list")
+        utils::write.csv(rv$prm, file.path(bundle_dir, paste0(prefix, "_prm_list.csv")),
+                         row.names = FALSE)
+
+        z_range <- input$z_min:input$z_max
+        z2 <- min(input$ms2_z_min, input$ms2_z_max):max(input$ms2_z_min, input$ms2_z_max)
+
+        incProgress(0.1, detail = "MS1 inclusion list")
+        utils::write.csv(
+          thermo_ms1_inclusion_list(rv$mets, rv$dict, z_range = z_range,
+            h_offset = input$h_offset, max_oxid = input$max_oxid,
+            rt_start = 0, rt_end = input$method_length,
+            max_targets = input$ms1_target_cap),
+          file.path(bundle_dir, paste0(prefix, "_MS1_inclusion_list.csv")),
+          row.names = FALSE)
+
+        incProgress(0.1, detail = "MS2 PRM target list")
+        utils::write.csv(
+          thermo_ms2_prm_target_list(rv$mets, rv$dict, z_range = z2,
+            h_offset = input$h_offset, max_oxid = input$max_oxid,
+            rt_start = 0, rt_end = input$method_length,
+            nce = input$hcd_nce, max_targets = input$ms2_target_cap),
+          file.path(bundle_dir, paste0(prefix, "_MS2_PRM_target_list.csv")),
+          row.names = FALSE)
+
+        incProgress(0.1, detail = "MS2 fragment reference")
+        utils::write.csv(ms2_fragment_reference(rv$mets, rv$dict, z_range = z2),
+                         file.path(bundle_dir, paste0(prefix, "_MS2_fragment_reference.csv")),
+                         row.names = FALSE)
+
+        incProgress(0.2, detail = "MS1 spectral library")
+        ms1_lib <- .ms1_library()
+        write_mgf(ms1_lib, file.path(bundle_dir, paste0(prefix, "_MS1_library.mgf")))
+        write_msp(ms1_lib, file.path(bundle_dir, paste0(prefix, "_MS1_library.msp")))
+
+        incProgress(0.2, detail = "MS2 spectral library")
+        ms2_lib <- .ms2_library()
+        write_mgf(ms2_lib, file.path(bundle_dir, paste0(prefix, "_MS2_library.mgf")))
+        write_msp(ms2_lib, file.path(bundle_dir, paste0(prefix, "_MS2_library.msp")))
+
+        if (!is.null(rv$batch_features)) {
+          incProgress(0, detail = "Batch MS features")
+          utils::write.table(rv$batch_features,
+            file.path(bundle_dir, paste0(prefix, "_batch_features.tsv")),
+            sep = "\t", row.names = FALSE, quote = FALSE)
+          utils::write.csv(rv$batch_ms_results$unmatched,
+            file.path(bundle_dir, paste0(prefix, "_unidentified_peaks.csv")), row.names = FALSE)
+          if (!is.null(rv$stats_results)) {
+            utils::write.csv(.stats_display_table(),
+              file.path(bundle_dir, paste0(prefix, "_statistics.csv")), row.names = FALSE)
+          }
+          if (!is.null(rv$kind_stats_results)) {
+            utils::write.csv(.kind_stats_display_table(),
+              file.path(bundle_dir, paste0(prefix, "_class_comparison.csv")), row.names = FALSE)
+          }
+          if (!is.null(rv$batch_ms_results$degradation) &&
+              nrow(rv$batch_ms_results$degradation$per_sample) > 0) {
+            utils::write.csv(rv$batch_ms_results$degradation$per_sample,
+              file.path(bundle_dir, paste0(prefix, "_degradation_summary.csv")), row.names = FALSE)
+          }
+          ms2c <- rv$batch_ms_results$ms2_confirmations
+          if (!is.null(ms2c) && nrow(ms2c) > 0) {
+            incProgress(0, detail = "Batch MS2 mirror plots")
+            batch_mirror_plots_pdf(rv$mets, rv$dict, ms2c, rv$batch_ms_results$ms2_spectra,
+              file = file.path(bundle_dir, paste0(prefix, "_batch_MS2_mirror_plots.pdf")),
+              tol_ppm = input$frag_tol_ppm, z_range = 1:input$frag_z_max,
+              h_offset = input$h_offset)
+            recs <- batch_annotated_msp_records(rv$mets, rv$dict, ms2c,
+              rv$batch_ms_results$ms2_spectra, tol_ppm = input$frag_tol_ppm,
+              z_range = 1:input$frag_z_max, h_offset = input$h_offset)
+            write_msp(recs, file.path(bundle_dir, paste0(prefix, "_batch_MS2_annotated.msp")),
+                      measured = TRUE)
+          }
+        }
+
+        incProgress(0.15, detail = "Compressing")
+        zipfile <- normalizePath(file, mustWork = FALSE)
+        old_wd <- setwd(bundle_dir)
+        on.exit(setwd(old_wd), add = TRUE)
+        if (requireNamespace("zip", quietly = TRUE)) {
+          zip::zip(zipfile, list.files("."))
         } else {
-          old_wd <- setwd(out_dir)
-          on.exit(setwd(old_wd), add = TRUE)
-          utils::zip(file, files = basename(out_files), flags = "-r9Xq")
+          utils::zip(zipfile, list.files("."))
         }
       })
     }

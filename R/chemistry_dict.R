@@ -71,6 +71,27 @@ parse_formula <- function(s) {
   f
 }
 
+# Strict formula-string validator, for use before accepting a custom
+# chemistry override (see the Custom Chemistry table in app.R). Unlike
+# parse_formula() -- which silently skips anything it doesn't recognize, by
+# design, so stray characters in older data don't hard-fail it -- this
+# rejects any string that is not consumed *entirely* by valid
+# element(count) tokens drawn from .ELEMENTS. A typo or wrong case
+# ("c7h12o4", "Q5", "C7 H12", "not a formula") is caught here, before it
+# reaches build_dictionary() and silently propagates a wrong mass into
+# every downstream metabolite mass.
+is_valid_formula_string <- function(s) {
+  s <- trimws(as.character(s)[1])
+  if (is.na(s) || !nzchar(s)) return(FALSE)
+  if (grepl("[^A-Za-z0-9]", s)) return(FALSE)
+  m <- gregexpr("[A-Z][a-z]?[0-9]*", s)[[1]]
+  if (m[1] < 0) return(FALSE)
+  if (sum(attr(m, "match.length")) != nchar(s)) return(FALSE)
+  toks <- regmatches(s, gregexpr("[A-Z][a-z]?[0-9]*", s))[[1]]
+  els <- sub("[0-9]*$", "", toks)
+  length(els) > 0 && all(els %in% .ELEMENTS)
+}
+
 # Formula -> string (only non-zero elements, canonical order).
 format_formula <- function(f) {
   f <- .as_formula(f)
@@ -331,7 +352,12 @@ build_dictionary <- function(overrides = list()) {
     ov <- overrides[[nm]]
     if (is.character(ov)) ov <- parse_formula(ov)
     if (is.list(ov)) {
-      d[[nm]] <- list(formula = .as_formula(ov$formula), name = ov$name %||% nm,
+      # ov$formula documented (run_custom_oligo.R) as either a compact
+      # named vector (c(C=5,H=5)) or a formula string ("C7H12O4") -- both
+      # need to reach .as_formula() as a named vector, or a string silently
+      # produces an all-zero formula (every element mass = 0) with no error.
+      ov_formula <- if (is.character(ov$formula)) parse_formula(ov$formula) else ov$formula
+      d[[nm]] <- list(formula = .as_formula(ov_formula), name = ov$name %||% nm,
                       verify = isTRUE(ov$verify), kind = ov$kind %||% d[[nm]]$kind,
                       attach = ov$attach %||% d[[nm]]$attach)
     } else {

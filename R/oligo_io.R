@@ -67,6 +67,40 @@ parse_oligodistiller <- function(seq, dict = STANDARD_DICT,
   list(bases = bases, sugars = sugars, linkages = linkages)
 }
 
+## ---- FASTA parser (mirrors format_biopharma_fasta()'s export) --------------
+# format_biopharma_fasta() writes the sequence line as ordinary triplet
+# notation using 'p' for phosphodiester -- BioPharma Finder's own linkage
+# prefix, which parse_triplet() already accepts directly (see
+# LINKAGE_FORMULAS in chemistry_dict.R). So importing a FASTA -- whether
+# exported by this package or by BioPharma Finder itself -- is: strip the
+# header/comment line(s), join what's left, and parse it as triplet
+# notation. Without this, a user who already has a BPF FASTA would have to
+# reverse-engineer triplet notation by hand to feed it back in; with it,
+# the same "Sequence" box that already auto-detects triplet vs
+# OligoDistiller notation also accepts a pasted FASTA record.
+#
+# A terminal conjugate written into the header as a "5'-<code>"/"3'-<code>"
+# comment -- the way format_biopharma_fasta() itself writes them -- is
+# recovered on a best-effort basis; anything else in the header is ignored.
+parse_fasta <- function(seq, dict = STANDARD_DICT) {
+  lines <- strsplit(trimws(seq), "\n")[[1]]
+  lines <- trimws(lines)
+  header <- lines[startsWith(lines, ">")]
+  seq_lines <- lines[nzchar(lines) & !startsWith(lines, ">")]
+  if (length(seq_lines) == 0)
+    stop("No sequence line found -- expected a FASTA header ('>name ...') ",
+         "followed by a triplet-notation sequence line.")
+  p <- parse_triplet(paste(seq_lines, collapse = ""), dict)
+  conj5 <- conj3 <- "none"
+  if (length(header) > 0) {
+    m5 <- regmatches(header[1], regexpr("5'-[A-Za-z0-9_]+", header[1]))
+    m3 <- regmatches(header[1], regexpr("3'-[A-Za-z0-9_]+", header[1]))
+    if (length(m5) > 0) conj5 <- sub("^5'-", "", m5)
+    if (length(m3) > 0) conj3 <- sub("^3'-", "", m3)
+  }
+  c(p, list(conj5 = conj5, conj3 = conj3))
+}
+
 ## ---- Structured input parser ----------------------------------------------
 parse_structured <- function(spec, dict = STANDARD_DICT) {
   need <- c("bases", "sugars", "linkages")
@@ -177,12 +211,16 @@ parse_three_line <- function(bases, sugars, linkages,
 # Returns a canonical oligo_spec list.
 parse_input <- function(x, dict = STANDARD_DICT, sugar_map = .default_sugar_map,
                         notation = c("auto", "triplet", "oligodistiller",
-                                     "structured")) {
+                                     "fasta", "structured")) {
   notation <- match.arg(notation)
 
   if (notation == "structured" || is.list(x)) {
     p <- parse_structured(x, dict)
     used <- "structured"
+  } else if (notation == "fasta" ||
+             (notation == "auto" && grepl("^>", trimws(x)))) {
+    p <- parse_fasta(x, dict)
+    used <- "fasta"
   } else if (notation == "oligodistiller" ||
              (notation == "auto" && grepl("^OH-", trimws(x)))) {
     p <- parse_oligodistiller(x, dict, sugar_map)

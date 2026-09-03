@@ -3,7 +3,7 @@
 # MS data import and targeted matching for oligonucleotide metabolite ID.
 #
 # Imports:
-#   - mzML files (parsed with xml2 + Python helper for base64/zlib binary data)
+#   - mzML files (parsed with xml2 + native base64/zlib decoding of binary data)
 #   - Simple text/CSV peak lists (mz, intensity columns)
 #   - Vendor raw via msconvert bridge (if msconvert is on PATH)
 #
@@ -27,34 +27,6 @@
 #   - FMVS (Ye et al., 2025): total confirmation score + sequence coverage
 #   - OligoDistiller (Liu et al., 2025): isotope envelope goodness-of-fit
 # =============================================================================
-
-## ---- Python helper path ---------------------------------------------------
-# py_decode.py lives in inst/ (repo checkout) or at the package root once
-# installed (inst/ contents are promoted on install). Try, in order:
-#   1. <dir of this file>/../inst/py_decode.py  -- sourced from R/ in a checkout
-#   2. system.file() -- loaded from an installed OligoMetProfiler package
-#   3. the current working directory variants -- pasted/sourced interactively
-# The source-checkout candidate is captured eagerly (ofile is only
-# meaningful while source() is running); the rest are evaluated on each
-# call so an installed package resolves system.file() at run time, not at
-# install time (staged installs relocate the package after top-level code
-# has already run).
-.PY_DECODE_SRC_CANDIDATE <- local({
-  src_dir <- dirname(sys.frame(1)$ofile %||% ".")
-  file.path(dirname(src_dir), "inst", "py_decode.py")
-})
-
-.py_decode_path <- function() {
-  candidates <- c(
-    .PY_DECODE_SRC_CANDIDATE,
-    tryCatch(system.file("py_decode.py", package = "OligoMetProfiler"),
-             error = function(e) ""),
-    file.path(getwd(), "inst", "py_decode.py"),
-    file.path(getwd(), "py_decode.py")
-  )
-  hit <- candidates[nzchar(candidates) & file.exists(candidates)]
-  if (length(hit) > 0) hit[1] else candidates[1]
-}
 
 ## ---- Vendor raw bridge ----------------------------------------------------
 # Check if msconvert (ProteoWizard) is available for vendor raw conversion.
@@ -99,17 +71,23 @@ convert_vendor_raw <- function(raw_file, output_dir = tempdir(),
 parse_mzml <- function(file) {
   if (!file.exists(file)) stop("mzML file not found: ", file)
   doc <- xml2::read_xml(file)
-  # mzML/mzXML declare a default namespace (e.g. xmlns="http://psi.hupo.org/ms/mzml"),
-  # and the unprefixed XPath queries below (".//spectrum", ".//cvParam", ...) match
-  # nothing against elements sitting in a non-null default namespace -- every real
-  # instrument file came back with 0 spectra without this. Namespaces carry no
-  # useful distinction for this parser's purposes, so stripping them is simpler
-  # than threading a namespace map through every xml_find_all()/xml_find_first().
-  xml2::xml_ns_strip(doc)
+
+  # mzML/mzXML normally declare a default namespace (e.g.
+  # xmlns="http://psi.hupo.org/ms/mzml"), which an unprefixed xpath tag
+  # test (e.g. ".//spectrum") never matches -- XPath 1.0 treats an
+  # unprefixed name test as "no namespace" regardless of any default
+  # namespace in scope. Matching on local-name() instead makes every
+  # lookup below namespace-agnostic, so it works whether or not the
+  # source file declares one.
+  find_all <- function(node, tag)
+    xml2::xml_find_all(node, sprintf(".//*[local-name()='%s']", tag))
+  find_first <- function(node, tag)
+    xml2::xml_find_first(node, sprintf(".//*[local-name()='%s']", tag))
 
   # Helper: get cvParam value by accession
   get_cv <- function(node, accession) {
-    cv <- xml2::xml_find_first(node, sprintf(".//cvParam[@accession='%s']", accession))
+    cv <- xml2::xml_find_first(node,
+      sprintf(".//*[local-name()='cvParam' and @accession='%s']", accession))
     if (!is.na(cv)) {
       v <- xml2::xml_attr(cv, "value")
       if (!is.na(v) && nzchar(v)) return(v)
@@ -119,20 +97,22 @@ parse_mzml <- function(file) {
 
   # Helper: check if cvParam exists
   has_cv <- function(node, accession) {
-    !is.na(xml2::xml_find_first(node, sprintf(".//cvParam[@accession='%s']", accession)))
+    !is.na(xml2::xml_find_first(node,
+      sprintf(".//*[local-name()='cvParam' and @accession='%s']", accession)))
   }
 
   # Find all spectra
-  spectra <- xml2::xml_find_all(doc, ".//spectrum")
+  spectra <- find_all(doc, "spectrum")
   n_spectra <- length(spectra)
   if (n_spectra == 0) {
     # Try mzXML format
-    spectra <- xml2::xml_find_all(doc, ".//scan")
+    spectra <- find_all(doc, "scan")
     if (length(spectra) == 0) stop("No spectra found in mzML/mzXML file")
   }
 
   ms1_peaks <- list()
   ms2_spectra <- list()
+  profile_mode_detected <- NA  # NA = undetermined; TRUE/FALSE once the first MS1 spectrum settles it
 
   for (i in seq_along(spectra)) {
     sp <- spectra[[i]]
@@ -145,16 +125,25 @@ parse_mzml <- function(file) {
     }
     ms_level <- as.integer(ms_level)
 
+    if (ms_level == 1 && is.na(profile_mode_detected)) {
+      # MS:1000128/MS:1000127 (profile/centroid spectrum) are presence-only
+      # flag cvParams -- has_cv() checks for the node existing, not its
+      # (nonexistent) value, so this works the same way as everywhere else
+      # has_cv() is used above.
+      if (has_cv(sp, "MS:1000128")) profile_mode_detected <- TRUE
+      else if (has_cv(sp, "MS:1000127")) profile_mode_detected <- FALSE
+    }
+
     # Get retention time (scan start time, MS:1000016)
     rt <- get_cv(sp, "MS:1000016")
     if (is.na(rt)) {
       # Try in scanWindow or parent scan
-      rt <- get_cv(xml2::xml_find_first(sp, ".//scan"), "MS:1000016")
+      rt <- get_cv(find_first(sp, "scan"), "MS:1000016")
     }
     rt <- as.numeric(rt) %||% NA_real_
 
     # Extract binary data arrays
-    bdas <- xml2::xml_find_all(sp, ".//binaryDataArray")
+    bdas <- find_all(sp, "binaryDataArray")
     mz_arr <- NULL
     int_arr <- NULL
     for (bda in bdas) {
@@ -169,12 +158,11 @@ parse_mzml <- function(file) {
       is_zlib <- has_cv(bda, "MS:1000574")  # zlib compression
 
       # Get binary data
-      bin_node <- xml2::xml_find_first(bda, ".//binary")
+      bin_node <- find_first(bda, "binary")
       if (is.na(bin_node)) next
       b64 <- xml2::xml_text(bin_node)
       if (!nzchar(b64)) next
 
-      # Decode via Python helper
       vals <- .decode_binary(b64, dtype, is_zlib)
       if (is_mz) mz_arr <- vals
       else if (is_int) int_arr <- vals
@@ -188,7 +176,7 @@ parse_mzml <- function(file) {
         stringsAsFactors = FALSE)
     } else if (ms_level == 2) {
       # Get precursor info
-      prec <- xml2::xml_find_first(sp, ".//precursor")
+      prec <- find_first(sp, "precursor")
       prec_mz <- NA_real_; prec_z <- NA_integer_
       if (!is.na(prec)) {
         prec_mz <- as.numeric(get_cv(prec, "MS:1000744"))  # selected ion m/z
@@ -212,41 +200,26 @@ parse_mzml <- function(file) {
   info <- list(
     file = file, n_spectra = n_spectra,
     n_ms1 = length(ms1_peaks), n_ms2 = length(ms2_spectra),
-    instrument = if (is.na(instrument)) "unknown" else instrument
+    instrument = if (is.na(instrument)) "unknown" else instrument,
+    profile_mode = profile_mode_detected
   )
 
   list(ms1 = ms1_df, ms2 = ms2_df, info = info)
 }
 
-## ---- Binary data decoder (Python helper) ----------------------------------
+## ---- Binary data decoder ----------------------------------------------------
+# mzML binary data arrays are base64-encoded and, per MS:1000574, zlib-
+# compressed (RFC 1950 -- distinct from gzip/RFC 1952). Decoded natively in R:
+# base64 via xfun, decompression via memDecompress() (its "unknown" type
+# auto-detects and correctly inflates zlib streams, unlike gzcon() which
+# expects a gzip header and silently passes zlib data through unchanged).
 .decode_binary <- function(b64, dtype = "64", is_zlib = TRUE) {
-  py_decode <- .py_decode_path()
-  if (!file.exists(py_decode) || Sys.which("python3") == "") {
-    # Fallback: try R-only approach (may fail with zlib)
-    raw <- xfun::base64_decode(b64)
-    if (is_zlib) {
-      con <- gzcon(rawConnection(raw))
-      decomp <- readBin(con, "raw", n = 1e7)
-      close(con)
-    } else {
-      decomp <- raw
-    }
-    if (dtype == "32") {
-      readBin(decomp, "numeric", n = length(decomp) / 4, size = 4)
-    } else {
-      readBin(decomp, "numeric", n = length(decomp) / 8, size = 8)
-    }
+  raw <- xfun::base64_decode(b64)
+  decomp <- if (is_zlib) memDecompress(raw, type = "unknown") else raw
+  if (dtype == "32") {
+    readBin(decomp, "numeric", n = length(decomp) / 4, size = 4)
   } else {
-    # Use Python helper (reliable for zlib + base64). The base64 blob is
-    # piped over stdin rather than passed as a CLI argument: a single
-    # high-resolution profile scan's m/z array can base64-encode to
-    # hundreds of KB, well past Windows' ~32K command-line length limit.
-    tmp <- tempfile(fileext = ".txt")
-    system2("python3", args = c(py_decode, dtype, "little"),
-            input = b64, stdout = tmp, stderr = FALSE)
-    vals <- scan(tmp, what = numeric(), quiet = TRUE)
-    unlink(tmp)
-    vals
+    readBin(decomp, "numeric", n = length(decomp) / 8, size = 8)
   }
 }
 
@@ -273,35 +246,64 @@ import_peak_list <- function(file, type = c("ms1", "ms2"), sep = ",") {
 }
 
 ## ---- MS1 feature extraction ------------------------------------------------
-# Extract features from raw MS1 peaks (group nearby m/z values across scans).
-# Simple approach: bin by m/z tolerance, report centroid m/z and max intensity.
-extract_ms1_features <- function(ms1_peaks, ppm = 10, min_intensity = 100) {
+# Extract features from raw MS1 peaks (group nearby m/z values that also
+# co-elute in time). Two-stage grouping -- cluster by RT proximity first,
+# then chain by ppm within each RT cluster -- mirroring the RT-then-mass
+# clustering the Python batch pipeline already uses (_rt_clusters() +
+# mass chaining in inst/python/oligomet_deconv/charge_group.py).
+#
+# Grouping by m/z alone (the previous behavior here) is RT-blind: any two
+# peaks sharing an m/z within tolerance get merged into one "feature"
+# regardless of how far apart in time they actually eluted, silently
+# averaging together unrelated chromatographic events for any real run
+# with more than a handful of scans. rt_tol is in minutes, matching
+# MS:1000016 "scan start time"'s conventional unit (mzML files declare it
+# via unitAccession UO:0000031, but this parser -- like the rest of this
+# module -- doesn't convert units, so a file using different units would
+# need a correspondingly different rt_tol).
+extract_ms1_features <- function(ms1_peaks, ppm = 10, min_intensity = 100,
+                                  rt_tol = 0.15) {
   if (nrow(ms1_peaks) == 0) return(data.frame())
   df <- ms1_peaks[ms1_peaks$intensity >= min_intensity, ]
   if (nrow(df) == 0) return(data.frame())
-  df <- df[order(df$mz), ]
-  # Group by m/z proximity
-  groups <- integer(nrow(df))
-  cur_group <- 1
-  groups[1] <- cur_group
-  for (i in 2:nrow(df)) {
-  tol <- df$mz[i] * ppm / 1e6
-  if (df$mz[i] - df$mz[i - 1] <= tol) {
-    groups[i] <- cur_group
-  } else {
-    cur_group <- cur_group + 1
-    groups[i] <- cur_group
+
+  # Stage 1: cluster by RT proximity (adjacent-gap chaining).
+  df <- df[order(df$rt), ]
+  rt_groups <- integer(nrow(df))
+  cur_rt <- 1L
+  rt_groups[1] <- cur_rt
+  if (nrow(df) > 1) {
+    for (i in 2:nrow(df)) {
+      gap <- df$rt[i] - df$rt[i - 1]
+      if (is.na(gap) || gap > rt_tol) cur_rt <- cur_rt + 1L
+      rt_groups[i] <- cur_rt
+    }
   }
-  }
-  # Aggregate
-  do.call(rbind, lapply(split(df, groups), function(g) {
-    data.frame(
-      mz = weighted.mean(g$mz, g$intensity),
-      rt = mean(g$rt, na.rm = TRUE),
-      max_intensity = max(g$intensity),
-      n_scans = nrow(g),
-      stringsAsFactors = FALSE)
-  }))
+
+  # Stage 2: within each RT cluster, chain by m/z proximity (ppm).
+  out <- lapply(split(df, rt_groups), function(rt_grp) {
+    rt_grp <- rt_grp[order(rt_grp$mz), ]
+    n <- nrow(rt_grp)
+    mz_groups <- integer(n)
+    cur_mz <- 1L
+    mz_groups[1] <- cur_mz
+    if (n > 1) {
+      for (i in 2:n) {
+        tol <- rt_grp$mz[i] * ppm / 1e6
+        if (rt_grp$mz[i] - rt_grp$mz[i - 1] > tol) cur_mz <- cur_mz + 1L
+        mz_groups[i] <- cur_mz
+      }
+    }
+    do.call(rbind, lapply(split(rt_grp, mz_groups), function(g) {
+      data.frame(
+        mz = weighted.mean(g$mz, g$intensity),
+        rt = mean(g$rt, na.rm = TRUE),
+        max_intensity = max(g$intensity),
+        n_scans = nrow(g),
+        stringsAsFactors = FALSE)
+    }))
+  })
+  do.call(rbind, out)
 }
 
 ## ---- Targeted MS1 matching ------------------------------------------------
@@ -364,6 +366,12 @@ match_ms1 <- function(mets, ms1_features, dict = STANDARD_DICT,
               ppm_error = round(ppm_err, 3),
               rt = ms1_features$rt[best],
               intensity = ms1_features$max_intensity[best],
+              # Peak area (trapezoidal AUC) is only ever present when
+              # ms1_features came from the batch/Python ROI pipeline (see
+              # match_ms1_batch()) -- always emit the column, NA when not,
+              # so every caller (rbind across metabolites/samples, Excel
+              # export, degradation_summary()) sees a stable column set.
+              area = if ("area" %in% names(ms1_features)) ms1_features$area[best] else NA_real_,
               iso_fit = round(iso_fit, 3),
               formula = format_formula(fv),
               stringsAsFactors = FALSE
@@ -403,20 +411,38 @@ match_ms1 <- function(mets, ms1_features, dict = STANDARD_DICT,
 # Check if matched charge states form a consistent envelope.
 # Consistency = the observed m/z values across charge states should all
 # correspond to the same neutral mass within tolerance.
-envelope_consistency <- function(matches) {
+#
+# h_offset must match whatever was used to generate the theoretical m/z
+# these matches were scored against (0 = standard [M-zH]^z-, 3.0046 =
+# legacy workbook offset -- see charge_envelope() in R/mass_isotope.R).
+# It was hardcoded to 0 here previously; with a non-zero h_offset every
+# back-calculated mass was off by z * h_offset (a different amount per
+# charge state), which corrupts the cross-charge-state agreement this
+# function exists to measure.
+envelope_consistency <- function(matches, h_offset = 0) {
   if (nrow(matches) == 0) return(data.frame())
   # Group by metabolite (met_id + k_oxid + adduct)
   matches$group <- paste(matches$met_id, matches$k_oxid, matches$adduct, sep = "_")
+  # Every branch must return the SAME columns -- these frames get rbind()ed
+  # together below (and again by callers grouping across samples), and a
+  # data.frame with fewer/differently-named columns silently made rbind()
+  # error out as soon as a real match set had a mix of single- and multi-
+  # charge-state groups (previously untested: the n_z<2 branch returned
+  # `mass_cv`/no `mean_mass`, the n_z>=2 branch returned `mass_cv_ppm` and
+  # `mean_mass`).
   do.call(rbind, lapply(split(matches, matches$group), function(g) {
-    if (nrow(g) < 2) {
-      return(data.frame(group = g$group[1], n_z = nrow(g),
-                        consistency = NA, mass_cv = NA,
-                        stringsAsFactors = FALSE))
-    }
     # Back-calculate neutral mass from each charge state
     # M = z * mz + z * proton - h_offset - adduct_shift
     ad_shift <- if (g$adduct[1] == "H") 0 else adduct_shift(g$adduct[1])
-    masses <- g$z * g$obs_mz + g$z * .PROTON - 0 - ad_shift  # h_offset=0 for standard
+    masses <- g$z * g$obs_mz + g$z * .PROTON - h_offset - ad_shift
+    if (nrow(g) < 2) {
+      # a single charge state can't confirm envelope consistency, but its
+      # own back-calculated mass is still a useful point estimate
+      return(data.frame(group = g$group[1], n_z = nrow(g),
+                        consistency = NA_real_, mass_cv_ppm = NA_real_,
+                        mean_mass = round(masses[1], 4),
+                        stringsAsFactors = FALSE))
+    }
     cv <- sd(masses) / mean(masses) * 1e6  # coefficient of variation in ppm
     data.frame(group = g$group[1], n_z = nrow(g),
                consistency = 1 / (1 + cv / 100),  # 0-1 scale
@@ -459,8 +485,9 @@ annotate_metabolites <- function(mets, ms1_features, ms2_data = NULL,
                                   ppm_tol = 10, z_range = 3:12,
                                   adducts = c("H", "Na", "K", "NH4"),
                                   max_oxid = 6, h_offset = 0,
-                                  frag_tol_ppm = 25, frag_z_range = 1:3,
-                                  n_iso = 5, use_envipat = TRUE) {
+                                  frag_tol_ppm = 25, frag_z_range = 1:2,
+                                  n_iso = 5, use_envipat = TRUE,
+                                  include_internal = FALSE) {
   # MS1 matching
   ms1_matches <- match_ms1(mets, ms1_features, dict, ppm_tol, z_range,
                             adducts, max_oxid, h_offset, n_iso = n_iso,
@@ -471,7 +498,7 @@ annotate_metabolites <- function(mets, ms1_features, ms2_data = NULL,
   }
 
   # Envelope consistency
-  env_cons <- envelope_consistency(ms1_matches)
+  env_cons <- envelope_consistency(ms1_matches, h_offset = h_offset)
 
   # MS2 fragment confirmation (if MS2 data provided)
   ms2_results <- list()
@@ -488,13 +515,16 @@ annotate_metabolites <- function(mets, ms1_features, ms2_data = NULL,
         best_spec <- spectra[[which.max(sapply(spectra, nrow))]]
         # Generate fragments and match
         frags <- generate_fragments(met, dict, z_range = frag_z_range)
-        frags <- c(frags, generate_internal_fragments(met, dict, z_range = frag_z_range))
+        if (include_internal) {
+          frags <- c(frags, generate_internal_fragments(met, dict, z_range = frag_z_range))
+        }
         matched_frags <- match_fragments(frags, best_spec, frag_tol_ppm, frag_z_range)
         diags <- check_ps_diagnostic(best_spec, max(frag_tol_ppm, 50))
         score <- confirmation_score(matched_frags, met$n, diags)
         ms2_results[[met_id]] <- list(
           met_name = unique_mets$met_name[i],
           n_peaks = nrow(best_spec),
+          best_spec = best_spec,
           matched_frags = matched_frags,
           diagnostics = diags,
           score = score

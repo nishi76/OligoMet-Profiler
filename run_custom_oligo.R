@@ -43,6 +43,7 @@ if (!file.exists(file.path(script_dir, "R", "chemistry_dict.R"))) {
 }
 
 source(file.path(script_dir, "R", "about.R"))
+source(file.path(script_dir, "R", "default_params.R"))
 source(file.path(script_dir, "R", "progress_utils.R"))
 source(file.path(script_dir, "R", "chemistry_dict.R"))
 source(file.path(script_dir, "R", "oligo_io.R"))
@@ -114,22 +115,16 @@ MY_TRIPLET <- "Gm-sTm-sCm-sTm-sCm-sTd-sCd-sTd-sCd-sTd-sTd-sCm-sTm-sCm-sTm-sGm"
 custom_overrides <- list()
 
 # --- Pipeline parameters ----------------------------------------------------
-PARAMS <- list(
-  oligo_name     = "my_oligo",         # used in output filenames and labels
-  max_3p         = 10,                  # max 3' exonuclease truncations
-  max_5p         = 10,                  # max 5' exonuclease truncations
-  endo           = TRUE,                # include endonuclease fragments
-  min_frag_len   = 3,                   # minimum fragment length (nucleotides)
-  z_range        = 3:12,                # charge state range for envelopes
-  n_iso          = 5,                   # isotope peaks per charge state
-  max_oxid       = 6,                   # max PS->PO oxidation events
-  h_offset       = 0,                   # 0 = standard [M-zH]^z-; 3.0046 = legacy WB
-  use_envipat    = TRUE,                # enviPat for isotopes (FALSE = built-in)
-  ppm_tol        = 10,                  # MS1 matching tolerance (ppm)
-  adducts        = c("H","Na","K","NH4"),
+# Built on top of DEFAULT_PIPELINE_PARAMS (R/default_params.R) -- the same
+# defaults the Shiny dashboard's sidebar uses -- so the two interfaces can't
+# quietly drift apart. Override only what this run needs to change; anything
+# left out keeps the shared default.
+PARAMS <- modifyList(DEFAULT_PIPELINE_PARAMS, list(
+  oligo_name     = "my_oligo",          # used in output filenames and labels
+  z_range        = with(DEFAULT_PIPELINE_PARAMS, z_min:z_max),  # charge state range for envelopes
   output_prefix  = "my_oligo_metabolite",
   results_dir    = "results"            # created under the working directory
-)
+))
 
 # --- MS data (optional) -----------------------------------------------------
 # Set to a file path to run MS matching, or NULL for library-only mode.
@@ -206,7 +201,7 @@ run_pipeline <- function() {
     max_3p = PARAMS$max_3p,
     max_5p = PARAMS$max_5p,
     endo = PARAMS$endo,
-    endo_sites = "all",
+    endo_sites = PARAMS$endo_sites,
     min_frag_len = PARAMS$min_frag_len
   )
   mets <- generate_metabolites(spec, opts = met_opts)
@@ -265,7 +260,7 @@ run_pipeline <- function() {
   build_opts <- list(
     z_range = PARAMS$z_range, n_iso = PARAMS$n_iso,
     max_oxid = PARAMS$max_oxid, h_offset = PARAMS$h_offset,
-    use_envipat = PARAMS$use_envipat, include_internal = TRUE,
+    use_envipat = PARAMS$use_envipat, include_internal = FALSE,
     max_3p = PARAMS$max_3p, max_5p = PARAMS$max_5p,
     endo = PARAMS$endo, adducts = PARAMS$adducts, ppm_tol = PARAMS$ppm_tol
   )
@@ -297,15 +292,19 @@ run_pipeline <- function() {
   ms1_file <- file.path(PARAMS$results_dir, paste0(PARAMS$output_prefix, "_MS1_inclusion_list.csv"))
   ms2_file <- file.path(PARAMS$results_dir, paste0(PARAMS$output_prefix, "_MS2_PRM_target_list.csv"))
   frag_file <- file.path(PARAMS$results_dir, paste0(PARAMS$output_prefix, "_MS2_fragment_reference.csv"))
+  ms2_z_range <- PARAMS$ms2_z_min:PARAMS$ms2_z_max
   utils::write.csv(
     thermo_ms1_inclusion_list(mets, dict, z_range = PARAMS$z_range,
-      h_offset = PARAMS$h_offset, max_oxid = PARAMS$max_oxid),
+      h_offset = PARAMS$h_offset, max_oxid = PARAMS$max_oxid,
+      rt_end = PARAMS$method_length, max_targets = PARAMS$ms1_target_cap),
     ms1_file, row.names = FALSE)
   utils::write.csv(
-    thermo_ms2_prm_target_list(mets, dict, z_range = PARAMS$z_range,
-      h_offset = PARAMS$h_offset, max_oxid = PARAMS$max_oxid),
+    thermo_ms2_prm_target_list(mets, dict, z_range = ms2_z_range,
+      h_offset = PARAMS$h_offset, max_oxid = PARAMS$max_oxid,
+      rt_end = PARAMS$method_length, nce = PARAMS$hcd_nce,
+      max_targets = PARAMS$ms2_target_cap),
     ms2_file, row.names = FALSE)
-  utils::write.csv(ms2_fragment_reference(mets, dict, z_range = 1:3),
+  utils::write.csv(ms2_fragment_reference(mets, dict, z_range = ms2_z_range),
                    frag_file, row.names = FALSE)
   cat("  MS1 inclusion list:", ms1_file, "\n")
   cat("  MS2 PRM target list:", ms2_file, "\n")
