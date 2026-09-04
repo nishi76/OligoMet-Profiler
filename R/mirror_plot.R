@@ -5,8 +5,16 @@
 # used to report spectral matches (e.g. Fig. 2, Chambers et al. 2020, Nat
 # Commun, https://doi.org/10.1038/s41467-020-14665-7) -- acquired spectrum
 # on top (positive intensity), theoretical library spectrum on the bottom
-# (negative intensity), matched peaks colored, unmatched peaks gray,
-# fragment-ion labels on matched peaks only.
+# (negative intensity).
+#
+# Color encodes which panel a peak belongs to (acquired vs. theoretical),
+# not match status -- confirmation never compares peak intensities (no
+# dot-product/cosine term anywhere in match_fragments()/confirmation_score(),
+# see R/fragments.R), so intensity is never the basis for what counts as a
+# match. Within each panel, matched peaks keep that panel's color; unmatched
+# peaks are grey. Labels appear only on the acquired panel -- the theoretical
+# panel is an unlabeled reference, since labeling both sides implied a
+# peak-to-peak intensity comparison that was never actually computed.
 # =============================================================================
 
 ## ---- Helper: locate a metabolite by id -------------------------------------
@@ -64,9 +72,12 @@ mirror_spectrum_data <- function(met, ms2_peaks, dict = STANDARD_DICT,
   } else character(0)
   is_matched_theo <- theo_key %in% matched_key
 
+  # Theoretical (bottom) panel is an unlabeled reference -- see file header.
+  # `matched` is still carried through: it drives the panel's own
+  # matched/unmatched color split in plot_mirror_spectrum().
   theoretical <- data.frame(
     mz = theo_mz, intensity = theo_w, matched = is_matched_theo,
-    label = ifelse(is_matched_theo, theo_label, NA_character_),
+    label = NA_character_,
     stringsAsFactors = FALSE
   )
 
@@ -91,49 +102,114 @@ mirror_spectrum_data <- function(met, ms2_peaks, dict = STANDARD_DICT,
     }
   }
 
+  # Label-selection for the PLOT only: among matched acquired peaks (an
+  # unmatched peak has no fragment identity to show, however intense),
+  # plot_label keeps those with rescaled intensity > 10 -- i.e. >10% of
+  # this spectrum's own base peak, reusing the 0-100 rescale above where
+  # the base peak is 100 by construction -- topped up to a floor of 10
+  # total labels (by intensity) whenever fewer than 10 clear that bar and
+  # at least 10 matched peaks exist. Never excludes anything already above
+  # the 10% bar; never fewer than 10 labels when that many matched peaks
+  # exist; labels everything when fewer than 10 matched peaks exist at
+  # all. Declutters what would otherwise be a label per matched peak,
+  # which gets unreadable fast on a long oligo's fragment-rich spectrum.
+  #
+  # `label` itself stays the FULL set of matched labels, deliberately not
+  # thinned by this rule -- batch_annotated_msp_records() (and any other
+  # consumer of mirror_spectrum_data() beyond the plot) reads `label` and
+  # should still see every match, not just the ones the plot has room to
+  # show. Only plot_mirror_spectrum() reads plot_label.
+  acquired$plot_label <- acquired$label
+  matched_idx <- which(acquired$matched)
+  if (length(matched_idx) > 0) {
+    keep <- acquired$intensity[matched_idx] > 10
+    n_target <- min(10, length(matched_idx))
+    if (sum(keep) < n_target) {
+      ord <- order(acquired$intensity[matched_idx], decreasing = TRUE)
+      top_n <- matched_idx[ord[seq_len(n_target)]]
+      keep <- matched_idx %in% top_n
+    }
+    acquired$plot_label[matched_idx[!keep]] <- NA_character_
+  }
+
   list(acquired = acquired, theoretical = theoretical,
        score = conf$score, met_name = met$name)
+}
+
+## ---- x-axis zoom range -------------------------------------------------------
+# The acquired spectrum's own observed range, with a small pad so edge
+# peaks aren't clipped. This is the only "scan range" signal available
+# anywhere in the pipeline -- no mzML scanWindowList/isolation-window
+# metadata is parsed anywhere in the app, so the instrument's actual
+# configured acquisition window is never known, only what was returned.
+.mirror_xlim <- function(mz, pad_frac = 0.03, pad_min = 5) {
+  r <- range(mz, na.rm = TRUE)
+  pad <- max(diff(r) * pad_frac, pad_min)
+  r + c(-pad, pad)
 }
 
 ## ---- Mirror plot -------------------------------------------------------------
 # `spec` is the output of mirror_spectrum_data(). Acquired peaks are drawn
 # upward (positive intensity), theoretical library peaks downward (negative
-# intensity); matched peaks are colored, unmatched peaks gray; only matched
-# peaks are labeled, since an unfiltered theoretical library can carry
-# hundreds of unmatched candidate fragments.
+# intensity). Color encodes panel identity (acquired vs. theoretical) with
+# unmatched peaks in either panel shown as light grey; only acquired-panel
+# peaks are ever labeled (see file header). The x-axis is zoomed to the
+# acquired spectrum's own observed m/z range rather than auto-scaling to
+# include theoretical fragments that may fall outside what was actually
+# scanned.
 plot_mirror_spectrum <- function(spec, title = NULL,
-                                  matched_color = "#0279EE",
-                                  unmatched_color = "#B7B2A7") {
+                                  acquired_color = "#0279EE",
+                                  theoretical_color = "#E08214",
+                                  unmatched_color = "#B7B2A7",
+                                  matched_color = NULL,
+                                  xlim_pad_frac = 0.03,
+                                  xlim_pad_min = 5) {
+  if (!is.null(matched_color)) acquired_color <- matched_color  # deprecated alias
+
   acq <- spec$acquired
   theo <- spec$theoretical
   acq$side <- "Acquired"
   theo$side <- "Theoretical"
   theo$intensity <- -theo$intensity
+  acq$color_group  <- ifelse(acq$matched,  "acq_matched",  "unmatched")
+  theo$color_group <- ifelse(theo$matched, "theo_matched", "unmatched")
 
-  d <- rbind(acq[, c("mz", "intensity", "matched", "label", "side")],
-             theo[, c("mz", "intensity", "matched", "label", "side")])
+  # The plot shows the decluttered plot_label, not the full match-label set
+  # (that full set is for other consumers, e.g. batch_annotated_msp_records()
+  # -- see mirror_spectrum_data()). Overwrite the local copy's `label` with
+  # it so the rbind/geom_text logic below is unaware of the distinction.
+  acq$label <- acq$plot_label
+
+  d <- rbind(acq[, c("mz", "intensity", "matched", "label", "side", "color_group")],
+             theo[, c("mz", "intensity", "matched", "label", "side", "color_group")])
   d$label_y <- d$intensity + ifelse(d$intensity >= 0, 4, -4)
   d$label_hjust <- ifelse(d$intensity >= 0, 0, 1)
   labels_df <- d[!is.na(d$label), , drop = FALSE]
 
+  xlim <- .mirror_xlim(acq$mz, xlim_pad_frac, xlim_pad_min)
+
   subtitle <- if (!is.null(spec$score)) {
-    sprintf("Acquired (top) vs. theoretical library (bottom) -- %d matched ions, %.0f%% sequence coverage",
-            spec$score$n_matches, 100 * spec$score$coverage)
+    sprintf("Acquired (top) vs. theoretical library (bottom) -- %d matched ions, %.0f%% sequence coverage, score %.0f/100",
+            spec$score$n_matches, 100 * spec$score$coverage, spec$score$total_score)
   } else {
     "Acquired (top) vs. theoretical library (bottom)"
   }
 
-  ggplot2::ggplot(d, ggplot2::aes(x = mz, y = intensity, color = matched)) +
+  ggplot2::ggplot(d, ggplot2::aes(x = mz, y = intensity, color = color_group)) +
     ggplot2::geom_hline(yintercept = 0, color = "#333333", linewidth = 0.3) +
     ggplot2::geom_segment(ggplot2::aes(xend = mz, yend = 0), linewidth = 0.4) +
     ggplot2::geom_text(data = labels_df,
                         ggplot2::aes(y = label_y, label = label, hjust = label_hjust),
                         angle = 90, size = 2.6, show.legend = FALSE) +
-    ggplot2::scale_color_manual(values = c(`TRUE` = matched_color, `FALSE` = unmatched_color),
-                                 labels = c(`TRUE` = "Matched", `FALSE` = "Unmatched"),
-                                 name = NULL) +
+    ggplot2::scale_color_manual(
+      values = c(acq_matched = acquired_color, theo_matched = theoretical_color,
+                 unmatched = unmatched_color),
+      labels = c(acq_matched = "Acquired (matched)", theo_matched = "Theoretical (library)",
+                 unmatched = "Unmatched"),
+      name = NULL) +
     ggplot2::scale_y_continuous(labels = function(x) abs(x)) +
     ggplot2::expand_limits(y = c(-135, 135)) +
+    ggplot2::coord_cartesian(xlim = xlim, expand = TRUE) +
     ggplot2::labs(x = "m/z", y = "Relative intensity (%)",
                   title = title, subtitle = subtitle) +
     ggplot2::theme_bw() +

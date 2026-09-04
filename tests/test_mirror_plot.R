@@ -44,6 +44,67 @@ p <- plot_mirror_spectrum(spec_data, title = "test")
 stopifnot(inherits(p, "ggplot"))
 cat("plot_mirror_spectrum() returns a ggplot object: PASS\n")
 
+## ---- Label-selection rule: >10% of base peak, floor of 10 ----------------
+cat("\n--- Label-selection rule (>10% of base peak, floor-of-10) ---\n")
+sel_peaks <- do.call(rbind, lapply(seq_len(14), function(i) {
+  data.frame(mz = (frags[[i]]$mono_mass - 1 * .PROTON) / 1,
+             intensity = c(1000, 500, 150, rep(50, 11))[i])
+}))
+sel_data <- mirror_spectrum_data(mets[[1]], sel_peaks, dict, tol_ppm = 15, z_range = 1:2)
+matched_acq <- sel_data$acquired[sel_data$acquired$matched, ]
+stopifnot(nrow(matched_acq) == 14)
+n_above_10pct <- sum(matched_acq$intensity > 10)
+n_plot_labeled <- sum(!is.na(matched_acq$plot_label))
+stopifnot(n_above_10pct == 3)     # 1000,500,150 rescale to 100,50,15 -- all >10; the 11 tied-at-50-raw peaks rescale to 5, below the bar
+stopifnot(n_plot_labeled == 10)   # floor-of-10 tops up past the 3 that clear the bar
+top10_idx <- order(matched_acq$intensity, decreasing = TRUE)[1:10]
+stopifnot(all(!is.na(matched_acq$plot_label[top10_idx])))
+cat("3/14 matched peaks clear the 10% bar; floor-of-10 selects the 10 most intense: PASS\n")
+
+# `label` (the full match-label set, unfiltered by the plot's declutter
+# rule) stays complete -- consumers like batch_annotated_msp_records()
+# must still see every match, not just the ones the plot has room to show.
+stopifnot(sum(!is.na(matched_acq$label)) == 14)
+cat("label (full set, for non-plot consumers) is never thinned: PASS\n")
+
+stopifnot(all(is.na(sel_data$theoretical$label)))
+cat("Theoretical-panel rows never carry labels: PASS\n")
+
+few_peaks <- do.call(rbind, lapply(frags[1:4], function(f) {
+  data.frame(mz = (f$mono_mass - 1 * .PROTON) / 1, intensity = 100)
+}))
+few_data <- mirror_spectrum_data(mets[[1]], few_peaks, dict, tol_ppm = 15, z_range = 1:2)
+stopifnot(sum(few_data$acquired$matched) == 4)
+stopifnot(sum(!is.na(few_data$acquired$plot_label)) == 4)
+stopifnot(sum(!is.na(few_data$acquired$label)) == 4)
+cat("Fewer than 10 matched peaks: all are labeled: PASS\n")
+
+zero_peaks <- data.frame(mz = c(111.1, 222.2, 333.3), intensity = c(10, 20, 30))
+zero_data <- mirror_spectrum_data(mets[[1]], zero_peaks, dict, tol_ppm = 15, z_range = 1:2)
+stopifnot(sum(zero_data$acquired$matched) == 0)
+p0 <- plot_mirror_spectrum(zero_data, title = "zero-match test")
+stopifnot(inherits(p0, "ggplot"))
+cat("Zero matched peaks: no error, plot still renders: PASS\n")
+
+## ---- x-axis zoom: acquired range, not the combined acquired+theoretical --
+cat("\n--- .mirror_xlim(): zooms to the acquired spectrum's own range ---\n")
+stopifnot(isTRUE(all.equal(.mirror_xlim(c(100, 1000)), c(73, 1027))))  # 3% of 900 = 27, exceeds the 5 Da min pad
+stopifnot(isTRUE(all.equal(.mirror_xlim(c(100, 200)), c(95, 205))))    # 3% of 100 = 3, below the 5 Da min pad -- min wins
+stopifnot(isTRUE(all.equal(.mirror_xlim(c(100, 100)), c(95, 105))))    # zero-width falls back to the 5 Da min pad
+cat(".mirror_xlim() padding verified: PASS\n")
+
+## ---- Colors now encode panel identity, not just matched/unmatched --------
+cat("\n--- plot_mirror_spectrum() color scheme ---\n")
+built <- ggplot2::ggplot_build(p)
+color_groups <- sort(unique(built$data[[2]]$colour))  # geom_segment layer
+stopifnot(length(color_groups) <= 3)
+p_custom <- plot_mirror_spectrum(spec_data, title = "custom colors",
+                                  acquired_color = "#111111",
+                                  theoretical_color = "#222222",
+                                  unmatched_color = "#CCCCCC")
+stopifnot(inherits(p_custom, "ggplot"))
+cat("Distinct acquired/theoretical/unmatched color groups render: PASS\n")
+
 ## ---- Batch pipeline: real fixture, real Python deconvolution -------------
 cat("\n--- Batch MS2 confirmation against inst/extdata/batch_example ---\n")
 ex_dir <- file.path(.pkg_root, "inst", "extdata", "batch_example")

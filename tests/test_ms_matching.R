@@ -234,4 +234,27 @@ if (.have_spectra()) {
   cat("\n--- read_ms_file() Spectra/mzR path: SKIPPED (Spectra/mzR not installed) ---\n")
 }
 
+## ---- MS1-gating invariant: MS2 lookup only for MS1-confirmed hits --------
+# annotate_metabolites() must never call find_ms2_spectra() for a
+# metabolite that had no MS1 match -- locks in the "match MS1 first, only
+# build MS2 for detected precursors" invariant the mirror-plot workflow
+# relies on. mets[[9]] has no MS1 feature at all (ms1_features above only
+# covers mets[1:8]), so even with a plausible-looking MS2 spectrum sitting
+# right at its z=6 precursor mz, it must never produce an ms2_results entry.
+cat("\n--- MS1-gating: MS2 lookup skipped without an MS1 match ---\n")
+ungated_met <- mets[[9]]
+ungated_mz <- (metabolite_mass_info(ungated_met)$mono_mass - 6 * .PROTON) / 6
+ungated_ms2 <- data.frame(rt = 15.0, precursor_mz = ungated_mz, precursor_z = 6L,
+                           mz = c(200.1, 300.2), intensity = c(500, 400),
+                           stringsAsFactors = FALSE)
+ms2_data_gating <- rbind(ms2_data, ungated_ms2)
+results_gating <- annotate_metabolites(mets, ms1_features, ms2_data_gating,
+                                        ppm_tol = 10, z_range = 3:12,
+                                        adducts = c("H"), max_oxid = 0,
+                                        frag_tol_ppm = 10, frag_z_range = 1:2,
+                                        n_iso = 0, use_envipat = FALSE)
+stopifnot(!(ungated_met$id %in% names(results_gating$ms2_results)))
+stopifnot(!(ungated_met$id %in% results_gating$ms1_matches$met_id))
+cat("mets[[9]] has no MS1 match and correctly gets no MS2 lookup: PASS\n")
+
 cat("\n==== All MS matching tests passed ====\n")
