@@ -136,7 +136,7 @@ build_ms1_library <- function(mets, dict = STANDARD_DICT, z_range = 3:12,
 
 ## ---- MS2 library ------------------------------------------------------------
 # Compact ion label: "w4^2-", "a-B5^1-", "w-a(3,8)^1-".
-.fragment_label <- function(f, z) {
+.fragment_label <- function(f, z, include_formula = FALSE) {
   base <- switch(f$ion_type,
                  aB = "a-B", bB = "b-B", f$ion_type)
   site <- if (!is.na(f$internal_5) && !is.na(f$internal_3)) {
@@ -144,7 +144,25 @@ build_ms1_library <- function(mets, dict = STANDARD_DICT, z_range = 3:12,
   } else {
     as.character(f$frag_length)
   }
-  sprintf("%s%s^%d-", base, site, z)
+  lbl <- sprintf("%s%s^%d-", base, site, z)
+  if (include_formula) lbl <- paste0(lbl, " [", f$formula, "]")
+  lbl
+}
+
+# Drop low-relative-intensity peaks from an already mz-sorted, 0-100-rescaled
+# peak table before export -- a long tail of near-zero-weight ions (internal
+# fragments, weak base losses) clutters exported libraries with entries no
+# acquisition method would realistically detect at typical noise floors.
+# Note: under the current fragment_intensity_weight() constants (fragments.R:
+# PS_LINKAGE_BOOST=1.5, CHEMISTRY_ION_BOOST=1.6, PURINE_LOSS_BOOST=1.3,
+# INTERNAL_ION_WEIGHT=0.35), the weakest possible fragment is never below
+# ~11% of the strongest (0.35 / (1.6*1.5*1.3)), so the default 5% threshold
+# is a forward-looking safety net -- it won't visibly thin today's libraries,
+# but guards against a future weight-model change (or a custom-chemistry
+# combination) producing a wider intensity spread than exists today.
+.filter_min_rel_intensity <- function(peaks, min_rel_intensity = 0.05) {
+  if (min_rel_intensity <= 0 || nrow(peaks) == 0) return(peaks)
+  peaks[peaks$intensity >= min_rel_intensity * max(peaks$intensity), , drop = FALSE]
 }
 
 # One spectrum per (metabolite, precursor charge state). Peaks are the
@@ -157,6 +175,7 @@ build_ms2_library <- function(mets, dict = STANDARD_DICT,
                               ion_types = c("a", "aB", "b", "bB", "w", "y"),
                               include_internal = FALSE, h_offset = 0,
                               mz_min = 100, mz_max = 6000,
+                              min_rel_intensity = 0.05,
                               oligo_name = NULL, max_spectra = 2000) {
   recs <- list()
   for (met in mets) {
@@ -183,7 +202,7 @@ build_ms2_library <- function(mets, dict = STANDARD_DICT,
         m <- f$mz_table$mz[i]
         if (m < mz_min || m > mz_max) next
         mz <- c(mz, m)
-        annot <- c(annot, .fragment_label(f, f$mz_table$z[i]))
+        annot <- c(annot, .fragment_label(f, f$mz_table$z[i], include_formula = TRUE))
         weight <- c(weight, fw)
       }
     }
@@ -193,6 +212,8 @@ build_ms2_library <- function(mets, dict = STANDARD_DICT,
     if (max(inten) > 0) inten <- 100 * inten / max(inten)
     peaks <- data.frame(mz = mz[ord], intensity = inten,
                         annotation = annot[ord], stringsAsFactors = FALSE)
+    peaks <- .filter_min_rel_intensity(peaks, min_rel_intensity)
+    if (nrow(peaks) == 0) next
 
     for (z in precursor_z_range) {
       prec_mz <- (info$mono_mass + h_offset - z * .PROTON) / z
@@ -280,6 +301,11 @@ write_msp <- function(records, file, measured = FALSE) {
       paste0("FORMULA: ", r$formula),
       paste0("EXACTMASS: ", sprintf("%.4f", r$mono_mass)),
       "IONMODE: Negative",
+      # No COLLISIONENERGY line: build_ms2_library()'s peak intensities are
+      # not NCE-dependent (fragment_intensity_weight() doesn't model NCE),
+      # so there is no principled per-record NCE value to report yet -- see
+      # this file's header / DEFAULT_PIPELINE_PARAMS$hcd_nce, which is an
+      # acquisition-method starting-value suggestion, not a spectrum property.
       paste0("SPECTRUMTYPE: ", if (r$level == "MS1") "MS1" else "MS2"),
       paste0("COMMENT: ", comment),
       paste0("Num Peaks: ", nrow(r$peaks)),

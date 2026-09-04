@@ -404,6 +404,11 @@ match_ms1 <- function(mets, ms1_features, dict = STANDARD_DICT,
   if (sum(obs_abund) == 0) return(0)
   cos_sim <- sum(theo_abund * obs_abund) /
     (sqrt(sum(theo_abund^2)) * sqrt(sum(obs_abund^2)))
+  # Penalize partial matches: cosine similarity alone can stay high even
+  # when most theoretical isotope peaks went unmatched (e.g. 2/5 peaks
+  # matched with correct ratios can still score ~0.86), so scale by the
+  # fraction of theoretical peaks that were actually matched.
+  cos_sim <- cos_sim * (sum(obs_abund > 0) / length(obs_abund))
   cos_sim
 }
 
@@ -518,7 +523,13 @@ annotate_metabolites <- function(mets, ms1_features, ms2_data = NULL,
         if (include_internal) {
           frags <- c(frags, generate_internal_fragments(met, dict, z_range = frag_z_range))
         }
-        matched_frags <- match_fragments(frags, best_spec, frag_tol_ppm, frag_z_range)
+        # Reuses the same adducts requested for MS1 matching (a superset
+        # search, not narrowed to the specific adduct this metabolite's MS1
+        # hit matched -- unique_mets above doesn't carry per-hit adduct
+        # identity). confirm_ms2_batch() in batch_ms_processing.R does the
+        # more precise per-hit version since match_ms1_batch() does track it.
+        matched_frags <- match_fragments(frags, best_spec, frag_tol_ppm, frag_z_range,
+                                          adducts = adducts)
         diags <- check_ps_diagnostic(best_spec, max(frag_tol_ppm, 50))
         score <- confirmation_score(matched_frags, met$n, diags)
         ms2_results[[met_id]] <- list(

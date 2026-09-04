@@ -1193,6 +1193,7 @@ server <- function(input, output, session) {
     files <- input$batch_files
     total_mb <- if (!is.null(files)) sum(files$size) / 1024^2 else NA_real_
     large <- !is.na(total_mb) && total_mb > 200
+    no_python <- is.na(find_python())
 
     if (!hosted && !large) return(NULL)
 
@@ -1211,6 +1212,13 @@ server <- function(input, output, session) {
         "own upload limit independent of this app's 20GB setting. If a ",
         "large upload gets rejected, running this app locally in RStudio ",
         "removes that limit entirely -- or use the local-folder input below.")
+    }
+    if (hosted && no_python) {
+      msg <- paste(msg,
+        "Batch (multi-file, parallel) MS processing also needs a Python 3 ",
+        "interpreter on PATH, which this hosted deployment does not have -- ",
+        "batch processing will fail here. Run the app locally in RStudio ",
+        "for batch MS processing.")
     }
     tags$p(style = "font-size: 11px; color: #a3231b; font-weight: 600; margin: 2px 0 6px;", msg)
   })

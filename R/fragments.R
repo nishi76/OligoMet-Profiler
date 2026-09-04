@@ -351,34 +351,54 @@ fragment_table <- function(frags) {
 # z_range:   charge states to try for matching
 #
 # Returns data.frame with matched fragments and their scores.
+## ---- Resolve multi-assigned MS2 peaks --------------------------------------
+# match_fragments() finds the single best-matching observed peak for each
+# theoretical fragment independently, so in dense spectral regions two
+# different fragments (or the same fragment at two charge states) can both
+# claim the same obs_mz row -- inflating confirmation_score()'s n_matches
+# and sequence coverage. Keep only the best (lowest ppm_error) claim per
+# obs_mz and drop the rest. obs_mz is always copied verbatim from
+# ms2_peaks$mz (never recomputed/rounded -- mirror_plot.R relies on exactly
+# this for its own peak lookup), so exact-value grouping is safe.
+.dedup_ms2_matches <- function(matched) {
+  if (nrow(matched) <= 1) return(matched)
+  best_idx <- unlist(lapply(split(seq_len(nrow(matched)), matched$obs_mz),
+                             function(idx) idx[which.min(matched$ppm_error[idx])]))
+  matched[sort(best_idx), , drop = FALSE]
+}
+
 match_fragments <- function(frags, ms2_peaks, tol_ppm = 25,
-                             z_range = 1:2, h_offset = 0) {
+                             z_range = 1:2, h_offset = 0,
+                             adducts = c("H")) {
   if (length(frags) == 0 || nrow(ms2_peaks) == 0) return(data.frame())
 
   matches <- list()
   for (f in frags) {
     for (z in z_range) {
-      # theoretical m/z at this charge
-      theo_mz <- (f$mono_mass - z * .PROTON) / z
-      # find closest observed peak
-      dmz <- abs(ms2_peaks$mz - theo_mz)
-      best <- which.min(dmz)
-      ppm_err <- dmz[best] / theo_mz * 1e6
-      if (ppm_err <= tol_ppm) {
-        matches[[length(matches) + 1]] <- data.frame(
-          met_id = f$met_id, ion_type = f$ion_type,
-          direction = f$direction, cleavage_site = f$cleavage_site,
-          frag_length = f$frag_length, z = z,
-          theo_mz = theo_mz, obs_mz = ms2_peaks$mz[best],
-          ppm_error = ppm_err, intensity = ms2_peaks$intensity[best],
-          formula = f$formula, base_loss = ifelse(is.na(f$base_loss), "", f$base_loss),
-          stringsAsFactors = FALSE
-        )
+      for (ad in adducts) {
+        # theoretical m/z at this charge and adduct
+        ad_shift <- if (ad == "H") 0 else adduct_shift(ad)
+        theo_mz <- (f$mono_mass + ad_shift - z * .PROTON) / z
+        # find closest observed peak
+        dmz <- abs(ms2_peaks$mz - theo_mz)
+        best <- which.min(dmz)
+        ppm_err <- dmz[best] / theo_mz * 1e6
+        if (ppm_err <= tol_ppm) {
+          matches[[length(matches) + 1]] <- data.frame(
+            met_id = f$met_id, ion_type = f$ion_type,
+            direction = f$direction, cleavage_site = f$cleavage_site,
+            frag_length = f$frag_length, z = z, adduct = ad,
+            theo_mz = theo_mz, obs_mz = ms2_peaks$mz[best],
+            ppm_error = ppm_err, intensity = ms2_peaks$intensity[best],
+            formula = f$formula, base_loss = ifelse(is.na(f$base_loss), "", f$base_loss),
+            stringsAsFactors = FALSE
+          )
+        }
       }
     }
   }
   if (length(matches) == 0) return(data.frame())
-  do.call(rbind, matches)
+  .dedup_ms2_matches(do.call(rbind, matches))
 }
 
 ## ---- Check for PS diagnostic ions in MS2 data ------------------------------
@@ -480,13 +500,14 @@ confirm_metabolite <- function(met, ms2_peaks, dict = STANDARD_DICT,
                                 tol_ppm = 25, z_range = 1:2,
                                 ion_types = c("a", "aB", "b", "bB", "w", "y"),
                                 include_internal = FALSE,
-                                include_dz = FALSE, h_offset = 0) {
+                                include_dz = FALSE, h_offset = 0,
+                                adducts = c("H")) {
   frags <- generate_fragments(met, dict, ion_types, z_range, h_offset, include_dz)
   if (include_internal) {
     frags <- c(frags, generate_internal_fragments(met, dict, z_range = z_range,
                                                     h_offset = h_offset))
   }
-  matched <- match_fragments(frags, ms2_peaks, tol_ppm, z_range, h_offset)
+  matched <- match_fragments(frags, ms2_peaks, tol_ppm, z_range, h_offset, adducts)
   diags <- check_ps_diagnostic(ms2_peaks, tol_ppm = max(tol_ppm, 50))
   score <- confirmation_score(matched, met$n, diags)
   list(

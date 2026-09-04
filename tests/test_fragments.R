@@ -155,4 +155,47 @@ cat("  Coverage:", sprintf("%.1f%%", score$coverage * 100), "\n")
 cat("  Matches:", score$n_matches, "\n")
 cat("  Confident:", score$confident, "\n")
 
+## ---- match_fragments() de-duplicates multi-assigned peaks -----------------
+cat("\n--- match_fragments() de-duplicates multi-assigned peaks ---\n")
+stopifnot(length(unique(matched$obs_mz)) == nrow(matched))
+cat("No observed peak claimed by more than one surviving match: PASS\n")
+
+# Deterministic collision: two distinct fragment objects with the same
+# mono_mass (by construction) competing for one synthetic peak -- only the
+# best (here, tied) match should survive.
+f1 <- frags[[1]]
+f2 <- f1
+f2$ion_type <- if (f1$ion_type == "w") "y" else "w"
+f2$cleavage_site <- f1$cleavage_site + 1000L  # guaranteed distinct identity
+collision_peak <- data.frame(mz = (f1$mono_mass - 1 * .PROTON) / 1, intensity = 1000)
+collision_matched <- match_fragments(list(f1, f2), collision_peak, tol_ppm = 10, z_range = 1)
+stopifnot(nrow(collision_matched) == 1)
+cat("Two same-mass fragments racing for one peak: only one survives: PASS\n")
+
+## ---- Salt adduct search in MS2 fragment matching ---------------------------
+cat("\n--- match_fragments() with Na adduct ---\n")
+na_shift <- adduct_shift("Na")
+# w-ions at 5 different cleavage sites have guaranteed-distinct masses
+# (monotonically increasing with k), avoiding an accidental mass collision
+# between unrelated ion types that a plain frags[1:5] slice can hit.
+w_frags <- Filter(function(f) f$ion_type == "w", frags)[1:5]
+na_peaks <- do.call(rbind, lapply(w_frags, function(f) {
+  data.frame(mz = (f$mono_mass + na_shift - 1 * .PROTON) / 1, intensity = 5000)
+}))
+matched_h_only <- match_fragments(w_frags, na_peaks, tol_ppm = 10, z_range = 1)
+matched_with_na <- match_fragments(w_frags, na_peaks, tol_ppm = 10, z_range = 1,
+                                    adducts = c("H", "Na"))
+stopifnot(nrow(matched_h_only) == 0)
+stopifnot(nrow(matched_with_na) == 5)
+stopifnot(all(matched_with_na$adduct == "Na"))
+cat("Na-adducted MS2 peaks matched only when 'Na' is in adducts=: PASS\n")
+
+# Backward compatibility: default adducts=c("H") must be identical to
+# passing it explicitly (both take the same code path either way, but this
+# pins the parameter's default value itself).
+m_default <- match_fragments(frags, synth_peaks, tol_ppm = 10, z_range = 1:2)
+m_explicit_h <- match_fragments(frags, synth_peaks, tol_ppm = 10, z_range = 1:2, adducts = c("H"))
+stopifnot(identical(m_default, m_explicit_h))
+cat("Default adducts=c('H') identical to explicit c('H'): PASS\n")
+
 cat("\n==== All fragment tests passed ====\n")

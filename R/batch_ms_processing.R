@@ -238,9 +238,13 @@ confirm_ms2_batch <- function(mets, ms1_matches, ms2_by_sample, dict = STANDARD_
 
     best_spec <- spec[[which.max(vapply(spec, nrow, integer(1)))]]
     met <- mets[[which(vapply(mets, function(m) m$id == hit$met_id, logical(1)))]]
+    # Unlike annotate_metabolites()'s single-file path, unique_hits here
+    # already carries the exact adduct this MS1 hit matched (from
+    # match_ms1_batch()), so MS2 fragment matching can search that one
+    # adduct precisely rather than the full requested set.
     conf <- confirm_metabolite(met, best_spec, dict, tol_ppm = frag_tol_ppm,
                                 z_range = frag_z_range, include_internal = include_internal,
-                                h_offset = h_offset)
+                                h_offset = h_offset, adducts = hit$adduct)
 
     key <- paste(hit$sample, hit$met_id, hit$k_oxid, hit$z, hit$adduct, sep = "|")
     spectra[[key]] <<- best_spec
