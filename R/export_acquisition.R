@@ -126,7 +126,7 @@ thermo_ms2_prm_target_list <- function(mets, dict = STANDARD_DICT, z_range = 3:8
 # targeted precursor regardless of which fragments are listed here.
 ms2_fragment_reference <- function(mets, dict = STANDARD_DICT, z_range = 1:2,
                                    include_internal = FALSE,
-                                   ion_types = c("a", "aB", "b", "bB", "w", "y")) {
+                                   ion_types = c("aB", "w", "y", "b")) {
   rows <- list()
   for (met in mets) {
     if (met$n < 3) next

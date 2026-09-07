@@ -3,7 +3,9 @@
 # Peak-area-based % degradation of the parent oligonucleotide, computed per
 # sample from annotate_metabolites_batch()'s ms1_matches (R/batch_ms_processing.R),
 # grouped by the existing metabolite `kind` taxonomy from generate_metabolites()
-# (R/metabolites.R): parent, exo_3p, exo_5p, endo_5frag, endo_3frag.
+# (R/metabolites.R): parent, exo_3p, exo_5p, endo_5frag, endo_3frag, and the
+# mass-balanced endo_5frag_p/endo_3frag_p (the phosphorylated counterpart of
+# each endonuclease product -- see endo_cleave()).
 #
 #   % degradation = 1 - (parent_signal / (parent_signal + degradant_signal))
 #
@@ -32,8 +34,9 @@
 #   signal_used   = "area" | "intensity" | NA (NA if there's nothing to summarize)
 # )
 #
-# `composition` groups by the raw 4-value `kind` (exo_3p/exo_5p/endo_5frag/
-# endo_3frag), not pre-collapsed into a 3-class "5' exo / 3' exo / endo"
+# `composition` groups by the raw `kind` value (exo_3p/exo_5p/endo_5frag/
+# endo_3frag/endo_5frag_p/endo_3frag_p), not pre-collapsed into a 3-class
+# "5' exo / 3' exo / endo"
 # framing -- that collapse is a trivial display-layer ifelse() at render
 # time (Shiny/Excel), not baked into this function, so callers keep the
 # more informative breakdown and can still show either view.

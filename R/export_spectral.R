@@ -154,7 +154,7 @@ build_ms1_library <- function(mets, dict = STANDARD_DICT, z_range = 3:12,
 # header for exactly what it does and does not encode.
 build_ms2_library <- function(mets, dict = STANDARD_DICT,
                               precursor_z_range = 4:7, frag_z_range = 1:2,
-                              ion_types = c("a", "aB", "b", "bB", "w", "y"),
+                              ion_types = c("aB", "w", "y", "b"),
                               include_internal = FALSE, h_offset = 0,
                               mz_min = 100, mz_max = 6000,
                               oligo_name = NULL, max_spectra = 2000) {

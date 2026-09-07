@@ -3,10 +3,12 @@
 # McLuckey MS/MS fragment ion generation and confirmation for oligonucleotide
 # metabolite identification.
 #
-# Implements the McLuckey nomenclature for oligonucleotide tandem MS:
-#   5'-terminal ions: a, b, c, d  (cleavage at C3'-O3', O3'-P, P-O5', C4'-C3')
+# Implements the McLuckey nomenclature for oligonucleotide tandem MS. A
+# single backbone cleavage splits the neutral precursor M into two neutral
+# pieces, so each complementary pair (a/w, b/x, c/y, d/z) sums to exactly M:
+#   5'-terminal ions: a, b, c, d  (cleavage at C3'-O3', O3'-P, P-O5', O5'-C5')
 #   3'-terminal ions: w, x, y, z  (complementary cleavage sites)
-#   Base-loss ions:   a-B, b-B    (loss of 3'-terminal base + H2O)
+#   Base-loss ions:   a-B, b-B    (loss of the fragment's terminal free base)
 #   Internal ions:    w-a, w-b    (double cleavage, w-type 5' + a/b-type 3')
 #
 # Fragment m/z computed in negative ESI mode: [ion - zH]^z-
@@ -23,26 +25,31 @@
 
 ## ---- Fragment ion mass formulas -------------------------------------------
 # For a 5'-terminal fragment of length k (positions 1..k):
-#   F_k = intact k-mer formula (3'-OH terminus, conj5, no conj3)
+#   F_k = intact k-mer formula, as a free-3'-OH oligo (3'-OH terminus, conj5,
+#         no conj3)
 #   L_k = linkage formula at cleavage site k (bond between pos k and k+1)
+#   base_k = neutral free base at position k (3'-terminal residue of F_k)
 #
-#   a_k   = F_k - O          (C3'-O3' cleavage, 5' retains C3'-H)
-#   a-B_k = a_k - base_k + H2O  (additional base loss from 3'-terminal pos)
-#   b_k   = F_k              (O3'-P cleavage, retains 3'-OH)
-#   b-B_k = b_k - base_k + H2O
-#   c_k   = F_k + L_k - H    (P-O5' cleavage, retains P-OH)
-#   d_k   = a_k - base_k + H2O  (C4'-C3' cleavage, approx as a with base loss)
+#   a_k   = F_k - H2O            (C3'-O3' cleavage)
+#   a-B_k = a_k - base_k         (additional loss of the terminal free base)
+#   b_k   = F_k                  (O3'-P cleavage, retains 3'-OH)
+#   b-B_k = b_k - base_k
+#   c_k   = F_k + L_k - H2O      (P-O5' cleavage)
+#   d_k   = F_k + L_k            (O5'-C5' cleavage, retains the bridging P)
 #
 # For a 3'-terminal fragment of length n-k (positions k+1..n):
-#   G_{nk} = intact (n-k)-mer formula (5'-OH terminus, conj3, no conj5)
+#   G_{nk} = intact (n-k)-mer formula, as a free-5'-OH oligo (5'-OH terminus,
+#            conj3, no conj5)
+#   base_{k+1} = neutral free base at position k+1 (5'-terminal residue of G_{nk})
 #
-#   w_{nk}   = G_{nk} + L_k + O     (C3'-O3' cleavage, 3' retains O3'-H + linkage)
-#   x_{nk}   = G_{nk} + L_k - H     (O3'-P cleavage, retains P-OH)
-#   y_{nk}   = G_{nk}               (P-O5' cleavage, retains 5'-OH)
-#   z_{nk}   = w_{nk} + base_{k+1} - H2O  (C4'-C3', approx: w + 5'-terminal base)
+#   w_{nk}   = G_{nk} + L_k       (C3'-O3' cleavage, retains the bridging P)
+#   x_{nk}   = G_{nk} + L_k - H2O (O3'-P cleavage)
+#   y_{nk}   = G_{nk}             (P-O5' cleavage, retains 5'-OH)
+#   z_{nk}   = G_{nk} - H2O       (O5'-C5' cleavage)
 #
-# Complementary check: a_k + w_{nk} = F_k + G_{nk} + L_k = M + H2O
-# (F_k + G_{nk} + L_k = M + H2O by the condensation accounting)
+# Every complementary pair sums to exactly M (the neutral precursor mass):
+#   a_k + w_{nk} = b_k + x_{nk} = c_k + y_{nk} = d_k + z_{nk} = M
+# since F_k + G_{nk} + L_k = M + H2O by the condensation accounting.
 
 ## ---- PS diagnostic ions ---------------------------------------------------
 # Characteristic fragment ions for phosphorothioate backbones.
@@ -83,13 +90,14 @@
 #   h_offset   : mass offset for non-standard envelope conventions
 #   include_dz : include d/z ions (approximate, default FALSE)
 #
-# Default ion_types omits c and x: in negative-ion CID of oligonucleotides
-# w and (a-B) ions dominate observed spectra by a wide margin, c/y appear
-# but weaker, and b/x -- x especially -- are rarely the ions actually seen.
-# Pass ion_types = c("a","aB","b","bB","c","w","x","y") for full McLuckey
+# Default ion_types is (a-B), w, y, b: in negative-ion CID of
+# oligonucleotides w and (a-B) dominate observed spectra by a wide margin,
+# y/b appear as the useful minor series, and plain a (without base loss),
+# c, x are rarely the ions actually seen. Pass
+# ion_types = c("a","aB","b","bB","c","w","x","y") for full McLuckey
 # coverage (e.g. HCD, or other fragmentation methods that behave differently).
 generate_fragments <- function(met, dict = STANDARD_DICT,
-                                ion_types = c("a", "aB", "b", "bB", "w", "y"),
+                                ion_types = c("aB", "w", "y", "b"),
                                 z_range = 1:2, h_offset = 0,
                                 include_dz = FALSE) {
   if (include_dz) ion_types <- union(ion_types, c("d", "z"))
@@ -105,17 +113,15 @@ generate_fragments <- function(met, dict = STANDARD_DICT,
     L_k <- if (!is.na(lk_code) && nzchar(lk_code)) dict[[lk_code]]$formula else .empty_formula()
     base_k <- dict[[met$bases[k]]]$formula
 
-    # a-ion: F_k - O
+    fa <- add_formulas(F_k, -.as_formula(.H2O))   # a = F_k - H2O
+    # a-ion: F_k - H2O
     if ("a" %in% ion_types) {
-      fa <- F_k; fa[["O"]] <- fa[["O"]] - 1
       frags <- c(frags, list(.make_frag("a", "5'", k, k, fa, dict, z_range,
                                          h_offset, met$id)))
     }
-    # a-B ion: a - base_k + H2O
+    # a-B ion: a - base_k
     if ("aB" %in% ion_types) {
-      faB <- F_k; faB[["O"]] <- faB[["O"]] - 1
-      faB <- add_formulas(faB, -base_k)
-      faB <- add_formulas(faB, .as_formula(.H2O))
+      faB <- add_formulas(fa, -base_k)
       frags <- c(frags, list(.make_frag("a-B", "5'", k, k, faB, dict, z_range,
                                          h_offset, met$id, base_loss = met$bases[k])))
     }
@@ -124,41 +130,39 @@ generate_fragments <- function(met, dict = STANDARD_DICT,
       frags <- c(frags, list(.make_frag("b", "5'", k, k, F_k, dict, z_range,
                                          h_offset, met$id)))
     }
-    # b-B ion: b - base_k + H2O
+    # b-B ion: b - base_k
     if ("bB" %in% ion_types) {
-      fbB <- add_formulas(add_formulas(F_k, -base_k), .as_formula(.H2O))
+      fbB <- add_formulas(F_k, -base_k)
       frags <- c(frags, list(.make_frag("b-B", "5'", k, k, fbB, dict, z_range,
                                          h_offset, met$id, base_loss = met$bases[k])))
     }
-    # c-ion: F_k + L_k - H
+    # c-ion: F_k + L_k - H2O
     if ("c" %in% ion_types) {
-      fc <- add_formulas(F_k, L_k); fc[["H"]] <- fc[["H"]] - 1
+      fc <- add_formulas(add_formulas(F_k, L_k), -.as_formula(.H2O))
       frags <- c(frags, list(.make_frag("c", "5'", k, k, fc, dict, z_range,
                                          h_offset, met$id)))
     }
-    # d-ion (approximate): a - base_k + H2O
+    # d-ion: F_k + L_k (O5'-C5' cleavage, retains the bridging phosphate)
     if ("d" %in% ion_types) {
-      fd <- F_k; fd[["O"]] <- fd[["O"]] - 1
-      fd <- add_formulas(add_formulas(fd, -base_k), .as_formula(.H2O))
+      fd <- add_formulas(F_k, L_k)
       frags <- c(frags, list(.make_frag("d", "5'", k, k, fd, dict, z_range,
-                                         h_offset, met$id, base_loss = met$bases[k])))
+                                         h_offset, met$id)))
     }
 
     # 3'-terminal fragment: positions (k+1)..n
     idx <- (k + 1):n
     G_nk <- assemble_oligo_formula(met$bases[idx], met$sugars[idx],
                                     met$linkages[idx], "none", met$conj3, dict)
-    base_kp1 <- dict[[met$bases[k + 1]]]$formula
 
-    # w-ion: G_nk + L_k + O
+    # w-ion: G_nk + L_k (retains the bridging phosphate)
     if ("w" %in% ion_types) {
-      fw <- add_formulas(G_nk, L_k); fw[["O"]] <- fw[["O"]] + 1
+      fw <- add_formulas(G_nk, L_k)
       frags <- c(frags, list(.make_frag("w", "3'", k, n - k, fw, dict, z_range,
                                          h_offset, met$id)))
     }
-    # x-ion: G_nk + L_k - H
+    # x-ion: G_nk + L_k - H2O
     if ("x" %in% ion_types) {
-      fx <- add_formulas(G_nk, L_k); fx[["H"]] <- fx[["H"]] - 1
+      fx <- add_formulas(add_formulas(G_nk, L_k), -.as_formula(.H2O))
       frags <- c(frags, list(.make_frag("x", "3'", k, n - k, fx, dict, z_range,
                                          h_offset, met$id)))
     }
@@ -167,12 +171,11 @@ generate_fragments <- function(met, dict = STANDARD_DICT,
       frags <- c(frags, list(.make_frag("y", "3'", k, n - k, G_nk, dict, z_range,
                                          h_offset, met$id)))
     }
-    # z-ion (approximate): w + base_{k+1} - H2O
+    # z-ion: G_nk - H2O (O5'-C5' cleavage)
     if ("z" %in% ion_types) {
-      fz <- add_formulas(G_nk, L_k); fz[["O"]] <- fz[["O"]] + 1
-      fz <- add_formulas(add_formulas(fz, base_kp1), -(.as_formula(.H2O)))
+      fz <- add_formulas(G_nk, -.as_formula(.H2O))
       frags <- c(frags, list(.make_frag("z", "3'", k, n - k, fz, dict, z_range,
-                                         h_offset, met$id, base_loss = met$bases[k + 1])))
+                                         h_offset, met$id)))
     }
   }
   frags
@@ -478,7 +481,7 @@ confirmation_score <- function(matched, n, diagnostics = NULL) {
 # Returns list with fragments, matches, diagnostics, coverage, score.
 confirm_metabolite <- function(met, ms2_peaks, dict = STANDARD_DICT,
                                 tol_ppm = 25, z_range = 1:2,
-                                ion_types = c("a", "aB", "b", "bB", "w", "y"),
+                                ion_types = c("aB", "w", "y", "b"),
                                 include_internal = FALSE,
                                 include_dz = FALSE, h_offset = 0) {
   frags <- generate_fragments(met, dict, ion_types, z_range, h_offset, include_dz)

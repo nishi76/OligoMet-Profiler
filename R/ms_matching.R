@@ -8,7 +8,14 @@
 #   - Vendor raw via msconvert bridge (if msconvert is on PATH)
 #
 # Matching:
-#   - MS1 targeted matching: metabolite m/z vs observed features within ppm tol
+#   - MS1 targeted matching: metabolite m/z vs observed features within ppm tol.
+#     Nearest-feature (which.min()) matching reports the single closest
+#     target as if it were unambiguous; match_ms1() also flags how many
+#     DISTINCT metabolites' theoretical m/z fall within tolerance of the
+#     same observed feature (n_candidates/ambiguous columns) -- at the
+#     library sizes and tolerances this app targets, most matches have
+#     more than one candidate, and that isn't otherwise visible in the
+#     results table.
 #   - Isotope pattern fit: observed vs theoretical isotope envelope (cosine sim)
 #   - Charge envelope consistency: multiple charge states form consistent envelope
 #   - MS2 fragment matching: McLuckey fragments vs MS/MS peaks
@@ -374,6 +381,7 @@ match_ms1 <- function(mets, ms1_features, dict = STANDARD_DICT,
               area = if ("area" %in% names(ms1_features)) ms1_features$area[best] else NA_real_,
               iso_fit = round(iso_fit, 3),
               formula = format_formula(fv),
+              .feat_idx = best,
               stringsAsFactors = FALSE
             )
           }
@@ -382,7 +390,67 @@ match_ms1 <- function(mets, ms1_features, dict = STANDARD_DICT,
     }
   }
   if (length(matches) == 0) return(data.frame())
-  do.call(rbind, matches)
+  out <- do.call(rbind, matches)
+  # Ambiguity flag: at the tolerances this function defaults to, most
+  # observed features sit within ppm_tol of more than one theoretical
+  # target (metabolite x oxidation x charge x adduct) -- which.min()-style
+  # nearest-match logic above silently reports only the single closest
+  # one as if it were an unambiguous identification. n_candidates counts
+  # how many DISTINCT library metabolites (not oxidation/charge/adduct
+  # variants of the same metabolite) picked this exact feature as their
+  # best match; ambiguous flags any feature more than one metabolite
+  # could explain, so a caller can require MS2/RT confirmation before
+  # trusting a match that would otherwise look identical in this table.
+  n_candidates <- tapply(out$met_id, out$.feat_idx, function(x) length(unique(x)))
+  out$n_candidates <- as.integer(n_candidates[as.character(out$.feat_idx)])
+  out$ambiguous <- out$n_candidates > 1L
+  out$.feat_idx <- NULL
+  out
+}
+
+## ---- Vectorised MS1 matching over a pre-expanded target list ---------------
+# match_ms1() above enumerates metabolite x oxidation x charge x adduct with
+# an R loop and does a full which.min() scan over every feature inside it --
+# for a 55-metabolite library at the app's Standard-mode defaults that is
+# 55 x 7 x 10 x 4 = 15,400 full-vector scans per file. This is an
+# alternative entry point for callers that already have (or can cheaply
+# build) the expanded theoretical target list as a flat data.frame: it
+# replaces the nested scan with one sorted merge (features sorted once,
+# findInterval() locates each target's tolerance window in it), so cost
+# scales with n_targets*log(n_features) instead of n_targets*n_features.
+# It does not compute isotope fit or adduct/oxidation bookkeeping itself
+# (the caller's `targets` frame already carries kind/k_oxid/z/adduct) --
+# match_ms1() remains the entry point when those are needed.
+#
+# targets:  data.frame(met_id, met_name, kind, k_oxid, z, adduct, theo_mz)
+# features: data.frame(mz, rt, max_intensity, ...)
+# Returns targets with obs_mz/rt/intensity/ppm_error appended, plus the same
+# n_candidates/ambiguous ambiguity flag as match_ms1() -- computed here by
+# distinct met_id, not distinct target row, for the same reason.
+match_ms1_fast <- function(targets, features, ppm_tol = 10) {
+  stopifnot("theo_mz" %in% names(targets), "mz" %in% names(features))
+  if (nrow(targets) == 0 || nrow(features) == 0) return(targets[0, ])
+  f <- features[order(features$mz), ]
+  lo <- targets$theo_mz * (1 - ppm_tol / 1e6)
+  hi <- targets$theo_mz * (1 + ppm_tol / 1e6)
+  i_lo <- findInterval(lo, f$mz) + 1L
+  i_hi <- findInterval(hi, f$mz)
+  hit <- i_hi >= i_lo
+  if (!any(hit)) return(targets[0, ])
+  idx <- mapply(function(a, b, t) {
+    j <- a:b
+    j[which.min(abs(f$mz[j] - t))]
+  }, i_lo[hit], i_hi[hit], targets$theo_mz[hit])
+  out <- targets[hit, ]
+  out$obs_mz <- f$mz[idx]
+  out$rt <- f$rt[idx]
+  out$intensity <- f$max_intensity[idx]
+  out$ppm_error <- (out$obs_mz - out$theo_mz) / out$theo_mz * 1e6
+  # Ambiguity: distinct metabolites competing for the same observed feature.
+  n_candidates <- tapply(out$met_id, idx, function(x) length(unique(x)))
+  out$n_candidates <- as.integer(n_candidates[as.character(idx)])
+  out$ambiguous <- out$n_candidates > 1L
+  out
 }
 
 ## ---- Isotope pattern fit --------------------------------------------------

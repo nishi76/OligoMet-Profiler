@@ -54,7 +54,9 @@ nucleoside_anchors <- list(
   list(sugar = "NMA",   base = "A", expect = "C13H18N6O5",
        what = "2'-O-NMA-adenosine"),
   list(sugar = "ENA",   base = "T", expect = "C12H16N2O6",
-       what = "ENA-thymidine")
+       what = "ENA-thymidine"),
+  list(sugar = "cEt",   base = "T", expect = "C12H16N2O6",
+       what = "T-cEt (2',4'-constrained ethyl bridged thymidine)")
 )
 
 for (a in nucleoside_anchors) {
@@ -76,6 +78,8 @@ diffs <- list(
   list("UNA",   "r",    2.0157, "ribose + H2 (C2'-C3' bond absent)"),
   list("GNA",   "r",  -58.0055, "glycerol in place of ribose"),
   list("ENA",   "LNA", 14.0157, "one more CH2 in the bridge"),
+  list("cEt",   "LNA", 14.0157, "cEt = LNA + CH2"),
+  list("cEt",   "ENA",  0.0000, "constitutional isomers"),
   list("LNA",   "r",   12.0000, "ribose + CH2 - H2 = ribose + C"),
   list("allyl", "r",   40.0313, "2'-O-allyl"),
   list("AP",    "r",   57.0578, "2'-O-aminopropyl"),
@@ -176,6 +180,26 @@ for (nm in names(acyl_expect)) {
   if (!ok) fail <- fail + 1L
   cat(sprintf("  %-11s %+10.4f Da (expected %+9.4f) %s\n",
               nm, got, acyl_expect[[nm]], if (ok) "ok" else "NO"))
+}
+
+cat("\n=== 6c. Terminal phosphate/thiophosphate caps ===\n")
+# A terminal monophosphate cap replaces the terminus's -OH hydrogen with
+# -PO(OH)2 (2 H's of its own), so the net addition is +HPO3 (79.9663 Da,
+# the same mass as the "o" internal linkage) -- independently anchored
+# above against thymidine 5'-monophosphate (322.0566 = thymidine +
+# 79.9663). The thiophosphate caps are the PS analogue (+HPSO2, 95.9435
+# Da, the same mass as the "s" internal linkage).
+cap_expect <- list(`5'-phosphate` = 79.9663, `3'-phosphate` = 79.9663,
+                   `5'-thiophosphate` = 95.9435, `3'-thiophosphate` = 95.9435)
+for (nm in names(cap_expect)) {
+  is5 <- startsWith(nm, "5'")
+  sp_c <- if (is5) parse_three_line("AGST", "d", "s", conj5 = nm)
+          else parse_three_line("AGST", "d", "s", conj3 = nm)
+  got <- metabolite_mass_info(sp_c)$mono_mass - plain
+  ok <- abs(got - cap_expect[[nm]]) < 5e-4
+  if (!ok) fail <- fail + 1L
+  cat(sprintf("  %-17s %+10.4f Da (expected %+9.4f) %s\n",
+              nm, got, cap_expect[[nm]], if (ok) "ok" else "NO"))
 }
 
 cat("\n=== 7. The published reference formulas still reproduce ===\n")

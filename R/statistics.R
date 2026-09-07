@@ -75,7 +75,8 @@ abundance_long <- function(abundance_matrix, sample_meta) {
 ## ---- Kind-level (composition-class) abundance --------------------------------
 # Sums signal (intensity, or area if you have it -- see build_abundance_matrix_area())
 # across all metabolites sharing a `kind` value (parent/exo_3p/exo_5p/
-# endo_5frag/endo_3frag -- the same rollup degradation_summary() does
+# endo_5frag/endo_3frag/endo_5frag_p/endo_3frag_p -- the same rollup
+# degradation_summary() does
 # internally, see R/degradation.R), per sample. Exposed here as a standalone
 # long table so it can be run through the EXISTING compare_two_groups()/
 # compare_multi_groups()/compare_time_series() completely unmodified, by

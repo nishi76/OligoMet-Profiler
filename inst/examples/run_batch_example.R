@@ -96,7 +96,8 @@ run_batch_pipeline <- function() {
   cat("  ", format_spec(spec), "\n")
   mets <- generate_metabolites(spec, opts = list(
     oligo_name = PARAMS$oligo_name, max_3p = PARAMS$max_3p, max_5p = PARAMS$max_5p,
-    endo = PARAMS$endo, endo_sites = "all", min_frag_len = PARAMS$min_frag_len))
+    endo = PARAMS$endo, endo_sites = "all", min_frag_len = PARAMS$min_frag_len),
+    dict = dict)
   cat("  Generated", length(mets), "metabolites\n")
 
   watchlist_path <- NULL

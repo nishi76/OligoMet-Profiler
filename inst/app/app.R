@@ -1643,7 +1643,7 @@ server <- function(input, output, session) {
         min_frag_len = input$min_frag_len
       )
       mets <- tryCatch(
-        generate_metabolites(spec, opts = met_opts),
+        generate_metabolites(spec, opts = met_opts, dict = dict),
         error = function(e) {
           rv$status_text <- paste0("ERROR generating metabolites: ", conditionMessage(e), "\n")
           NULL

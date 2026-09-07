@@ -204,7 +204,7 @@ run_pipeline <- function() {
     endo_sites = PARAMS$endo_sites,
     min_frag_len = PARAMS$min_frag_len
   )
-  mets <- generate_metabolites(spec, opts = met_opts)
+  mets <- generate_metabolites(spec, opts = met_opts, dict = dict)
   cat("  Generated", length(mets), "metabolites\n")
   cat("  Parent:", mets[[1]]$name, "\n")
   cat("  3' truncations:", sum(sapply(mets, function(m) m$kind == "exo_3p")), "\n")

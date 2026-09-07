@@ -1,8 +1,10 @@
 # test_fragments.R -- validate McLuckey fragment ion formulas
 # Checks:
-#   1. Complementary relationship: a_k + w_{n-k} = M + H2O
-#   2. b_k + x_{n-k} = M + H2O - H (known convention offset)
-#   3. c_k + y_{n-k} = M + H2O - H
+#   1. Complementary relationship: a_k + w_{n-k} = M (single-bond cleavage
+#      splits the neutral precursor into two neutral pieces, so every
+#      complementary pair must sum to exactly M -- see fragments.R FIX 2)
+#   2. b_k + x_{n-k} = M
+#   3. c_k + y_{n-k} = M
 #   4. Fragment masses are positive and decreasing with k for 5' ions
 #   5. PRM inclusion list covers expected charge range
 #   6. Matching against synthetic MS2 peaks
@@ -33,8 +35,11 @@ M <- parent_info$mono_mass
 cat("Parent mass M =", sprintf("%.4f\n", M))
 cat("Parent formula:", parent_info$formula_str, "\n\n")
 
-# Generate fragments
-frags <- generate_fragments(parent, z_range = 1:3, include_dz = TRUE)
+# Generate the full McLuckey ion set (not just the app's default subset)
+# so every complementary pair and the base-loss ions below get exercised.
+frags <- generate_fragments(parent, z_range = 1:3,
+                             ion_types = c("a", "aB", "b", "bB", "c", "w", "x", "y"),
+                             include_dz = TRUE)
 cat("Generated", length(frags), "terminal fragments\n")
 
 # Extract by ion type
@@ -47,8 +52,7 @@ get_frag <- function(frags, type, k) {
 
 # Check complementary relationships for several cleavage sites
 cat("\n--- Complementary relationship checks ---\n")
-h2o_mass <- .H2O_MASS
-proton <- .PROTON
+frag_fail <- 0L
 
 for (k in c(1, 5, 7, 10, 14)) {
   fa <- get_frag(frags, "a", k)
@@ -57,26 +61,22 @@ for (k in c(1, 5, 7, 10, 14)) {
   fx <- get_frag(frags, "x", k)
   fc <- get_frag(frags, "c", k)
   fy <- get_frag(frags, "y", k)
+  fd <- get_frag(frags, "d", k)
+  fz <- get_frag(frags, "z", k)
 
-  if (!is.null(fa) && !is.null(fw)) {
-    sum_aw <- fa$mono_mass + fw$mono_mass
-    delta_aw <- sum_aw - (M + h2o_mass)
-    cat(sprintf("  k=%2d  a+w = %.4f  M+H2O = %.4f  delta = %+.4f Da (%.1f ppm)\n",
-                k, sum_aw, M + h2o_mass, delta_aw, abs(delta_aw)/(M+h2o_mass)*1e6))
-  }
-  if (!is.null(fb) && !is.null(fx)) {
-    sum_bx <- fb$mono_mass + fx$mono_mass
-    delta_bx <- sum_bx - (M + h2o_mass)
-    cat(sprintf("  k=%2d  b+x = %.4f  M+H2O = %.4f  delta = %+.4f Da (%.1f ppm)\n",
-                k, sum_bx, M + h2o_mass, delta_bx, abs(delta_bx)/(M+h2o_mass)*1e6))
-  }
-  if (!is.null(fc) && !is.null(fy)) {
-    sum_cy <- fc$mono_mass + fy$mono_mass
-    delta_cy <- sum_cy - (M + h2o_mass)
-    cat(sprintf("  k=%2d  c+y = %.4f  M+H2O = %.4f  delta = %+.4f Da (%.1f ppm)\n",
-                k, sum_cy, M + h2o_mass, delta_cy, abs(delta_cy)/(M+h2o_mass)*1e6))
+  for (pr in list(list("a+w", fa, fw), list("b+x", fb, fx), list("c+y", fc, fy),
+                  list("d+z", fd, fz))) {
+    label <- pr[[1]]; f1 <- pr[[2]]; f2 <- pr[[3]]
+    if (is.null(f1) || is.null(f2)) next
+    total <- f1$mono_mass + f2$mono_mass
+    delta <- total - M
+    ok <- abs(delta) < 1e-3
+    if (!ok) frag_fail <- frag_fail + 1L
+    cat(sprintf("  k=%2d  %s = %.4f  M = %.4f  delta = %+.4f Da (%.1f ppm)  %s\n",
+                k, label, total, M, delta, abs(delta) / M * 1e6, if (ok) "ok" else "NO"))
   }
 }
+if (frag_fail > 0) stop(frag_fail, " complementary fragment-pair check(s) failed")
 
 # Show some fragment masses
 cat("\n--- Sample fragment masses (z=1) ---\n")
@@ -96,9 +96,10 @@ if (!is.null(fa) && !is.null(faB)) {
   base5 <- parent$bases[5]
   base_mass <- formula_mass(STANDARD_DICT[[base5]]$formula, mono = TRUE)
   cat(sprintf("  a_5 mass = %.4f, a-B_5 mass = %.4f, diff = %.4f\n", fa$mono_mass, faB$mono_mass, diff))
-  cat(sprintf("  Expected diff = base(%s) - H2O = %.4f - %.4f = %.4f\n",
-              base5, base_mass, h2o_mass, base_mass - h2o_mass))
-  cat(sprintf("  Match: %s\n", ifelse(abs(diff - (base_mass - h2o_mass)) < 0.01, "YES", "NO")))
+  cat(sprintf("  Expected diff = base(%s) = %.4f\n", base5, base_mass))
+  match_ok <- abs(diff - base_mass) < 0.01
+  cat(sprintf("  Match: %s\n", ifelse(match_ok, "YES", "NO")))
+  if (!match_ok) stop("a-B base loss check failed")
 }
 
 # Internal fragments

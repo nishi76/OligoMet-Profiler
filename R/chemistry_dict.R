@@ -164,7 +164,10 @@ SUGAR_FORMULAS <- list(
   f   = list(formula = c(C=5,H=9,F=1,O=4),        name = "2'-fluororibose"),
   e   = list(formula = c(C=8,H=16,O=6),           name = "2'-O-methoxyethylribose (MOE)"),
   MOE = list(formula = c(C=8,H=16,O=6),           name = "2'-O-methoxyethylribose (MOE)"),
-  cEt = list(formula = c(C=7,H=12,O=4),           name = "constrained ethyl (cEt)", verify = TRUE),
+  # cEt = LNA + CH2, and is a constitutional isomer of ENA (C7H12O5) --
+  # C7H12O4 (an earlier value here) is an oxygen short of both that and
+  # the independently known T-cEt nucleoside mass (284.1008 Da).
+  cEt = list(formula = c(C=7,H=12,O=5),           name = "constrained ethyl (cEt)"),
   LNA = list(formula = c(C=6,H=10,O=5),           name = "locked nucleic acid sugar", verify = TRUE),
   NH2 = list(formula = c(C=5,H=11,N=1,O=4),       name = "2'-amino-2'-deoxyribose"),
 
@@ -275,8 +278,14 @@ LINKAGE_FORMULAS <- list(
 # the conjugate's 'attach' field: "replace_H" (-H) or "replace_OH" (-H2O) or "add" (+0).
 CONJUGATE_FORMULAS <- list(
   none          = list(formula = c(),                       name = "no conjugate",          attach = "add"),
-  `5'-phosphate`= list(formula = c(H=1,P=1,O=3),            name = "5'-phosphate cap",      attach = "replace_H"),
-  `3'-phosphate`= list(formula = c(H=1,P=1,O=3),            name = "3'-phosphate cap",      attach = "replace_H"),
+  # A terminal monophosphate replaces the terminus's -OH hydrogen with the
+  # -PO(OH)2 group (formula PO3H2, not PO3H): R-OH -> R-O-PO(OH)2 keeps
+  # both of the phosphate's own hydroxyls, so the substituent carries 2 H,
+  # not 1. Anchored against thymidine 5'-monophosphate (dTMP, 322.0566 Da
+  # = thymidine 242.0903 + this cap, replace_H) -- an H short here was
+  # silently under-massing every 5'-/3'-phosphorylated oligo by 1.0078 Da.
+  `5'-phosphate`= list(formula = c(H=2,P=1,O=3),            name = "5'-phosphate cap",      attach = "replace_H"),
+  `3'-phosphate`= list(formula = c(H=2,P=1,O=3),            name = "3'-phosphate cap",      attach = "replace_H"),
   `3'-cyclophos`= list(formula = c(H=1,P=1,O=3),            name = "3'-cyclic phosphate",   attach = "replace_OH"),
   GalNAc        = list(formula = c(C=8,H=15,N=1,O=6),        name = "N-acetylgalactosamine (mono)", attach = "replace_H"),
   GalNAc3       = list(formula = c(C=31,H=51,N=3,O=23),      name = "trivalent GalNAc cluster",     attach = "replace_H", verify = TRUE),
@@ -301,8 +310,10 @@ CONJUGATE_FORMULAS <- list(
   # Formulas below are the BPF-reported whole-group masses; treat as
   # best-estimate (verify = TRUE) until checked against a BPF-computed
   # mass for an actual sequence carrying each modification.
-  `5'-thiophosphate` = list(formula = c(H=1,P=1,S=1,O=2),    name = "5'-phosphorothioate cap (BioPharma Finder 's')", attach = "replace_H"),
-  `3'-thiophosphate` = list(formula = c(H=1,P=1,S=1,O=2),    name = "3'-phosphorothioate cap (BioPharma Finder 's')", attach = "replace_H"),
+  # Same +1H correction as the 5'-/3'-phosphate caps above (-PO(OH)(SH) or
+  # -PO(SH)(OH) carries 2 H, not 1).
+  `5'-thiophosphate` = list(formula = c(H=2,P=1,S=1,O=2),    name = "5'-phosphorothioate cap (BioPharma Finder 's')", attach = "replace_H"),
+  `3'-thiophosphate` = list(formula = c(H=2,P=1,S=1,O=2),    name = "3'-phosphorothioate cap (BioPharma Finder 's')", attach = "replace_H"),
   biotin        = list(formula = c(C=10,H=16,N=2,O=3,S=1),   name = "5'-biotin (BioPharma Finder 'b')", attach = "replace_H"),
   cAG_cap       = list(formula = c(C=32,H=44,N=15,O=27,P=5), name = "5'-cAG cap analog (BioPharma Finder 'a')", attach = "replace_H", verify = TRUE),
   cAU_cap       = list(formula = c(C=31,H=43,N=12,O=28,P=5), name = "5'-cAU cap analog (BioPharma Finder 'u')", attach = "replace_H", verify = TRUE),
