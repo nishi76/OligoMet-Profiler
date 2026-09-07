@@ -928,6 +928,22 @@ ui <- fluidPage(
                   "acquired peaks (real instrument data), with matched-fragment ",
                   "annotations from the same in-memory confirmation shown in the ",
                   "table above.")
+              ),
+              tags$hr(),
+              tags$h6("Empirical MS2 Library"),
+              tags$p(style = "font-size: 12px; color: #6c757d;",
+                "One consensus spectrum per (metabolite, oxidation, charge, ",
+                "adduct), pooled across every sample/replicate that confirmed ",
+                "it -- REAL measured fragment intensities, denoised by peak ",
+                "recurrence across replicates, not the rule-based heuristic ",
+                "used by the predicted MS2 library above."),
+              fluidRow(
+                column(6, downloadButton("dl_empirical_ms2_msp",
+                         "Download empirical MS2 library (.msp)",
+                         class = "btn-outline-primary w-100")),
+                column(6, downloadButton("dl_empirical_ms2_summary",
+                         "Download build summary (.csv)",
+                         class = "btn-outline-primary w-100"))
               )
             ),
             conditionalPanel(
@@ -2471,6 +2487,29 @@ server <- function(input, output, session) {
     }
   )
 
+  # One consensus spectrum per (metabolite, oxidation, charge, adduct),
+  # pooled across every sample/replicate that confirmed it -- see
+  # build_empirical_ms2_library() in R/export_spectral.R for why this is
+  # not gated on confirmation_score/coverage. Rebuilt on demand, same
+  # reasoning as .ms1_library()/.ms2_library() above.
+  .empirical_ms2_library <- function() {
+    req(rv$batch_ms_results, rv$mets, rv$dict)
+    build_empirical_ms2_library(rv$mets, rv$dict,
+                                rv$batch_ms_results$ms2_confirmations,
+                                rv$batch_ms_results$ms2_spectra,
+                                frag_z_range = 1:input$frag_z_max,
+                                h_offset = input$h_offset,
+                                fragment_ppm = input$frag_tol_ppm)
+  }
+  output$dl_empirical_ms2_msp <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_MS2_library_EMPIRICAL.msp"),
+    content = function(file) write_msp(.empirical_ms2_library()$records, file, measured = TRUE)
+  )
+  output$dl_empirical_ms2_summary <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_empirical_MS2_library_summary.csv"),
+    content = function(file) write.csv(.empirical_ms2_library()$summary, file, row.names = FALSE)
+  )
+
   output$unmatched_table <- DT::renderDT({
     req(rv$batch_ms_results)
     DT::datatable(rv$batch_ms_results$unmatched, filter = "top", rownames = FALSE,
@@ -2689,6 +2728,19 @@ server <- function(input, output, session) {
               z_range = 1:input$frag_z_max, h_offset = input$h_offset)
             write_msp(recs, file.path(bundle_dir, paste0(prefix, "_batch_MS2_annotated.msp")),
                       measured = TRUE)
+
+            incProgress(0, detail = "Empirical MS2 library")
+            emp <- build_empirical_ms2_library(rv$mets, rv$dict, ms2c,
+              rv$batch_ms_results$ms2_spectra, frag_z_range = 1:input$frag_z_max,
+              h_offset = input$h_offset, fragment_ppm = input$frag_tol_ppm)
+            utils::write.csv(emp$summary,
+              file.path(bundle_dir, paste0(prefix, "_empirical_MS2_library_summary.csv")),
+              row.names = FALSE)
+            if (length(emp$records) > 0) {
+              write_msp(emp$records,
+                file.path(bundle_dir, paste0(prefix, "_MS2_library_EMPIRICAL.msp")),
+                measured = TRUE)
+            }
           }
         }
 

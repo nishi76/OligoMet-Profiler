@@ -214,6 +214,205 @@ build_ms2_library <- function(mets, dict = STANDARD_DICT,
                "precursor_z_range/metabolite selection")
 }
 
+## ---- Empirical (measured) MS2 library from real DDA data --------------------
+# build_ms2_library() above is a rule-based heuristic: it encodes known
+# fragmentation propensities, but its peak intensities are not fit to any
+# measured spectrum. This builds the real alternative -- one consensus MS2
+# spectrum per (metabolite, PS-oxidation level, charge, adduct) from the
+# ACTUAL acquired fragment spectra already confirmed by the batch MS2
+# pipeline (confirm_ms2_batch()/annotate_metabolites_batch() in
+# R/batch_ms_processing.R), pooled across every sample/replicate that
+# confirmed that species.
+#
+# Why pooling helps: any single acquired MS2 spectrum carries chemical/
+# electronic noise particular to that one scan. Requiring a peak to recur,
+# within fragment_ppm, across a large-enough fraction of the INDEPENDENT
+# spectra pooled for the same species is what turns a pile of individually
+# noisy real spectra into one clean, repeatable fragment-ion set -- the
+# same logic a NIST-style consensus spectrum uses. A species confirmed in
+# only one sample/replicate has nothing to vote against yet, so all of its
+# peaks are kept as-is.
+#
+# ms2_confirmations / ms2_spectra: the two objects returned together by
+# confirm_ms2_batch() (also inside annotate_metabolites_batch()'s result) --
+# ms2_confirmations is one row per (sample, met_id, k_oxid, z, adduct) hit
+# that had a real MS2 spectrum nearby, and ms2_spectra is that spectrum
+# itself (data.frame(mz, intensity)), keyed "sample|met_id|k_oxid|z|adduct".
+# Pooling here is NOT gated on confirmation_score/coverage -- doing so would
+# bias the empirical library toward spectra that already agree with the
+# very heuristic model this function exists to replace. Any real spectrum
+# whose precursor was MS1-confirmed contributes; peak recurrence across
+# replicates is the only denoising step.
+#
+# label_peaks optionally annotates each consensus peak with the matching
+# theoretical fragment ion (a-B9^2- etc., generate_fragments()/
+# match_fragments() in R/fragments.R) purely for readability -- exactly
+# like build_ms2_library()'s labeling, this never removes or adds a peak,
+# it only names one that's already there when a theoretical fragment lines
+# up within fragment_ppm.
+#
+# Returns list(records = <spectrum records for write_msp()/write_mgf()>,
+#              summary = one row per group, whether or not it made the cut).
+build_empirical_ms2_library <- function(mets, dict = STANDARD_DICT,
+                                         ms2_confirmations, ms2_spectra,
+                                         ion_types = c("aB", "w", "y", "b"),
+                                         frag_z_range = 1:2, h_offset = 0,
+                                         fragment_ppm = 10,
+                                         min_consensus_fraction = 0.5,
+                                         min_consensus_peak_intensity = 0.01,
+                                         min_peaks_for_library = 2,
+                                         label_peaks = TRUE,
+                                         max_spectra = 2000) {
+  empty <- list(records = list(), summary = data.frame())
+  if (is.null(ms2_confirmations) || nrow(ms2_confirmations) == 0) return(empty)
+
+  grp_key <- paste(ms2_confirmations$met_id, ms2_confirmations$k_oxid,
+                   ms2_confirmations$z, ms2_confirmations$adduct, sep = "|")
+  summary_rows <- list()
+  recs <- list()
+
+  for (key in unique(grp_key)) {
+    sub <- ms2_confirmations[grp_key == key, , drop = FALSE]
+    met <- mets[[which(vapply(mets, function(m) identical(m$id, sub$met_id[1]), logical(1)))]]
+
+    # Keep each spectrum paired with its originating sample through the
+    # filter below -- contributors can drop rows at any position (a
+    # confirmed hit whose spectrum key doesn't resolve), so slicing
+    # sub$sample by position after filtering would misattribute samples.
+    raw <- lapply(seq_len(nrow(sub)), function(i) {
+      spec_key <- paste(sub$sample[i], sub$met_id[i], sub$k_oxid[i], sub$z[i],
+                        sub$adduct[i], sep = "|")
+      list(sample = sub$sample[i], spectrum = ms2_spectra[[spec_key]])
+    })
+    raw <- Filter(function(x) !is.null(x$spectrum) && nrow(x$spectrum) > 0, raw)
+    contributors <- lapply(raw, function(x) x$spectrum)
+    contrib_samples <- vapply(raw, function(x) x$sample, character(1))
+
+    row <- data.frame(
+      met_id = met$id, met_name = met$name, kind = met$kind, n = met$n,
+      k_oxid = sub$k_oxid[1], z = sub$z[1], adduct = sub$adduct[1],
+      n_source_spectra = length(contributors),
+      source_samples = paste(sort(unique(contrib_samples)), collapse = ";"),
+      stringsAsFactors = FALSE
+    )
+    if (length(contributors) == 0) {
+      row$n_consensus_peaks <- 0L; row$written_to_library <- FALSE
+      summary_rows[[length(summary_rows) + 1]] <- row
+      next
+    }
+
+    consensus <- .consensus_ms2_peaks(contributors, fragment_ppm,
+                                      min_consensus_fraction,
+                                      min_consensus_peak_intensity)
+    row$n_consensus_peaks <- nrow(consensus)
+    if (nrow(consensus) < min_peaks_for_library) {
+      row$written_to_library <- FALSE
+      summary_rows[[length(summary_rows) + 1]] <- row
+      next
+    }
+    row$written_to_library <- TRUE
+    summary_rows[[length(summary_rows) + 1]] <- row
+
+    consensus$annotation <- NA_character_
+    if (label_peaks) {
+      frags <- generate_fragments(met, dict, ion_types = ion_types, z_range = frag_z_range)
+      hits <- match_fragments(frags, consensus[, c("mz", "intensity")],
+                              tol_ppm = fragment_ppm, z_range = frag_z_range)
+      if (nrow(hits) > 0) {
+        for (h in seq_len(nrow(hits))) {
+          idx <- which(consensus$mz == hits$obs_mz[h])
+          if (length(idx) == 0) next
+          base <- switch(hits$ion_type[h], aB = "a-B", bB = "b-B", hits$ion_type[h])
+          lbl <- sprintf("%s%d^%d-", base, hits$frag_length[h], hits$z[h])
+          consensus$annotation[idx[1]] <- if (is.na(consensus$annotation[idx[1]])) lbl
+                                          else paste(consensus$annotation[idx[1]], lbl, sep = " / ")
+        }
+      }
+    }
+    consensus$annotation <- ifelse(is.na(consensus$annotation), "", consensus$annotation)
+
+    info <- metabolite_mass_info(met, dict)
+    mass <- ps_oxid_mass(info$mono_mass, sub$k_oxid[1])
+    fv <- ps_oxid_formula(info$formula_vec, sub$k_oxid[1])
+    ad_shift <- if (identical(sub$adduct[1], "H")) 0 else adduct_shift(sub$adduct[1])
+    prec_mz <- (mass + ad_shift + h_offset - sub$z[1] * .PROTON) / sub$z[1]
+
+    recs[[length(recs) + 1]] <- .spectrum_record(
+      name = paste0(met$name, if (sub$k_oxid[1] > 0) paste0(" +", sub$k_oxid[1], "Ox") else "",
+                   " [z=", sub$z[1], if (!identical(sub$adduct[1], "H")) paste0(" ", sub$adduct[1]) else "",
+                   "] MS2 -- empirical"),
+      precursor_mz = prec_mz, z = sub$z[1], formula = format_formula(fv),
+      mono_mass = mass, level = "MS2",
+      fields = c(met_id = met$id, met_kind = met$kind, k_oxid = as.character(sub$k_oxid[1]),
+                adduct = sub$adduct[1], n_source_spectra = as.character(row$n_source_spectra),
+                source_samples = row$source_samples),
+      peaks = data.frame(mz = consensus$mz, intensity = consensus$intensity,
+                        annotation = consensus$annotation, stringsAsFactors = FALSE))
+  }
+
+  recs <- .cap_records(recs, max_spectra, "Empirical MS2 spectral library",
+                       "the number of confirmed batch MS2 hits")
+  list(records = recs, summary = do.call(rbind, summary_rows))
+}
+
+# Pool real MS2 spectra (one data.frame(mz, intensity) per contributing
+# scan) into one consensus spectrum: each spectrum is independently
+# rescaled to its own 0-100 base peak, all peaks are pooled and sorted by
+# mz, then walked once left-to-right, growing a cluster while the next
+# peak sits within fragment_ppm of the cluster's running mean AND isn't a
+# second peak from a spectrum already represented in it (two neighbouring
+# peaks in the same acquired spectrum must never count as each other's
+# "recurrence" vote). This is a simple greedy pass, not a full clustering
+# solve, but it is adequate at fragment_ppm-scale tolerances.
+.consensus_ms2_peaks <- function(spectra_list, fragment_ppm,
+                                 min_consensus_fraction,
+                                 min_consensus_peak_intensity) {
+  n <- length(spectra_list)
+  tagged <- lapply(seq_len(n), function(i) {
+    sp <- spectra_list[[i]]
+    sp$intensity <- sp$intensity / max(sp$intensity) * 100
+    sp$spectrum_id <- i
+    sp[, c("mz", "intensity", "spectrum_id")]
+  })
+  allpk <- do.call(rbind, tagged)
+  allpk <- allpk[order(allpk$mz), ]
+
+  clusters <- list()
+  cur <- allpk[1, , drop = FALSE]
+  cur_ids <- cur$spectrum_id
+  if (nrow(allpk) > 1) {
+    for (r in 2:nrow(allpk)) {
+      row <- allpk[r, , drop = FALSE]
+      cur_mean_mz <- mean(cur$mz)
+      tol <- cur_mean_mz * fragment_ppm / 1e6
+      if (abs(row$mz - cur_mean_mz) <= tol && !(row$spectrum_id %in% cur_ids)) {
+        cur <- rbind(cur, row)
+        cur_ids <- c(cur_ids, row$spectrum_id)
+      } else {
+        clusters[[length(clusters) + 1]] <- cur
+        cur <- row
+        cur_ids <- row$spectrum_id
+      }
+    }
+  }
+  clusters[[length(clusters) + 1]] <- cur
+
+  out <- do.call(rbind, lapply(clusters, function(cl) {
+    data.frame(mz = mean(cl$mz), intensity = mean(cl$intensity),
+              n_spectra_with_peak = nrow(cl), stringsAsFactors = FALSE)
+  }))
+  out$n_spectra_total <- n
+  out$consensus_fraction <- out$n_spectra_with_peak / n
+  out <- out[out$n_spectra_total == 1 | out$consensus_fraction >= min_consensus_fraction, , drop = FALSE]
+  if (nrow(out) == 0) return(out[, c("mz", "intensity")])
+
+  out$intensity <- out$intensity / max(out$intensity) * 100
+  out <- out[out$intensity >= min_consensus_peak_intensity * 100, , drop = FALSE]
+  out <- out[order(out$mz), , drop = FALSE]
+  rownames(out) <- NULL
+  out[, c("mz", "intensity")]
+}
+
 ## ---- MGF writer -------------------------------------------------------------
 write_mgf <- function(records, file) {
   con <- file(file, open = "wt")
@@ -244,11 +443,11 @@ write_mgf <- function(records, file) {
 }
 
 ## ---- MSP writer -------------------------------------------------------------
-# measured = TRUE labels records as acquired/annotated data (peaks and
-# precursor mz/intensity are real instrument values; only the per-peak
-# fragment-ion ANNOTATION is a prediction) rather than a fully theoretical
-# spectrum -- see batch_annotated_msp_records() in R/mirror_plot.R for the
-# one caller that uses this.
+# measured = TRUE labels records as acquired/annotated data (peaks are real
+# instrument values -- pooled consensus peaks for build_empirical_ms2_library(),
+# or a single acquired spectrum for batch_annotated_msp_records() in
+# R/mirror_plot.R -- only the per-peak fragment-ion ANNOTATION is a
+# prediction) rather than a fully theoretical spectrum.
 write_msp <- function(records, file, measured = FALSE) {
   con <- file(file, open = "wt")
   on.exit(close(con), add = TRUE)

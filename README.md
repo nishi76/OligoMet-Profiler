@@ -185,7 +185,20 @@ export_spectral_libraries(mets, dict, out_dir = "results", prefix = "my_oligo")
 - **MS2 library** — one spectrum per (metabolite, precursor charge),
   holding McLuckey terminal and internal ions at the requested fragment
   charges, annotated in the MSP (`w4^2-`, `a-B5^1-`, `w-a(3,8)^1-`).
-  Intensities are flat placeholders — match on *m/z* only.
+  Intensities are a rule-based heuristic (PS-linkage lability, MOE-PS vs
+  DNA-PS dominant ion series, purine base-loss lability) — match on
+  *m/z* only, do not treat them as measured abundances.
+- **Empirical MS2 library** — the real alternative, built from actual
+  acquired DDA/MS2 spectra rather than predicted ones. After a batch run
+  with MS2 confirmation enabled, `build_empirical_ms2_library()`
+  (`R/export_spectral.R`) pools every real MS2 spectrum confirmed for the
+  same (metabolite, oxidation level, charge, adduct) across all
+  samples/replicates into one consensus spectrum — a peak survives only
+  if it recurs, within tolerance, across a large-enough fraction of the
+  contributing spectra, denoising against one-off chemical noise the way
+  a NIST-style consensus spectrum does. Available from the Shiny app's
+  Batch Results tab ("Download empirical MS2 library") and written
+  automatically by `run_batch_ms.R` alongside the predicted library.
 
 ## Performance
 

@@ -131,4 +131,64 @@ cat("\n=== 7. Files written ===\n")
 for (p in paths) cat(sprintf("  %-34s %7d bytes\n", basename(p),
                              file.info(p)$size))
 
+cat("\n=== 8. Empirical MS2 library: consensus denoising across replicates ===\n")
+source(file.path(.pkg_root, "R", "batch_ms_processing.R"))
+
+met <- mets[[1]]
+frags <- generate_fragments(met, ion_types = c("aB", "w", "y", "b"), z_range = 1)
+true_mz <- vapply(frags[1:3], function(f) f$mz_table$mz[1], numeric(1))
+
+# Three "replicate" samples: each carries the same three real fragment
+# peaks (small ppm jitter, as real scans would show) plus one noise peak
+# unique to that sample -- a peak seen by only one of three spectra should
+# not survive min_consensus_fraction = 0.5.
+set.seed(7)
+ms2_spectra <- list()
+ms2_confirmations <- data.frame(
+  sample = c("s1", "s2", "s3"), met_id = met$id, met_name = met$name,
+  k_oxid = 0, z = 1, adduct = "H", stringsAsFactors = FALSE
+)
+for (i in 1:3) {
+  jitter <- 1 + rnorm(3, 0, 2e-6)          # ~2 ppm jitter, well inside fragment_ppm=10
+  noise_mz <- true_mz[1] * (1 + runif(1, 500, 900) / 1e6)  # unique per sample, well outside 10 ppm
+  spec <- data.frame(mz = c(true_mz * jitter, noise_mz),
+                     intensity = c(100, 80, 60, 40), stringsAsFactors = FALSE)
+  ms2_spectra[[paste0("s", i, "|", met$id, "|0|1|H")]] <- spec
+}
+
+emp <- build_empirical_ms2_library(mets, STANDARD_DICT, ms2_confirmations, ms2_spectra,
+                                    frag_z_range = 1, fragment_ppm = 10,
+                                    min_consensus_fraction = 0.5,
+                                    min_peaks_for_library = 2)
+cat("groups written:", length(emp$records), " (expect 1)\n")
+if (length(emp$records) != 1) stop("expected exactly one empirical MS2 library entry")
+r <- emp$records[[1]]
+cat("consensus peaks:", nrow(r$peaks), " (expect 3 -- the noise peaks must not recur)\n")
+if (nrow(r$peaks) != 3) stop("consensus should keep exactly the 3 recurring real peaks")
+if (emp$summary$n_source_spectra[1] != 3) stop("summary should report 3 contributing spectra")
+if (emp$summary$n_consensus_peaks[1] != 3) stop("summary should report 3 consensus peaks")
+cat("annotated peaks:", sum(nzchar(r$peaks$annotation)), "/", nrow(r$peaks),
+    "(theoretical-fragment labels are cosmetic only)\n")
+
+cat("\n--- A metabolite confirmed in only one sample keeps all its peaks ---\n")
+met2 <- mets[[2]]
+ms2_confirmations2 <- data.frame(sample = "s1", met_id = met2$id, met_name = met2$name,
+                                  k_oxid = 0, z = 1, adduct = "H", stringsAsFactors = FALSE)
+ms2_spectra2 <- list()
+ms2_spectra2[[paste0("s1|", met2$id, "|0|1|H")]] <- data.frame(
+  mz = c(300.1234, 450.5678), intensity = c(100, 50), stringsAsFactors = FALSE)
+emp2 <- build_empirical_ms2_library(mets, STANDARD_DICT, ms2_confirmations2, ms2_spectra2,
+                                     frag_z_range = 1, fragment_ppm = 10,
+                                     min_peaks_for_library = 2)
+cat("single-sample consensus peaks:", nrow(emp2$records[[1]]$peaks), "(expect 2, nothing to vote against)\n")
+if (nrow(emp2$records[[1]]$peaks) != 2) stop("a lone contributing spectrum should keep all its peaks")
+
+cat("\n--- Written MSP is well-formed ---\n")
+emp_msp <- file.path(tempdir(), "empirical_ms2_test.msp")
+write_msp(emp$records, emp_msp, measured = TRUE)
+ln <- readLines(emp_msp)
+if (!any(grepl("^Num Peaks: 3$", ln))) stop("empirical MSP should declare 3 peaks")
+if (!any(grepl("^COMMENT: Acquired MS2 spectrum", ln))) stop("empirical MSP should be marked as acquired data")
+cat("empirical MSP written and well-formed:", emp_msp, "\n")
+
 cat("\n==== All spectral export tests passed ====\n")

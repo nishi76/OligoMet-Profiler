@@ -51,6 +51,7 @@ source(file.path(script_dir, "R", "ms_matching.R"))
 source(file.path(script_dir, "R", "batch_ms_processing.R"))
 source(file.path(script_dir, "R", "statistics.R"))
 source(file.path(script_dir, "R", "build_workbook.R"))
+source(file.path(script_dir, "R", "export_spectral.R"))
 
 ## ===========================================================================
 ## CONFIG -- edit this block for your experiment
@@ -173,6 +174,29 @@ run_batch_pipeline <- function() {
   unmatched_csv <- file.path(PARAMS$results_dir, paste0(PARAMS$output_prefix, "_unmatched_peaks.csv"))
   utils::write.csv(batch_results$unmatched, unmatched_csv, row.names = FALSE)
   cat("  Unmatched peaks:", unmatched_csv, "\n")
+
+  # Step 4b: empirical MS2 library -- one consensus spectrum per confirmed
+  # (metabolite, oxidation, charge, adduct), built from the real acquired
+  # MS2 spectra just confirmed above (not the heuristic-intensity predicted
+  # library build_ms2_library() produces).
+  if (RUN_MS2_CONFIRMATION && nrow(batch_results$ms2_confirmations) > 0) {
+    emp <- build_empirical_ms2_library(mets, dict, batch_results$ms2_confirmations,
+                                        batch_results$ms2_spectra,
+                                        frag_z_range = PARAMS$frag_z_range,
+                                        h_offset = PARAMS$h_offset,
+                                        fragment_ppm = PARAMS$frag_tol_ppm)
+    emp_summary_csv <- file.path(PARAMS$results_dir,
+                                  paste0(PARAMS$output_prefix, "_empirical_MS2_library_summary.csv"))
+    utils::write.csv(emp$summary, emp_summary_csv, row.names = FALSE)
+    if (length(emp$records) > 0) {
+      emp_msp <- file.path(PARAMS$results_dir, paste0(PARAMS$output_prefix, "_MS2_library_EMPIRICAL.msp"))
+      write_msp(emp$records, emp_msp, measured = TRUE)
+      cat("  Empirical MS2 library:", emp_msp, "(", length(emp$records), "consensus spectra )\n")
+    } else {
+      cat("  Empirical MS2 library: no group had enough confirmed spectra --",
+          "see", emp_summary_csv, "\n")
+    }
+  }
 
   # Step 5: statistical comparison
   stats_results <- NULL
