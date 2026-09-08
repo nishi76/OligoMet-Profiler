@@ -111,6 +111,11 @@ if (nrow(matched_frags) > 0) {
   cat("Ion types:", paste(unique(matched_frags$ion_type), collapse=", "), "\n")
   cat("Covered sites:", paste(sort(unique(matched_frags$cleavage_site)), collapse=","), "\n")
 }
+stopifnot(length(unique(matched_frags$obs_mz)) == nrow(matched_frags))
+stopifnot(identical(matched_frags,
+                     match_fragments(all_frags, ms2_peaks, tol_ppm = 10, z_range = 1:2,
+                                      adducts = c("H"))))
+cat("No multi-assigned peaks; adducts=c('H') default is byte-identical: PASS\n")
 
 # Check diagnostics
 diags <- check_ps_diagnostic(ms2_peaks)
@@ -233,5 +238,45 @@ if (.have_spectra()) {
 } else {
   cat("\n--- read_ms_file() Spectra/mzR path: SKIPPED (Spectra/mzR not installed) ---\n")
 }
+
+## ---- .isotope_fit() penalizes partial isotope-pattern matches ------------
+cat("\n--- .isotope_fit() partial-match penalty ---\n")
+theo_iso_test <- data.frame(mz = c(1000.00, 1000.50, 1001.00, 1001.50, 1002.00),
+                             abundance = c(1.0, 0.6, 0.3, 0.1, 0.05))
+# Full match: every theoretical peak has a corresponding observed feature.
+obs_full <- data.frame(mz = theo_iso_test$mz,
+                        max_intensity = c(1.0, 0.6, 0.3, 0.1, 0.05) * 1e5)
+fit_full <- .isotope_fit(theo_iso_test, obs_full, ppm_tol = 10)
+# Partial match: only the first 2 of 5 theoretical peaks are observed.
+obs_partial <- obs_full[1:2, ]
+fit_partial <- .isotope_fit(theo_iso_test, obs_partial, ppm_tol = 10)
+cat(sprintf("  full match fit: %.4f   2/5 partial match fit: %.4f\n", fit_full, fit_partial))
+stopifnot(fit_full > 0.99)                 # full match still ~1
+stopifnot(fit_partial < 0.5)               # 2/5 matched must score well below a naive 0.857
+stopifnot(fit_partial < fit_full)
+cat(".isotope_fit() partial-match penalty verified: PASS\n")
+
+## ---- MS1-gating invariant: MS2 lookup only for MS1-confirmed hits --------
+# annotate_metabolites() must never call find_ms2_spectra() for a
+# metabolite that had no MS1 match -- locks in the "match MS1 first, only
+# build MS2 for detected precursors" invariant the mirror-plot workflow
+# relies on. mets[[9]] has no MS1 feature at all (ms1_features above only
+# covers mets[1:8]), so even with a plausible-looking MS2 spectrum sitting
+# right at its z=6 precursor mz, it must never produce an ms2_results entry.
+cat("\n--- MS1-gating: MS2 lookup skipped without an MS1 match ---\n")
+ungated_met <- mets[[9]]
+ungated_mz <- (metabolite_mass_info(ungated_met)$mono_mass - 6 * .PROTON) / 6
+ungated_ms2 <- data.frame(rt = 15.0, precursor_mz = ungated_mz, precursor_z = 6L,
+                           mz = c(200.1, 300.2), intensity = c(500, 400),
+                           stringsAsFactors = FALSE)
+ms2_data_gating <- rbind(ms2_data, ungated_ms2)
+results_gating <- annotate_metabolites(mets, ms1_features, ms2_data_gating,
+                                        ppm_tol = 10, z_range = 3:12,
+                                        adducts = c("H"), max_oxid = 0,
+                                        frag_tol_ppm = 10, frag_z_range = 1:2,
+                                        n_iso = 0, use_envipat = FALSE)
+stopifnot(!(ungated_met$id %in% names(results_gating$ms2_results)))
+stopifnot(!(ungated_met$id %in% results_gating$ms1_matches$met_id))
+cat("mets[[9]] has no MS1 match and correctly gets no MS2 lookup: PASS\n")
 
 cat("\n==== All MS matching tests passed ====\n")

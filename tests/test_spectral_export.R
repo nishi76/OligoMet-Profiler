@@ -70,6 +70,46 @@ if (abs(r$precursor_mz - expect) > 1e-3)
 if (nrow(r$peaks) < 10) stop("MS2 spectrum has implausibly few fragment ions")
 if (is.unsorted(r$peaks$mz)) stop("MS2 peak list is not sorted by m/z")
 
+cat("\n=== 3b. MS2 library intensity cutoff (.filter_min_rel_intensity) ===\n")
+# Unit-test the filter directly on synthetic peaks: under the real
+# fragment_intensity_weight() constants, the weakest fragment is never
+# below ~11% of the strongest (see .filter_min_rel_intensity()'s header
+# comment), so a real build_ms2_library() call can never demonstrate the
+# default 5% cutoff actually removing anything -- that's an accurate
+# reflection of today's narrow heuristic range, not a bug in the filter.
+synth_peaks_intensity <- data.frame(mz = 1:10, intensity = c(100, 80, 50, 20, 10, 4, 3, 2, 1, 0.5))
+filtered_5pct <- .filter_min_rel_intensity(synth_peaks_intensity, 0.05)
+cat("  synthetic: 10 peaks, intensities down to 0.5% of max; filtered at 5% keeps:",
+    nrow(filtered_5pct), "\n")
+if (nrow(filtered_5pct) != 5)  # 100,80,50,20,10 are >= 5.0 (5% of 100); 4 is not
+  stop(".filter_min_rel_intensity(0.05) did not keep the expected 5/10 peaks")
+if (!all(filtered_5pct$intensity >= 5 - 1e-9))
+  stop("A retained synthetic peak is below the 5% cutoff")
+if (nrow(.filter_min_rel_intensity(synth_peaks_intensity, 0)) != 10)
+  stop("min_rel_intensity=0 (disabled) should keep every peak")
+cat("  .filter_min_rel_intensity() cutoff and disable (0) behave correctly: PASS\n")
+
+# Confirm build_ms2_library()'s min_rel_intensity parameter is wired through
+# and doesn't error, even though it's a no-op for this oligo/ion-type set.
+ms2_filtered <- build_ms2_library(mets, precursor_z_range = 5:6, frag_z_range = 1:2,
+                                  oligo_name = "nusinersen")  # default min_rel_intensity = 0.05
+if (length(ms2_filtered) != length(mets) * 2)
+  stop("build_ms2_library() with default min_rel_intensity changed spectrum count unexpectedly")
+
+cat("\n=== 3c. MS2 fragment formula in MSP-export annotation ===\n")
+first_annot <- ms2_filtered[[1]]$peaks$annotation
+if (!all(grepl("\\[", first_annot)))
+  stop("MS2 library annotations should all carry a bracketed fragment formula")
+# .fragment_label(include_formula=FALSE) output must be an exact prefix of
+# the include_formula=TRUE output -- confirms the short (mirror-plot) form
+# is unaffected by this addition.
+f1 <- generate_fragments(mets[[1]])[[1]]
+lbl_short <- .fragment_label(f1, 1, include_formula = FALSE)
+lbl_long <- .fragment_label(f1, 1, include_formula = TRUE)
+cat("  short:", lbl_short, " long:", lbl_long, "\n")
+if (!startsWith(lbl_long, lbl_short))
+  stop(".fragment_label(include_formula=TRUE) is not an extension of the short form")
+
 cat("\n=== 4. MGF structure ===\n")
 out <- file.path(tempdir(), "spectral_test")
 dir.create(out, showWarnings = FALSE, recursive = TRUE)
