@@ -47,7 +47,8 @@ if (!is.null(.module_dir)) {
                "metabolites.R", "mass_isotope.R", "fragments.R",
                "ms_matching.R", "spectra_io.R", "batch_ms_processing.R", "statistics.R",
                "degradation.R", "build_workbook.R", "build_report.R",
-               "export_acquisition.R", "export_spectral.R", "mirror_plot.R")) {
+               "export_acquisition.R", "export_spectral.R", "mirror_plot.R",
+               "agent_tools.R", "agent_core.R")) {
     source(file.path(.module_dir, "R", .f))
   }
 } else if (requireNamespace("OligoMetProfiler", quietly = TRUE)) {
@@ -1029,6 +1030,47 @@ ui <- fluidPage(
               downloadButton("dl_kind_stats_csv", "Download class comparison table (.csv)",
                              class = "btn-outline-primary")
             )
+          ),
+          tabPanel("Ask OligoMet",
+            tags$div(style = "padding-top: 12px;",
+              tags$p(style = "font-size: 12px; color: #6c757d;",
+                "Chat with an LLM agent that calls this app's own analysis functions -- ",
+                "parsing a sequence, building the metabolite library, matching MS1 ",
+                "features, confirming MS2, summarizing degradation, comparing groups -- ",
+                "and must cite the real evidence (ppm error, ambiguity, coverage, ",
+                "confirmation score) behind every claim rather than guess. It can see ",
+                "whatever sequence/library/batch results are already loaded in this ",
+                "session, but does not write back into the main tabs -- run ",
+                "\"1. Generate Library\" / \"2. Import & Process MS Data\" yourself if ",
+                "you want a suggestion it made reflected in the main view."),
+              fluidRow(
+                column(6, radioButtons("agent_backend", "LLM backend",
+                         choices = c("Anthropic Claude" = "anthropic", "OpenAI" = "openai"),
+                         inline = TRUE)),
+                column(6, tags$div(style = "padding-top: 26px; font-size: 11px; color: #6c757d;",
+                         textOutput("agent_key_status", inline = TRUE)))
+              ),
+              tags$p(style = "font-size: 11px; color: #6c757d;",
+                "API keys are read from the ANTHROPIC_API_KEY / OPENAI_API_KEY ",
+                "environment variables wherever this app is running -- never typed ",
+                "into this page."),
+              tags$div(style = paste("border:1px solid #ddd; border-radius:8px;",
+                                     "padding:10px; min-height:240px; max-height:480px;",
+                                     "overflow-y:auto; background:#fafafa;"),
+                uiOutput("agent_chat_html")
+              ),
+              tags$div(style = "height: 8px;"),
+              fluidRow(
+                column(9, textAreaInput("agent_input", NULL, width = "100%", rows = 2,
+                         placeholder = "Ask about your sequence, a match, or what's degrading...")),
+                column(3,
+                  actionButton("agent_send", "Send", class = "btn-primary w-100"),
+                  tags$div(style = "height: 4px;"),
+                  actionButton("agent_clear", "Clear", class = "btn-outline-secondary btn-sm w-100"))
+              ),
+              conditionalPanel(condition = "output.agent_busy_flag == 'true'",
+                tags$p(style = "color: #6c757d; font-size: 12px;", "Thinking..."))
+            )
           )
         ),
 
@@ -1145,7 +1187,8 @@ server <- function(input, output, session) {
     status_text = "Enter a sequence and click \"1. Generate Library\".\n",
     batch_features = NULL, batch_ms_results = NULL,
     sample_meta = NULL, stats_results = NULL, kind_stats_results = NULL,
-    library_ready = FALSE
+    library_ready = FALSE,
+    agent_messages = list(), agent_ctx = list(), agent_busy = FALSE
   )
 
   ## ---- Batch sample metadata table (group/timepoint assignment) -------------
@@ -2420,6 +2463,108 @@ server <- function(input, output, session) {
     if (!is.null(rv$kind_stats_results) && !is.null(rv$kind_stats_results$result)) "true" else "false"
   })
   outputOptions(output, "kind_stats_ready", suspendWhenHidden = FALSE)
+
+  ## ---- Ask OligoMet: in-app LLM chat assistant ------------------------------
+  # See R/agent_core.R (run_agent_turn(), the provider-agnostic ReAct loop)
+  # and R/agent_tools.R (the tool registry it calls). This tab is the
+  # "naive researcher" front end from /root/.claude/plans/staged-mapping-
+  # blanket.md -- Track A; the MCP server (Track B) shares the same tool
+  # registry from a separate process, see inst/mcp_server/.
+  output$agent_key_status <- renderText({
+    a <- nzchar(Sys.getenv("ANTHROPIC_API_KEY", ""))
+    o <- nzchar(Sys.getenv("OPENAI_API_KEY", ""))
+    paste0("Anthropic key: ", if (a) "configured" else "not set",
+          "  |  OpenAI key: ", if (o) "configured" else "not set")
+  })
+
+  # Turns the canonical message list (content BLOCKS -- text/tool_use/
+  # tool_result) into flat (role, text) entries for display. Tool calls get
+  # their own compact "reasoning trace" line (matching MSAgent's own
+  # transparency design) rather than being hidden; tool_result blocks
+  # (the raw JSON a tool returned) are not shown directly -- the
+  # assistant's own next text turn is what narrates them.
+  .agent_display_entries <- function(messages) {
+    entries <- list()
+    for (m in messages) {
+      for (b in m$content) {
+        if (identical(b$type, "text") && nzchar(b$text %||% "")) {
+          entries[[length(entries) + 1]] <- list(role = m$role, text = b$text)
+        } else if (identical(b$type, "tool_use")) {
+          entries[[length(entries) + 1]] <- list(
+            role = "tool",
+            text = paste0("Called ", b$name, "(",
+                         as.character(jsonlite::toJSON(b$input, auto_unbox = TRUE, na = "null")), ")"))
+        }
+      }
+    }
+    entries
+  }
+
+  .agent_chat_bubble_html <- function(role, text) {
+    esc <- gsub("\n", "<br/>", htmltools::htmlEscape(text), fixed = TRUE)
+    style <- switch(role,
+      user = "background:#0279EE; color:#fff; margin-left:auto; margin-right:0;",
+      tool = paste("background:#fff; color:#6c757d; border:1px dashed #ccc;",
+                   "font-family:monospace; font-size:11px; margin-right:auto;"),
+      "background:#fff; border:1px solid #ddd; margin-right:auto;")
+    label <- switch(role, user = "You", tool = "Tool call", "Assistant")
+    sprintf(paste0('<div style="max-width:80%%; padding:8px 12px; margin:6px 0;',
+                  'border-radius:8px; %s">',
+                  '<div style="font-size:10px; opacity:0.7; margin-bottom:2px;">%s</div>',
+                  '%s</div>'),
+           style, label, esc)
+  }
+
+  output$agent_chat_html <- renderUI({
+    entries <- .agent_display_entries(rv$agent_messages)
+    if (length(entries) == 0) {
+      return(tags$p(style = "color: #6c757d;",
+                    "Ask a question about your sequence, a match, or what's degrading."))
+    }
+    HTML(paste(vapply(entries, function(e) .agent_chat_bubble_html(e$role, e$text), character(1)),
+              collapse = ""))
+  })
+
+  output$agent_busy_flag <- reactive(if (isTRUE(rv$agent_busy)) "true" else "false")
+  outputOptions(output, "agent_busy_flag", suspendWhenHidden = FALSE)
+
+  observeEvent(input$agent_clear, {
+    rv$agent_messages <- list()
+    rv$agent_ctx <- list()
+  })
+
+  observeEvent(input$agent_send, {
+    txt <- trimws(input$agent_input %||% "")
+    req(nzchar(txt))
+    updateTextAreaInput(session, "agent_input", value = "")
+    rv$agent_busy <- TRUE
+
+    # The agent's own accumulated context (whatever it has already parsed/
+    # built within this chat) takes priority; the main app's currently
+    # loaded sequence/library/batch results are only the DEFAULT for
+    # anything the chat hasn't touched yet.
+    base_ctx <- list(dict = rv$dict %||% STANDARD_DICT)
+    if (!is.null(rv$spec)) base_ctx$spec <- rv$spec
+    if (!is.null(rv$mets)) base_ctx$mets <- rv$mets
+    if (!is.null(rv$batch_ms_results) && !is.null(rv$batch_ms_results$ms1_matches) &&
+        nrow(rv$batch_ms_results$ms1_matches) > 0) {
+      base_ctx$ms1_matches <- rv$batch_ms_results$ms1_matches
+    }
+    turn_ctx <- utils::modifyList(base_ctx, rv$agent_ctx %||% list())
+    messages <- c(rv$agent_messages, list(user_turn(txt)))
+
+    result <- tryCatch(
+      run_agent_turn(messages, ctx = turn_ctx, backend = input$agent_backend %||% "anthropic"),
+      error = function(e) list(
+        messages = c(messages, list(list(role = "assistant",
+                                         content = list(list(type = "text",
+                                                             text = paste("Error:", conditionMessage(e))))))),
+        ctx = turn_ctx)
+    )
+    rv$agent_messages <- result$messages
+    rv$agent_ctx <- result$ctx
+    rv$agent_busy <- FALSE
+  })
 
   # Merges in the MS2 confirmation columns (n_ms2_peaks, coverage,
   # confirmation_score, confident, ...) when batch MS2 confirmation ran --

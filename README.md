@@ -284,10 +284,35 @@ Requires Python 3.9+ with `inst/python/requirements.txt` installed
 (`pip install -r inst/python/requirements.txt`); everything else in the
 package works without it.
 
+## LLM agent (experimental)
+
+An agent layer inspired by MSAgent (Li, Zhong, Liu *et al.*, bioRxiv 2026,
+doi:10.64898/2026.04.22.720103) sits on top of the same analysis
+functions everything else in this README describes — `R/agent_tools.R`
+wraps parsing, library generation, MS1/MS2 matching, degradation, and
+group comparison as a tool registry, and `R/agent_core.R` drives a
+provider-agnostic (Anthropic or OpenAI) ReAct loop over it, grounding every
+claim in the pipeline's own computed evidence (ppm error, isotope fit,
+`n_candidates`/`ambiguous`, coverage, confirmation score) rather than the
+model's own say-so. Two front ends share that one registry:
+
+- **In-app chat** — the "Ask OligoMet" tab in the dashboard. Reads whatever
+  sequence/library/batch results are already loaded in the session; reply
+  is grounded the same way. Needs `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`
+  set in the environment the app runs in (never typed into the page).
+- **MCP server** — `inst/mcp_server/`, for Claude Code / Claude Desktop /
+  claude.ai. Talks to a small persistent R API (`Rscript run_agent_api.R`)
+  over HTTP; see `inst/mcp_server/README.md` for setup.
+
+Design rationale, what does and doesn't translate from MSAgent's own
+small-molecule setting, and the phased build plan are in
+`/root/.claude/plans/staged-mapping-blanket.md`.
+
 ## Dependencies
 
-Required: `openxlsx`, `ggplot2`, `xml2`, `xfun` (installed with the
-package). Dashboard: `shiny`, `DT`, `bslib`, `shinyFiles`. Optional:
+Required: `openxlsx`, `ggplot2`, `xml2`, `xfun`, `jsonlite` (installed with
+the package; the last one only exercised by the LLM agent layer above).
+Dashboard: `shiny`, `DT`, `bslib`, `shinyFiles`. Optional:
 `enviPat` (higher-accuracy isotope patterns; a built-in convolution is
 used if absent), `rmarkdown` (HTML/PDF reports), and `Spectra`/`mzR`
 (faster, more robust mzML/mzXML reading — a built-in xml2-based parser is
