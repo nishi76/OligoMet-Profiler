@@ -39,7 +39,18 @@
   args <- c("-sS", "--max-time", as.character(timeout_sec), "-X", "POST", url,
            header_args, "-H", "Content-Type: application/json",
            "--data-binary", paste0("@", tmp_body), "-o", tmp_out, "-w", "%{http_code}")
-  status_lines <- system2("curl", args = args, stdout = TRUE, stderr = TRUE)
+  # shQuote() is not optional here: system2() joins `args` with plain spaces
+  # and hands the result to a shell -- it does NOT quote elements itself, so
+  # any element containing a space (every "-H" value: "name: value" always
+  # has one, and OpenAI's "Authorization: Bearer <key>" has two) gets
+  # word-split into extra shell tokens instead of staying one argument. A
+  # live Gemini API call this session actually hit this: curl read the
+  # split-off "application/json" tail of the Content-Type header as a second
+  # positional URL and failed with "Could not resolve host: application"
+  # while curl's own reported exit code (6) got silently swallowed into
+  # $status alongside the real (buggy) "%{http_code}" text -- worth knowing
+  # if a future error here ever looks like a status code with extra digits.
+  status_lines <- system2("curl", args = shQuote(args), stdout = TRUE, stderr = TRUE)
   http_code <- suppressWarnings(as.integer(status_lines[length(status_lines)]))
   resp_text <- if (file.exists(tmp_out)) paste(readLines(tmp_out, warn = FALSE, encoding = "UTF-8"), collapse = "\n") else ""
   if (is.na(http_code)) {
@@ -52,17 +63,18 @@
   key <- switch(backend,
     anthropic = Sys.getenv("ANTHROPIC_API_KEY", ""),
     openai = Sys.getenv("OPENAI_API_KEY", ""),
+    gemini = Sys.getenv("GEMINI_API_KEY", ""),
     stop("Unknown backend: ", backend))
   if (!nzchar(key)) {
     stop("No API key set for backend '", backend, "'. Set ",
-        switch(backend, anthropic = "ANTHROPIC_API_KEY", openai = "OPENAI_API_KEY"),
-        " in the environment (never type it into the app UI).")
+        switch(backend, anthropic = "ANTHROPIC_API_KEY", openai = "OPENAI_API_KEY", gemini = "GEMINI_API_KEY"),
+        " in the environment, or enter it in the AI Assistant panel's key field.")
   }
   key
 }
 
 .default_model <- function(backend) {
-  switch(backend, anthropic = "claude-sonnet-5", openai = "gpt-4o",
+  switch(backend, anthropic = "claude-sonnet-5", openai = "gpt-4o", gemini = "gemini-2.0-flash",
         stop("Unknown backend: ", backend))
 }
 
@@ -71,8 +83,17 @@
 # shape, so this is close to a passthrough plus the HTTP/auth wiring.
 .llm_call_anthropic <- function(messages, tools, system_prompt, model, api_key,
                                 max_tokens = 4096) {
-  tool_specs <- lapply(tools, function(t) list(name = t$name, description = t$description,
-                                               input_schema = t$input_schema))
+  # unname() matters: tools (AGENT_TOOLS) is a NAMED list (named by tool
+  # name for $-lookup elsewhere), and jsonlite::toJSON serializes a named
+  # list as a JSON OBJECT rather than an ARRAY -- silently sending
+  # '"tools":{"parse_sequence":{...}, ...}' instead of the array of tool
+  # specs every provider's API actually expects. Caught via a real Gemini
+  # API round-trip (HTTP 400: "Unknown name 'parse_sequence' at
+  # 'tools[0].function_declarations'"), which exists for exactly this class
+  # of bug -- an object where an array was expected reads, to jsonlite, as
+  # "this key doesn't belong here". Same fix needed in every adapter below.
+  tool_specs <- lapply(unname(tools), function(t) list(name = t$name, description = t$description,
+                                                        input_schema = t$input_schema))
   body <- list(model = model, max_tokens = max_tokens, system = system_prompt,
               messages = messages, tools = tool_specs)
   resp <- .http_post_json("https://api.anthropic.com/v1/messages",
@@ -138,7 +159,9 @@
 }
 
 .llm_call_openai <- function(messages, tools, system_prompt, model, api_key, max_tokens = 4096) {
-  tool_specs <- lapply(tools, function(t) list(type = "function", `function` = list(
+  # unname() -- see the comment on the Anthropic adapter's own tool_specs
+  # line above; the same named-list-serializes-as-object bug applies here.
+  tool_specs <- lapply(unname(tools), function(t) list(type = "function", `function` = list(
     name = t$name, description = t$description, parameters = t$input_schema)))
   body <- list(model = model, max_tokens = max_tokens,
               messages = .canonical_to_openai_messages(messages, system_prompt),
@@ -155,6 +178,91 @@
   choice <- parsed$choices[[1]]
   list(role = "assistant", content = .openai_message_to_canonical(choice$message),
       stop_reason = if (identical(choice$finish_reason, "tool_calls")) "tool_use" else "end_turn")
+}
+
+## ---- Gemini generateContent adapter -------------------------------------------
+# Gemini's tool-calling shape differs from both of the above: a functionCall
+# part carries no id (unlike Anthropic's tool_use.id / OpenAI's tool_calls[].id),
+# and a functionResponse part is matched back to it by *name*, not id. Our
+# canonical tool_result block only carries tool_use_id, so converting TO
+# Gemini needs an id->name lookup built from every tool_use block seen so far
+# in the history; converting FROM Gemini just invents a local id (Gemini never
+# needs it back) so the rest of run_agent_turn()'s bookkeeping works unchanged.
+.canonical_to_gemini_contents <- function(messages) {
+  id_to_name <- list()
+  for (m in messages) {
+    for (b in m$content) if (identical(b$type, "tool_use")) id_to_name[[b$id]] <- b$name
+  }
+  contents <- list()
+  for (m in messages) {
+    parts <- list()
+    if (identical(m$role, "assistant")) {
+      for (b in m$content) {
+        if (identical(b$type, "text") && nzchar(b$text %||% "")) {
+          parts[[length(parts) + 1]] <- list(text = b$text)
+        } else if (identical(b$type, "tool_use")) {
+          parts[[length(parts) + 1]] <- list(functionCall = list(name = b$name, args = b$input))
+        }
+      }
+      if (length(parts) > 0) contents[[length(contents) + 1]] <- list(role = "model", parts = parts)
+    } else {
+      for (b in m$content) {
+        if (identical(b$type, "text") && nzchar(b$text %||% "")) {
+          parts[[length(parts) + 1]] <- list(text = b$text)
+        } else if (identical(b$type, "tool_result")) {
+          name <- id_to_name[[b$tool_use_id]] %||% "unknown_tool"
+          resp <- tryCatch(jsonlite::fromJSON(b$content, simplifyVector = FALSE),
+                           error = function(e) list(result = b$content))
+          parts[[length(parts) + 1]] <- list(functionResponse = list(name = name, response = resp))
+        }
+      }
+      if (length(parts) > 0) contents[[length(contents) + 1]] <- list(role = "user", parts = parts)
+    }
+  }
+  contents
+}
+
+.gemini_parts_to_canonical <- function(parts) {
+  blocks <- list()
+  call_i <- 0L
+  for (p in parts %||% list()) {
+    if (!is.null(p$text) && nzchar(p$text)) {
+      blocks[[length(blocks) + 1]] <- list(type = "text", text = p$text)
+    } else if (!is.null(p$functionCall)) {
+      call_i <- call_i + 1L
+      blocks[[length(blocks) + 1]] <- list(type = "tool_use", id = paste0("gemini_call_", call_i),
+                                           name = p$functionCall$name, input = p$functionCall$args %||% list())
+    }
+  }
+  blocks
+}
+
+.llm_call_gemini <- function(messages, tools, system_prompt, model, api_key, max_tokens = 4096) {
+  # unname() -- see the comment on the Anthropic adapter's own tool_specs
+  # line; the same named-list-serializes-as-object bug is what this session's
+  # own live Gemini smoke test actually caught (HTTP 400, "Unknown name
+  # 'parse_sequence' at 'tools[0].function_declarations'").
+  tool_specs <- lapply(unname(tools), function(t) list(name = t$name, description = t$description,
+                                                        parameters = t$input_schema))
+  body <- list(system_instruction = list(parts = list(list(text = system_prompt))),
+              contents = .canonical_to_gemini_contents(messages),
+              tools = list(list(functionDeclarations = tool_specs)),
+              generationConfig = list(maxOutputTokens = max_tokens))
+  url <- sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s",
+                model, utils::URLencode(api_key, reserved = TRUE))
+  resp <- .http_post_json(url, headers = list(), body = body)
+  parsed <- tryCatch(jsonlite::fromJSON(resp$body, simplifyVector = FALSE),
+                     error = function(e) stop("Gemini API returned unparseable JSON (HTTP ",
+                                              resp$status, "): ", substr(resp$body, 1, 500)))
+  if (resp$status >= 400) {
+    msg <- if (!is.null(parsed$error$message)) parsed$error$message else resp$body
+    stop("Gemini API error (HTTP ", resp$status, "): ", msg)
+  }
+  cand <- parsed$candidates[[1]]
+  content_blocks <- .gemini_parts_to_canonical(cand$content$parts)
+  has_call <- any(vapply(content_blocks, function(b) identical(b$type, "tool_use"), logical(1)))
+  list(role = "assistant", content = content_blocks,
+      stop_reason = if (has_call) "tool_use" else "end_turn")
 }
 
 ## ---- Grounding discipline: the system prompt every backend gets -------------
@@ -219,11 +327,14 @@ run_agent_turn <- function(messages, ctx = list(), backend = "anthropic",
     openai = function(msgs) .llm_call_openai(msgs, AGENT_TOOLS, system_prompt,
                                              model %||% .default_model("openai"),
                                              api_key %||% .default_api_key("openai")),
+    gemini = function(msgs) .llm_call_gemini(msgs, AGENT_TOOLS, system_prompt,
+                                             model %||% .default_model("gemini"),
+                                             api_key %||% .default_api_key("gemini")),
     stub = local({
       i <- 0L
       function(msgs) { i <<- i + 1L; stub_responses[[i]] }
     }),
-    stop("Unknown backend '", backend, "': use 'anthropic', 'openai', or 'stub'.")
+    stop("Unknown backend '", backend, "': use 'anthropic', 'openai', 'gemini', or 'stub'.")
   )
 
   for (iter in seq_len(max_tool_iterations)) {

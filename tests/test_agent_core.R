@@ -131,5 +131,83 @@ chk("openai->canonical: tool_use block present with parsed input", {
   identical(tb$name, "get_metabolite_mass") && identical(tb$input$met_id, "M01")
 })
 
+cat("\n=== 7. Gemini message-format translation round-trips ===\n")
+gem_canon <- list(
+  user_turn("what's the parent mass?"),
+  list(role = "assistant", content = list(tool_use_block("call_1", "get_metabolite_mass", list(met_id = "M01")))),
+  list(role = "user", content = list(list(type = "tool_result", tool_use_id = "call_1", content = '{"mono_mass":7178.06}', is_error = FALSE)))
+)
+gem_contents <- .canonical_to_gemini_contents(gem_canon)
+chk("user text turn present with role='user'",
+    identical(gem_contents[[1]]$role, "user") && identical(gem_contents[[1]]$parts[[1]]$text, "what's the parent mass?"))
+chk("assistant tool_use translated to role='model' functionCall",
+    identical(gem_contents[[2]]$role, "model") &&
+    identical(gem_contents[[2]]$parts[[1]]$functionCall$name, "get_metabolite_mass") &&
+    identical(gem_contents[[2]]$parts[[1]]$functionCall$args$met_id, "M01"))
+chk("tool_result resolved to functionResponse with the ORIGINAL function name (via id->name lookup, not the id itself)",
+    identical(gem_contents[[3]]$role, "user") &&
+    identical(gem_contents[[3]]$parts[[1]]$functionResponse$name, "get_metabolite_mass") &&
+    identical(gem_contents[[3]]$parts[[1]]$functionResponse$response$mono_mass, 7178.06))
+
+gem_back_text <- .gemini_parts_to_canonical(list(list(text = "Parent mass is 7178.06 Da.")))
+chk("gemini->canonical: plain text part",
+    identical(gem_back_text[[1]]$type, "text") && identical(gem_back_text[[1]]$text, "Parent mass is 7178.06 Da."))
+
+gem_back_call <- .gemini_parts_to_canonical(list(list(functionCall = list(name = "get_metabolite_mass", args = list(met_id = "M01")))))
+chk("gemini->canonical: functionCall becomes a tool_use block with a locally-invented id", {
+  tb <- gem_back_call[[1]]
+  identical(tb$type, "tool_use") && identical(tb$name, "get_metabolite_mass") &&
+    identical(tb$input$met_id, "M01") && nzchar(tb$id)
+})
+
+cat("\n=== 8. Tool specs sent to every provider serialize as a JSON ARRAY, not an object ===\n")
+# Regression test for a real bug this session's own live Gemini smoke test
+# caught: AGENT_TOOLS is a NAMED list (named by tool name, for $-lookup in
+# call_agent_tool()), and jsonlite::toJSON() serializes a named list as a
+# JSON OBJECT rather than an array unless the names are stripped first.
+# Every adapter's tool_specs <- lapply(tools, ...) line must therefore
+# unname() its input, or the "tools" field sent to the provider silently
+# becomes '{"parse_sequence": {...}, ...}' instead of '[{...}, ...]' --
+# every real provider rejects that (Gemini: HTTP 400 "Unknown name
+# 'parse_sequence' at 'tools[0].function_declarations'").
+buggy_json <- jsonlite::toJSON(lapply(AGENT_TOOLS, function(t) list(name = t$name)), auto_unbox = TRUE)
+fixed_json <- jsonlite::toJSON(lapply(unname(AGENT_TOOLS), function(t) list(name = t$name)), auto_unbox = TRUE)
+chk("without unname(): a NAMED list of tool specs (the bug) serializes as a JSON OBJECT",
+    startsWith(as.character(buggy_json), "{"))
+chk("with unname(): the same tool specs serialize as a JSON ARRAY (what every provider needs)",
+    startsWith(as.character(fixed_json), "["))
+
+cat("\n=== 9. .http_post_json() curl args survive shell word-splitting (real network) ===\n")
+# Regression test for a second real bug this session's live Gemini smoke
+# test caught: system2() joins `args` with plain spaces and hands them to a
+# shell WITHOUT quoting -- so a header value like "Content-Type: application/json"
+# (every "-H name: value" pair has an internal space, and OpenAI's
+# "Authorization: Bearer <key>" has two) used to get word-split into extra
+# shell tokens. curl then read the split-off tail as a second positional
+# URL and failed outright ("Could not resolve host: application"), and the
+# resulting garbage in $status (curl's raw exit-code line concatenated with
+# its "%{http_code}" text, e.g. "400000") slipped past the `is.na(http_code)`
+# check as if it were a real (if odd-looking) HTTP status. Needs real
+# network access (skips cleanly if unavailable, same policy as other
+# network-only checks in this suite) since the bug is specifically about
+# what actually reaches the shell/curl, not something a mock can show.
+probe <- suppressWarnings(system2("curl", shQuote(c("-sS", "-o", "/dev/null", "-w", "%{http_code}",
+                                                     "--max-time", "10",
+                                                     "https://generativelanguage.googleapis.com/")),
+                                  stdout = TRUE, stderr = TRUE))
+net_ok <- !is.na(suppressWarnings(as.integer(probe[length(probe)])))
+if (net_ok) {
+  resp <- tryCatch(
+    .http_post_json("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=OBVIOUSLY_INVALID_TEST_KEY",
+                    headers = list(), body = list(contents = list())),
+    error = function(e) NULL)
+  chk("a real HTTPS POST with header values containing spaces returns a real 3-digit HTTP status",
+      !is.null(resp) && resp$status >= 100 && resp$status <= 599)
+  chk("the response body is the provider's real JSON error, not a curl-level connection failure",
+      !is.null(resp) && grepl('"error"', resp$body, fixed = TRUE) && grepl("API key not valid", resp$body, fixed = TRUE))
+} else {
+  cat("  [SKIP] no network access in this environment -- can't exercise the real curl call\n")
+}
+
 if (fail > 0) stop(fail, " agent core check(s) failed")
 cat("\n==== All agent core tests passed ====\n")

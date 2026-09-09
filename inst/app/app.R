@@ -1044,19 +1044,51 @@ ui <- fluidPage(
                 "\"1. Generate Library\" / \"2. Import & Process MS Data\" yourself if ",
                 "you want a suggestion it made reflected in the main view."),
               fluidRow(
-                column(6, radioButtons("agent_backend", "LLM backend",
-                         choices = c("Anthropic Claude" = "anthropic", "OpenAI" = "openai"),
-                         inline = TRUE)),
-                column(6, tags$div(style = "padding-top: 26px; font-size: 11px; color: #6c757d;",
-                         textOutput("agent_key_status", inline = TRUE)))
+                column(3, selectInput("agent_backend", "LLM provider",
+                         choices = c("Anthropic Claude" = "anthropic", "OpenAI" = "openai",
+                                    "Google Gemini" = "gemini"))),
+                column(5, tags$div(style = "padding-top: 24px;", uiOutput("agent_key_ui"))),
+                column(4, tags$div(style = "padding-top: 24px;",
+                         actionButton("agent_save_key", "Save key", icon = icon("floppy-disk"),
+                                      class = "btn-outline-success btn-sm"),
+                         actionButton("agent_clear_key", "Clear", icon = icon("eraser"),
+                                      class = "btn-outline-secondary btn-sm")))
               ),
+              uiOutput("agent_key_status_ui"),
               tags$p(style = "font-size: 11px; color: #6c757d;",
-                "API keys are read from the ANTHROPIC_API_KEY / OPENAI_API_KEY ",
-                "environment variables wherever this app is running -- never typed ",
-                "into this page."),
+                "A key set as an ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY ",
+                "environment variable on the host is used automatically (shown as ",
+                "\"configured\" below). Otherwise enter your own key above -- it stays ",
+                "in this session only unless you click \"Save key\", which writes it to ",
+                ".Renviron so it auto-fills the next time this app starts on this machine."),
+              fluidRow(
+                column(8, tags$div(style = "font-size: 11px; color: #6c757d;",
+                         "Quick questions:")),
+                column(4, uiOutput("agent_usage_badge_ui"))
+              ),
+              fluidRow(
+                column(3, actionButton("agent_qp1", "Confidently ID'd metabolites?",
+                                       class = "btn-outline-primary btn-sm w-100 mb-1")),
+                column(3, actionButton("agent_qp2", "Which matches are ambiguous?",
+                                       class = "btn-outline-primary btn-sm w-100 mb-1")),
+                column(3, actionButton("agent_qp3", "Parent mass & formula?",
+                                       class = "btn-outline-primary btn-sm w-100 mb-1")),
+                column(3, actionButton("agent_qp4", "Summarize this batch run",
+                                       class = "btn-outline-primary btn-sm w-100 mb-1"))
+              ),
+              fluidRow(
+                column(3, actionButton("agent_qp5", "Explain PS-oxidation series",
+                                       class = "btn-outline-primary btn-sm w-100 mb-1")),
+                column(3, actionButton("agent_qp6", "What ppm tolerance / adducts?",
+                                       class = "btn-outline-primary btn-sm w-100 mb-1")),
+                column(3, actionButton("agent_qp7", "Compare treated vs control",
+                                       class = "btn-outline-primary btn-sm w-100 mb-1")),
+                column(3, actionButton("agent_qp8", "Evidence behind top ID?",
+                                       class = "btn-outline-primary btn-sm w-100 mb-1"))
+              ),
               tags$div(style = paste("border:1px solid #ddd; border-radius:8px;",
                                      "padding:10px; min-height:240px; max-height:480px;",
-                                     "overflow-y:auto; background:#fafafa;"),
+                                     "overflow-y:auto; background:#fafafa; margin-top:8px;"),
                 uiOutput("agent_chat_html")
               ),
               tags$div(style = "height: 8px;"),
@@ -1188,7 +1220,8 @@ server <- function(input, output, session) {
     batch_features = NULL, batch_ms_results = NULL,
     sample_meta = NULL, stats_results = NULL, kind_stats_results = NULL,
     library_ready = FALSE,
-    agent_messages = list(), agent_ctx = list(), agent_busy = FALSE
+    agent_messages = list(), agent_ctx = list(), agent_busy = FALSE,
+    agent_msg_count = 0L
   )
 
   ## ---- Batch sample metadata table (group/timepoint assignment) -------------
@@ -2478,12 +2511,122 @@ server <- function(input, output, session) {
   # "naive researcher" front end from /root/.claude/plans/staged-mapping-
   # blanket.md -- Track A; the MCP server (Track B) shares the same tool
   # registry from a separate process, see inst/mcp_server/.
-  output$agent_key_status <- renderText({
-    a <- nzchar(Sys.getenv("ANTHROPIC_API_KEY", ""))
-    o <- nzchar(Sys.getenv("OPENAI_API_KEY", ""))
-    paste0("Anthropic key: ", if (a) "configured" else "not set",
-          "  |  OpenAI key: ", if (o) "configured" else "not set")
+  # Per-provider (env var, UI input id, placeholder) triple -- looked up by
+  # whatever input$agent_backend currently selects, shared by the key-entry
+  # field, the save/clear handlers, and the status badge below.
+  .agent_provider_info <- function(provider) {
+    switch(provider,
+      anthropic = list(env = "ANTHROPIC_API_KEY", id = "agent_key_anthropic", ph = "sk-ant-api03-..."),
+      openai    = list(env = "OPENAI_API_KEY",    id = "agent_key_openai",    ph = "sk-..."),
+      gemini    = list(env = "GEMINI_API_KEY",     id = "agent_key_gemini",    ph = "AIza..."))
+  }
+
+  # Password field for whichever provider is selected -- a fresh renderUI per
+  # provider (rather than one field reused for all three) so switching
+  # providers doesn't carry one provider's key into another's request.
+  output$agent_key_ui <- renderUI({
+    info <- .agent_provider_info(input$agent_backend %||% "anthropic")
+    passwordInput(info$id, label = NULL, value = Sys.getenv(info$env, ""),
+                  placeholder = info$ph, width = "100%")
   })
+
+  # Resolve the key that should actually be used for the next send: the
+  # value currently in that provider's password field (UI-entered, or
+  # pre-filled from the env var above), trimmed; blank means "let
+  # run_agent_turn() fall back to .default_api_key() (the env var) itself".
+  .active_agent_api_key <- reactive({
+    info <- .agent_provider_info(input$agent_backend %||% "anthropic")
+    trimws(input[[info$id]] %||% "")
+  })
+
+  output$agent_key_status_ui <- renderUI({
+    info <- .agent_provider_info(input$agent_backend %||% "anthropic")
+    env_key <- Sys.getenv(info$env, "")
+    ui_key <- trimws(input[[info$id]] %||% "")
+    msg <- if (nzchar(env_key) && identical(ui_key, env_key)) {
+      list(col = "#27ae60", icon = "circle-check", text = "Key loaded from environment -- auto-fills each session.")
+    } else if (nzchar(env_key) && !identical(ui_key, env_key)) {
+      list(col = "#e67e22", icon = "triangle-exclamation", text = "Field differs from the saved .Renviron key. Click \"Save key\" to update.")
+    } else if (nzchar(ui_key)) {
+      list(col = "#7f8c8d", icon = "circle-info", text = "Key entered but not saved -- session only. Click \"Save key\" to persist it.")
+    } else {
+      list(col = "#e74c3c", icon = "circle-xmark", text = "No key set for this provider.")
+    }
+    tags$div(style = sprintf("font-size:11px; color:%s; margin-bottom:6px;", msg$col),
+             icon(msg$icon), " ", msg$text)
+  })
+
+  # Save the currently-entered key to .Renviron (project-local if present,
+  # else the user's HOME) so it survives an app restart on this machine --
+  # mirrors the pattern used for OligoMet-Profiler's other credential-free-
+  # by-default design: nothing is ever committed, this only writes to a
+  # gitignored dotfile the user explicitly asked to persist to.
+  observeEvent(input$agent_save_key, {
+    info <- .agent_provider_info(input$agent_backend %||% "anthropic")
+    key <- trimws(input[[info$id]] %||% "")
+    if (!nzchar(key)) {
+      showNotification("Enter an API key first.", type = "warning"); return()
+    }
+    renviron_path <- if (file.exists(".Renviron")) ".Renviron" else file.path(Sys.getenv("HOME"), ".Renviron")
+    existing <- if (file.exists(renviron_path)) readLines(renviron_path, warn = FALSE) else character(0)
+    existing <- existing[!grepl(sprintf("^%s\\s*=", info$env), existing)]
+    writeLines(c(existing, sprintf('%s="%s"', info$env, key)), renviron_path)
+    do.call(Sys.setenv, setNames(list(key), info$env))
+    showNotification(paste0(info$env, " saved to ", renviron_path, ". It will auto-fill on next app start."),
+                     type = "message", duration = 8)
+  })
+
+  observeEvent(input$agent_clear_key, {
+    info <- .agent_provider_info(input$agent_backend %||% "anthropic")
+    updateTextInput(session, info$id, value = "")
+    do.call(Sys.setenv, setNames(list(""), info$env))
+    showNotification(paste0(info$env, " cleared from this session. Remove its line from .Renviron to make it permanent."),
+                     type = "message", duration = 8)
+  })
+
+  # Rate limit: cap unauthenticated/anonymous use (no server-side env key for
+  # ANY provider -- i.e. this app is hosted with no admin-configured key) to
+  # AGENT_MSG_LIMIT messages per session, regardless of whether the visitor
+  # typed in their own key, matching the same anti-abuse posture as the ADC
+  # Peptide Mapper AI Assistant this was modeled on.
+  AGENT_MSG_LIMIT <- 10L
+  .agent_no_server_key <- reactive({
+    !nzchar(Sys.getenv("ANTHROPIC_API_KEY", "")) &&
+      !nzchar(Sys.getenv("OPENAI_API_KEY", "")) &&
+      !nzchar(Sys.getenv("GEMINI_API_KEY", ""))
+  })
+
+  output$agent_usage_badge_ui <- renderUI({
+    if (!.agent_no_server_key()) return(NULL)
+    remaining <- max(0L, AGENT_MSG_LIMIT - rv$agent_msg_count)
+    col <- if (remaining == 0L) "#e74c3c" else if (remaining <= 3L) "#e67e22" else "#27ae60"
+    tags$span(style = sprintf("font-size:11px; color:%s;", col),
+              icon("comment-dots"), sprintf(" %d / %d messages used this session", rv$agent_msg_count, AGENT_MSG_LIMIT))
+  })
+
+  # ── Quick prompt buttons: fill the chat box, tailored to this app's own
+  # tool registry (parse_sequence/build_metabolite_library/match_ms1_features/
+  # confirm_ms2/summarize_degradation/compare_groups) -- not copy-pasted from
+  # any other app's domain wording.
+  .agent_qp_texts <- c(
+    agent_qp1 = "Which of my matched metabolites are confidently identified, and which aren't?",
+    agent_qp2 = "Which MS1 matches are ambiguous (n_candidates > 1), and what are the alternatives?",
+    agent_qp3 = "What's the parent mass and molecular formula of my current sequence?",
+    agent_qp4 = "Summarize this batch run: what's degrading and by how much?",
+    agent_qp5 = "Explain the PS-oxidation series for my current metabolite library.",
+    agent_qp6 = "What ppm tolerance and adduct set should I use for MS1 matching here?",
+    agent_qp7 = "Compare degradation between my treated and control groups.",
+    agent_qp8 = "What evidence (ppm, coverage, confirmation score) backs my top identification?"
+  )
+  for (.qp_id in names(.agent_qp_texts)) {
+    local({
+      qid <- .qp_id
+      text <- .agent_qp_texts[[qid]]
+      observeEvent(input[[qid]], {
+        updateTextAreaInput(session, "agent_input", value = text)
+      }, ignoreInit = TRUE)
+    })
+  }
 
   # Turns the canonical message list (content BLOCKS -- text/tool_use/
   # tool_result) into flat (role, text) entries for display. Tool calls get
@@ -2544,6 +2687,25 @@ server <- function(input, output, session) {
   observeEvent(input$agent_send, {
     txt <- trimws(input$agent_input %||% "")
     req(nzchar(txt))
+
+    if (.agent_no_server_key() && rv$agent_msg_count >= AGENT_MSG_LIMIT) {
+      showNotification(
+        paste0("Session limit of ", AGENT_MSG_LIMIT, " messages reached. ",
+              "This host has no server-side API key configured, so usage is capped ",
+              "per session regardless of provider or whether you entered your own key."),
+        type = "warning", duration = 8)
+      return()
+    }
+
+    backend <- input$agent_backend %||% "anthropic"
+    key_val <- .active_agent_api_key()
+    api_key_arg <- if (nzchar(key_val)) key_val else NULL
+    if (is.null(api_key_arg) && !nzchar(Sys.getenv(.agent_provider_info(backend)$env, ""))) {
+      showNotification("Enter an API key for this provider above (or ask your admin to set it on the host).",
+                       type = "warning", duration = 5)
+      return()
+    }
+
     updateTextAreaInput(session, "agent_input", value = "")
     rv$agent_busy <- TRUE
 
@@ -2562,7 +2724,7 @@ server <- function(input, output, session) {
     messages <- c(rv$agent_messages, list(user_turn(txt)))
 
     result <- tryCatch(
-      run_agent_turn(messages, ctx = turn_ctx, backend = input$agent_backend %||% "anthropic"),
+      run_agent_turn(messages, ctx = turn_ctx, backend = backend, api_key = api_key_arg),
       error = function(e) list(
         messages = c(messages, list(list(role = "assistant",
                                          content = list(list(type = "text",
@@ -2572,6 +2734,7 @@ server <- function(input, output, session) {
     rv$agent_messages <- result$messages
     rv$agent_ctx <- result$ctx
     rv$agent_busy <- FALSE
+    rv$agent_msg_count <- rv$agent_msg_count + 1L
   })
 
   # Merges in the MS2 confirmation columns (n_ms2_peaks, coverage,

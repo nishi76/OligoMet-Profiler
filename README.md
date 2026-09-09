@@ -291,15 +291,20 @@ doi:10.64898/2026.04.22.720103) sits on top of the same analysis
 functions everything else in this README describes — `R/agent_tools.R`
 wraps parsing, library generation, MS1/MS2 matching, degradation, and
 group comparison as a tool registry, and `R/agent_core.R` drives a
-provider-agnostic (Anthropic or OpenAI) ReAct loop over it, grounding every
-claim in the pipeline's own computed evidence (ppm error, isotope fit,
-`n_candidates`/`ambiguous`, coverage, confirmation score) rather than the
-model's own say-so. Two front ends share that one registry:
+provider-agnostic (Anthropic, OpenAI, or Google Gemini) ReAct loop over it,
+grounding every claim in the pipeline's own computed evidence (ppm error,
+isotope fit, `n_candidates`/`ambiguous`, coverage, confirmation score)
+rather than the model's own say-so. Two front ends share that one registry:
 
 - **In-app chat** — the "Ask OligoMet" tab in the dashboard. Reads whatever
   sequence/library/batch results are already loaded in the session; reply
-  is grounded the same way. Needs `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`
-  set in the environment the app runs in (never typed into the page).
+  is grounded the same way. A key set as `ANTHROPIC_API_KEY` /
+  `OPENAI_API_KEY` / `GEMINI_API_KEY` in the environment the app runs in is
+  used automatically; otherwise each provider has its own key field in the
+  tab itself, with a "Save key" button that persists it to `.Renviron` for
+  next time. When no server-side key is configured at all, usage is capped
+  to 10 messages per session (shown as a live usage badge) regardless of
+  provider, to bound cost on a publicly hosted instance.
 - **MCP server** — `inst/mcp_server/`, for Claude Code / Claude Desktop /
   claude.ai. Talks to a small persistent R API (`Rscript run_agent_api.R`)
   over HTTP; see `inst/mcp_server/README.md` for setup.
