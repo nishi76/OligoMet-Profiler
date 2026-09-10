@@ -22,8 +22,12 @@ they are illustrations, not default targets.
 
 **New here?** Start with [QUICKSTART.md](inst/help/QUICKSTART.md), which
 covers reading a Certificate of Analysis and building a valid input
-string. Full workflow documentation is in the
-[vignette](vignettes/OligoMetProfiler.Rmd).
+string. A single worked example -- sequence to library to raw mzML import
+to MS1/MS2 identification to statistics -- runs end to end in the
+[standard workflow vignette](vignettes/OligoMetProfiler-workflow.Rmd).
+Full option documentation (notations, the chemistry dictionary, custom
+overrides, PS oxidation, acquisition export, the batch pipeline) is in
+the [reference vignette](vignettes/OligoMetProfiler.Rmd).
 
 ## Installation
 

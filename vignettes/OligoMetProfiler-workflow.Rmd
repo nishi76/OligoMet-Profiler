@@ -1,0 +1,308 @@
+---
+title: "OligoMet Profiler: A Standard End-to-End Workflow"
+author:
+- name: Nishikant Wase, PhD
+  email: nishikant.wase@gmail.com
+  affiliation: Research Scientist, Thermo Fisher Scientific (author and developer)
+date: "`r Sys.Date()`"
+package: OligoMetProfiler
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+abstract: >
+  A single worked example, start to finish: build a sequence, generate its
+  theoretical metabolite library, import raw mzML files, obtain putative
+  MS1 and MS2 identifications, and run a two-group statistical comparison.
+  The example uses six small synthetic mzML files bundled with the package
+  (three "control" and three "treated" replicates of the inotersen
+  reference sequence, plus a known-ground-truth JSON file used to build
+  them), so every chunk here runs on its own with no external data and no
+  Python installation. For the full option set -- notations, the chemistry
+  dictionary, custom overrides, PS oxidation, acquisition-method export,
+  spectral libraries, and the parallel batch pipeline for many-sample
+  studies -- see `vignette("OligoMetProfiler")`.
+vignette: >
+  %\VignetteIndexEntry{OligoMet Profiler: A Standard End-to-End Workflow}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+  FOR RESEARCH USE ONLY: not for diagnostic, clinical, or
+  regulatory submission use. All outputs are computed
+  predictions, not measurements, and must be confirmed
+  experimentally; the software is provided without warranty
+  and the author accepts no liability for its use.
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+# Overview
+
+Metabolite identification for a therapeutic oligonucleotide is a targeted
+problem: a finite set of plausible biotransformation products (exonuclease
+truncations, endonuclease fragments, PS-to-PO oxidation states), each with
+a calculable mass, checked against what actually eluted in an LC-MS run.
+This vignette runs that whole chain once, on one drug, so the shape of the
+pipeline is visible before the option tables in the main vignette. Four
+stages, each its own section below:
+
+1. **Sequence** -- write the drug's chemistry as a triplet string, parse it.
+2. **Library** -- generate the candidate metabolites (parent plus a
+   truncation ladder) from that sequence.
+3. **Raw data** -- read six mzML files (a small synthetic run standing in
+   for a real acquisition) and pull out MS1 features and MS2 spectra.
+4. **Identification and statistics** -- match the library against each
+   file's MS1 features, confirm hits against MS2 fragments, then compare
+   intensities between two experimental groups.
+
+```{r library}
+library(OligoMetProfiler)
+```
+
+# The example dataset
+
+Six mzML files ship under `inst/extdata/batch_example/`: three replicates
+labeled "control" and three labeled "treated", built by
+`inst/extdata/batch_example/generate_example.py` from a fixed random seed.
+Each file carries a 7-scan chromatographic peak for the inotersen parent
+across four charge states, the same 7-scan peak for two truncated
+degradants (a 3' N-1 and a 5' N-1, at roughly a third of the parent's
+level), a contaminant trace at an unrelated m/z that matches nothing in
+the library, and one MS2 scan holding real McLuckey fragment ions plus
+the two phosphorothioate diagnostic ions. The treated replicates were
+generated at several-fold higher intensity than control for all three
+real species, so the comparison in the final section has a genuine,
+known-direction effect to recover. `theoretical_values.json` in the same
+folder records the exact masses used to build the files, for anyone who
+wants to check the pipeline's output against ground truth directly.
+
+```{r locate-data}
+example_dir <- system.file("extdata", "batch_example", package = "OligoMetProfiler")
+files <- list.files(example_dir, pattern = "\\.mzML$", full.names = TRUE)
+sample_meta <- read.csv(file.path(example_dir, "sample_meta.csv"),
+                        stringsAsFactors = FALSE)
+sample_meta
+```
+
+# Building the sequence
+
+Inotersen is a 20-mer, 5-10-5 MOE gapmer: MOE wings at positions 1-5 and
+16-20, a DNA gap at 6-15, phosphorothioate throughout, five
+5-methylcytosine positions. Written as a triplet string -- one
+`[linkage][base][sugar]` token per position, 5' to 3' -- that sequence is
+the `INOTERSEN_TRIPLET` constant shipped with the package:
+
+```{r build-sequence}
+spec <- parse_input(INOTERSEN_TRIPLET)
+format_spec(spec)
+```
+
+`parse_input()` also reads two other notations (the `OH-...-OH` form used
+by OligoDistiller, and a three-line bases/sugars/linkages layout closer to
+what a Certificate of Analysis or a BioPharma Finder export gives you),
+plus a fully structured R list for anything a triplet string cannot
+express, such as terminal conjugates. Those, along with how to add a
+sugar or backbone code the built-in dictionary lacks, are covered in
+`vignette("OligoMetProfiler")`.
+
+# Building the metabolite library
+
+`generate_metabolites()` turns a parsed spec into the candidate list: the
+parent plus, in this run, a 3-deep truncation ladder from each terminus
+(`max_3p`/`max_5p`). Endonuclease fragments are switched off here
+(`endo = FALSE`) since this particular dataset carries only the parent and
+the two shortmers -- a real run of a gapmer would usually enable them.
+
+```{r build-library}
+mets <- generate_metabolites(spec, opts = list(
+  oligo_name = "inotersen", max_3p = 3, max_5p = 3, endo = FALSE))
+length(mets)
+metabolite_table(mets)[, c("id", "name", "kind", "n")]
+```
+
+Seven candidates: the parent, three 3'-truncations (N-1 through N-3), and
+three 5'-truncations. Only two of those six truncations are actually
+present in the example data -- the library is a hypothesis space, not a
+claim that every candidate was observed, and the matching step below
+sorts out which ones were.
+
+# Importing raw mzML files
+
+`read_ms_file()` reads one mzML (or mzXML) file into MS1 peaks, MS2
+spectra, and file metadata. It prefers Bioconductor's `Spectra`/`mzR` when
+both are installed and falls back to a built-in xml2-based parser
+otherwise -- the same result either way, so nothing below depends on which
+path is taken. Vendor raw formats (Thermo `.raw`, Sciex `.wiff`,
+Bruker/Agilent) go through `resolve_ms_input_file()` first, which converts
+via ProteoWizard `msconvert` when it is on the PATH.
+
+```{r read-one-file}
+raw <- read_ms_file(files[1])
+raw$info
+head(raw$ms1)
+```
+
+`raw$ms1` is a flat peak table (`rt`, `mz`, `intensity`); `raw$ms2` adds
+`precursor_mz` and `precursor_z` per row, since one file can hold many
+MS2 scans on different precursors. Reading raw MS1 peaks is not the same
+as having features to match against -- consecutive scans of the same
+eluting ion need to be collapsed into one entry first, which is what the
+next section does.
+
+# MS1 output: putative identification
+
+For each file, `extract_ms1_features()` groups raw peaks that co-elute in
+time and agree in m/z into single features, and `match_ms1()` checks
+every (metabolite, PS-oxidation level, charge state, adduct) combination
+from the library against those features within a ppm window. Charge
+states here are restricted to 5-8 and the adduct list to plain `[M-zH]`
+because that is what this particular synthetic acquisition covers; an
+unknown real sample should start from the wider defaults shown in the
+main vignette (`z_range = 3:12`, `adducts = c("H", "Na", "K", "NH4")`).
+
+```{r ms1-matching}
+ms1_matches <- do.call(rbind, lapply(seq_along(files), function(i) {
+  raw  <- read_ms_file(files[i])
+  feat <- extract_ms1_features(raw$ms1)
+  hit  <- match_ms1(mets, feat, ppm_tol = 10, z_range = 5:8,
+                     adducts = "H", max_oxid = 0, n_iso = 0)
+  if (nrow(hit) > 0) hit$sample <- sample_meta$sample[i]
+  hit
+}))
+
+unique(ms1_matches[, c("met_id", "met_name", "kind")])
+```
+
+Three of the seven candidates come back with a match -- the parent and
+one truncation from each end -- across all six files, at whichever
+charge states and ppm accuracy each file's noise happened to produce:
+
+```{r ms1-table}
+head(ms1_matches[, c("sample", "met_name", "z", "theo_mz",
+                     "obs_mz", "ppm_error", "intensity")], 8)
+```
+
+This loop is doing by hand what `match_ms1_batch()`/
+`annotate_metabolites_batch()` do automatically once a multi-sample
+feature table exists -- those functions are the right entry point for a
+real study of more than a handful of files, and are covered together with
+the parallel Python deconvolution pipeline in the main vignette's batch
+section.
+
+# MS2 output: putative identification
+
+A single MS1 match is a mass coincidence until something independent
+confirms it. `find_ms2_spectra()` locates the MS/MS scan recorded against
+a given precursor m/z and charge, and `confirm_metabolite()` scores it:
+McLuckey fragment coverage, number of matched fragment ions, mass
+accuracy, and the presence of the two phosphorothioate diagnostic ions
+(m/z 94.9452 and 192.9746), combined into a 0-100 confirmation score.
+Inotersen's fully phosphorothioate backbone means those diagnostic ions
+should turn up in every file's MS2 scan.
+
+```{r ms2-confirmation}
+parent_info  <- metabolite_mass_info(mets[[1]])
+parent_z6_mz <- charge_envelope(parent_info$mono_mass, z_range = 6)$mz
+
+ms2_confirm <- do.call(rbind, lapply(seq_along(files), function(i) {
+  raw  <- read_ms_file(files[i])
+  spec <- find_ms2_spectra(raw$ms2, precursor_mz = parent_z6_mz,
+                           precursor_z = 6, ppm_tol = 20)
+  if (length(spec) == 0) return(NULL)
+  conf <- confirm_metabolite(mets[[1]], spec[[1]], tol_ppm = 15, z_range = 1:2)
+  data.frame(sample = sample_meta$sample[i],
+             n_ms2_peaks = nrow(spec[[1]]),
+             n_frag_matches = conf$score$n_matches,
+             coverage = round(conf$score$coverage, 2),
+             n_diagnostics = conf$score$n_diagnostics,
+             confirmation_score = conf$score$total_score,
+             confident = conf$score$confident)
+}))
+ms2_confirm
+```
+
+`confident` is `TRUE` once the total score clears 75 and sequence coverage
+clears 50%, a threshold following the FMVS confirmation-scoring approach
+cited in the main vignette. Shown here for the parent only, at one charge
+state, for a single metabolite at a time; `confirm_ms2_batch()` runs the
+same confirmation across every MS1 hit in a combined multi-sample table.
+
+# Statistical analysis: control versus treated
+
+`build_abundance_matrix()` collapses the combined MS1 matches into one
+row per metabolite, one column per sample, taking the most intense match
+across charge states as that metabolite's abundance in that sample.
+`abundance_long()` reshapes it against the sample metadata, and
+`compare_two_groups()` runs a Welch t-test per metabolite with
+Benjamini-Hochberg-adjusted p-values.
+
+```{r abundance-matrix}
+abund <- build_abundance_matrix(ms1_matches)
+abund
+```
+
+```{r statistics}
+long   <- abundance_long(abund, sample_meta)
+result <- compare_two_groups(long, "control", "treated")
+result[order(result$p_adj),
+       c("met_id", "met_name", "mean_a", "mean_b", "log2fc", "p_value", "p_adj")]
+```
+
+All three species were generated at higher intensity under "treated" --
+roughly threefold for the parent and a bit over twofold for the two
+degradants -- so a positive `log2fc` with a small `p_adj` on every row is
+the expected recovery of that built-in design, not a coincidence of this
+particular random seed. `plot_volcano()` renders the same comparison as a
+fold-change-versus-significance plot:
+
+```{r volcano, fig.width = 5, fig.height = 4}
+plot_volcano(result, fc_thresh = 0.5)
+```
+
+`compare_multi_groups()` (one-way ANOVA plus Tukey HSD) and
+`compare_time_series()` (linear trend) cover three-or-more-group and
+timepoint designs the same way; both are documented alongside this
+function in the main vignette.
+
+# Where to go from here
+
+This walkthrough stops at the point where a real study usually branches:
+
+* **Wider chemistry** -- other input notations, the chemistry dictionary,
+  custom overrides for a code the dictionary lacks, and the PS oxidation
+  series -- `vignette("OligoMetProfiler")`.
+* **Many-sample studies** -- the bundled Python pipeline
+  (`run_batch_deconvolution()`) does chromatographic feature detection
+  across a whole directory of raw files at once, in place of the
+  per-file loop shown above; `run_batch_ms.R` wraps it end to end with
+  the same statistics functions used here.
+* **Deliverables** -- `build_workbook()` for the multi-sheet Excel
+  library, `build_report()` for an HTML/PDF summary,
+  `thermo_ms1_inclusion_list()`/`thermo_ms2_prm_target_list()` for
+  Orbitrap Exploris acquisition method export, and
+  `export_spectral_libraries()` for MGF/MSP spectral libraries.
+* **A dashboard** -- `run_app()` wraps the same engine in a Shiny UI with
+  file upload, an editable custom-chemistry table, and downloadable
+  outputs.
+
+# Session info {.unnumbered}
+
+```{r sessioninfo}
+sessionInfo()
+```
+
+# Disclaimer {.unnumbered}
+
+**Research use only.** Every metabolite, mass, match, and statistic in
+this vignette is a computed prediction from synthetic example data, not a
+measurement from a real sample, and nothing here is validated for
+diagnostic, clinical, or regulatory use. See `DISCLAIMER.md` and the
+disclosure section at the end of `vignette("OligoMetProfiler")` for the
+full statement, authorship, and licensing terms.
