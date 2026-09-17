@@ -29,21 +29,50 @@
 # =============================================================================
 
 ## ---- Dependency-free HTTP POST (JSON in, JSON out) --------------------------
+# Header values (notably the x-api-key secret) are passed to curl via a -K
+# config file, never as literal argv entries. Two independent reasons:
+# argv is visible to other users on the same machine via ps/Task Manager,
+# and -- the reason this actually leaked in practice -- system2() itself
+# prints the FULL command line, api key included, in an R warning whenever
+# curl exits non-zero. A transient network failure (DNS hiccup, timeout,
+# offline machine) would otherwise dump a live secret straight to the
+# R/RStudio console and any log or bug report that happens to capture it.
+# suppressWarnings() below additionally blocks that auto-emitted warning
+# outright, since the exit status is already checked explicitly and a
+# sanitized stop() message is raised instead.
 .http_post_json <- function(url, headers = list(), body, timeout_sec = 120) {
   body_json <- jsonlite::toJSON(body, auto_unbox = TRUE, na = "null", digits = NA)
   tmp_body <- tempfile(fileext = ".json")
   tmp_out <- tempfile()
-  on.exit(unlink(c(tmp_body, tmp_out)), add = TRUE)
+  tmp_cfg <- tempfile(fileext = ".curlcfg")
+  on.exit(unlink(c(tmp_body, tmp_out, tmp_cfg)), add = TRUE)
   writeLines(body_json, tmp_body, useBytes = TRUE)
-  header_args <- unlist(lapply(names(headers), function(h) c("-H", paste0(h, ": ", headers[[h]]))))
-  args <- c("-sS", "--max-time", as.character(timeout_sec), "-X", "POST", url,
-           header_args, "-H", "Content-Type: application/json",
-           "--data-binary", paste0("@", tmp_body), "-o", tmp_out, "-w", "%{http_code}")
-  status_lines <- system2("curl", args = args, stdout = TRUE, stderr = TRUE)
+
+  .cfg_quote <- function(x) paste0("\"", gsub("\"", "\\\\\"", x), "\"")
+  all_headers <- c(headers, list(`Content-Type` = "application/json"))
+  header_lines <- sprintf("header = %s",
+    .cfg_quote(paste0(names(all_headers), ": ", unlist(all_headers))))
+  cfg_lines <- c(
+    header_lines,
+    paste("url =", .cfg_quote(url)),
+    "silent", "show-error",
+    paste("max-time =", as.integer(timeout_sec)),
+    "request = \"POST\"",
+    paste("data-binary =", .cfg_quote(paste0("@", tmp_body))),
+    paste("output =", .cfg_quote(tmp_out)),
+    "write-out = \"%{http_code}\""
+  )
+  writeLines(cfg_lines, tmp_cfg)
+
+  status_lines <- suppressWarnings(
+    system2("curl", args = c("-K", tmp_cfg), stdout = TRUE, stderr = TRUE))
+  exit_code <- attr(status_lines, "status")
   http_code <- suppressWarnings(as.integer(status_lines[length(status_lines)]))
   resp_text <- if (file.exists(tmp_out)) paste(readLines(tmp_out, warn = FALSE, encoding = "UTF-8"), collapse = "\n") else ""
   if (is.na(http_code)) {
-    stop("curl request to ", url, " failed to complete: ", paste(status_lines, collapse = " "))
+    stop("curl request to ", url, " failed to complete (exit status ",
+         if (is.null(exit_code)) "unknown" else exit_code, "): ",
+         paste(status_lines, collapse = " "))
   }
   list(status = http_code, body = resp_text)
 }
