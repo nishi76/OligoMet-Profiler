@@ -83,7 +83,15 @@ def main(argv=None) -> int:
     if ms2_path:
         print(f"MS2 table: {ms2_path}")
     for f in failures:
-        print(f"  FAILED: {f['file']}", file=sys.stderr)
+        # f["error"] is "{ExceptionType}: {message}\n{full traceback}" (see
+        # _process_one() in batch.py) -- only the first line was ever
+        # printed here, so every failure showed up as a bare filename with
+        # no reason, on the R side (which only relays this stdout/stderr
+        # text, not the _failed_files.tsv sidecar) and on this console
+        # alike. The full traceback still goes to _failed_files.tsv for
+        # deeper debugging; this is just the one-line summary.
+        reason = f["error"].splitlines()[0] if f["error"] else "unknown error"
+        print(f"  FAILED: {f['file']}: {reason}", file=sys.stderr)
     if profile_mode_files:
         names = ", ".join(f["sample"] for f in profile_mode_files)
         print(f"WARNING: {len(profile_mode_files)} file(s) appear to be PROFILE mode "
