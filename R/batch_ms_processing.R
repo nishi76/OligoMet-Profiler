@@ -10,10 +10,24 @@
 # =============================================================================
 
 ## ---- Locating Python -------------------------------------------------------
+# Sys.which() only checks that SOMETHING on PATH resolves to that name -- on
+# Windows that's not the same as it being runnable. Official python.org
+# installers only ship python.exe, not python3.exe, so a `python3` entry on
+# a Windows PATH is often a non-functional Microsoft Store app-execution-
+# alias stub, or a stray non-Windows-executable shim (e.g. from Git Bash's
+# usr/bin) -- Sys.which("python3") still finds it, but system2() then fails
+# with Windows' generic "command not found" exit status 9009, which looks
+# identical to Python genuinely being absent. Actually invoking each
+# candidate with --version (not just resolving its path) catches this
+# before run_batch_deconvolution() ever gets to the real work.
 find_python <- function() {
   for (bin in c("python3", "python")) {
-    path <- Sys.which(bin)
-    if (nzchar(path)) return(bin)
+    if (!nzchar(Sys.which(bin))) next
+    ok <- tryCatch({
+      out <- suppressWarnings(system2(bin, "--version", stdout = TRUE, stderr = TRUE))
+      is.null(attr(out, "status")) || attr(out, "status") == 0
+    }, error = function(e) FALSE)
+    if (ok) return(bin)
   }
   NA_character_
 }
