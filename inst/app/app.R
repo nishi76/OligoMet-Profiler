@@ -599,11 +599,31 @@ ui <- fluidPage(
                    "remote/hosted deployment it's the server's filesystem, ",
                    "not yours). Takes precedence over the upload above when ",
                    "both are set."),
+            fluidRow(
+              column(6, downloadButton("dl_batch_meta_template", "Download CSV template",
+                                        class = "btn-outline-secondary btn-sm w-100")),
+              column(6, fileInput("batch_meta_csv", NULL, accept = ".csv",
+                                   placeholder = "Upload filled-in sample info CSV..."))
+            ),
+            tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -10px;",
+                   "Columns: sample, group, timepoint, sample_type. The template ",
+                   "is pre-filled with the sample names from the files/folder ",
+                   "above -- fill in the rest in Excel and re-upload. Rows are ",
+                   "matched by sample name (not row order), so a partial or ",
+                   "reordered CSV merges in safely; upload files/pick a folder ",
+                   "first so there's a sample list to merge onto."),
+            uiOutput("batch_meta_upload_status"),
             DT::DTOutput("sample_meta_table"),
             tags$p(style = "font-size: 11px; color: #6c757d; margin-top: 4px;",
                    "One row per uploaded file. Fill in Group (2+ groups) or ",
                    "Timepoint (time series) before running -- leave both blank ",
-                   "to only extract and match features, with no statistics."),
+                   "to only extract and match features, with no statistics. ",
+                   "Sample Type defaults to \"unknown\" -- set it to standard, ",
+                   "quality_control, reagent_blank, or matrix_blank to label ",
+                   "non-study-sample rows. It's captured through to the sample ",
+                   "metadata export, but doesn't yet change matching or ",
+                   "statistics (e.g. no automatic blank subtraction or QC-CV ",
+                   "filtering)."),
             checkboxInput("batch_run_ms2", "Confirm hits with MS2",
                           value = DEFAULT_PIPELINE_PARAMS$batch_run_ms2),
             fluidRow(
@@ -1191,18 +1211,24 @@ server <- function(input, output, session) {
     agent_messages = list(), agent_ctx = list(), agent_busy = FALSE
   )
 
-  ## ---- Batch sample metadata table (group/timepoint assignment) -------------
+  ## ---- Batch sample metadata table (group/timepoint/sample_type assignment) -
   # Seeded from the uploaded batch_files' original filenames; edited in place
-  # via DT's edit feature. Blank group/timepoint columns mean "extract and
-  # match only, no statistics" -- see the Run handler below.
+  # via DT's edit feature, or in bulk via the sample info CSV upload below.
+  # Blank group/timepoint columns mean "extract and match only, no
+  # statistics" -- see the Run handler below. sample_type defaults to
+  # "unknown" (one of its own controlled-vocabulary values, not blank) since
+  # every row IS some kind of sample even before the user has classified it.
+  .SAMPLE_TYPE_LEVELS <- c("unknown", "standard", "quality_control",
+                           "reagent_blank", "matrix_blank")
+
   batch_meta_data <- reactiveVal(data.frame(
     sample = character(0), group = character(0), timepoint = character(0),
-    stringsAsFactors = FALSE))
+    sample_type = character(0), stringsAsFactors = FALSE))
 
   observeEvent(input$batch_files, {
     samples <- tools::file_path_sans_ext(input$batch_files$name)
     batch_meta_data(data.frame(sample = samples, group = "", timepoint = "",
-                                stringsAsFactors = FALSE))
+                                sample_type = "unknown", stringsAsFactors = FALSE))
   })
 
   # Local-folder alternative to the upload above (see the UI section and
@@ -1217,6 +1243,7 @@ server <- function(input, output, session) {
       if (length(paths) > 0) {
         samples <- tools::file_path_sans_ext(basename(paths))
         batch_meta_data(data.frame(sample = samples, group = "", timepoint = "",
+                                    sample_type = "unknown",
                                     stringsAsFactors = FALSE))
       }
     }
@@ -1291,6 +1318,98 @@ server <- function(input, output, session) {
     edit <- input$sample_meta_table_cell_edit
     df[edit$row, edit$col + 1] <- edit$value
     batch_meta_data(df)
+  })
+
+  ## ---- Sample info CSV: template download + bulk upload ---------------------
+  # Template is pre-filled with whatever sample list is already on the
+  # table (from uploaded files or a local folder), so round-tripping through
+  # Excel doesn't require retyping/copy-pasting sample names by hand.
+  output$dl_batch_meta_template <- downloadHandler(
+    filename = function() "sample_info_template.csv",
+    content = function(file) {
+      df <- batch_meta_data()
+      if (nrow(df) == 0) {
+        df <- data.frame(sample = character(0), group = character(0),
+                          timepoint = character(0), sample_type = character(0))
+      }
+      utils::write.csv(df, file, row.names = FALSE)
+    }
+  )
+
+  batch_meta_upload_status <- reactiveVal(NULL)
+  output$batch_meta_upload_status <- renderUI({
+    msg <- batch_meta_upload_status()
+    if (is.null(msg)) return(NULL)
+    color <- if (startsWith(msg, "WARNING")) "#a3231b" else "#2e7d32"
+    tags$p(style = paste0("font-size: 11px; color: ", color, "; margin: -6px 0 6px;"), msg)
+  })
+
+  # Merges by `sample` name, not row position -- the sample list already on
+  # the table (derived from the actual uploaded/local files) stays
+  # authoritative for WHICH samples exist; the CSV only supplies values for
+  # group/timepoint/sample_type, so it can be partial or reordered safely.
+  observeEvent(input$batch_meta_csv, {
+    current <- batch_meta_data()
+    if (nrow(current) == 0) {
+      batch_meta_upload_status(
+        "WARNING: upload batch files (or set a local folder) first, so there's a sample list to merge the CSV onto.")
+      return()
+    }
+    csv <- tryCatch(
+      utils::read.csv(input$batch_meta_csv$datapath, stringsAsFactors = FALSE, colClasses = "character"),
+      error = function(e) NULL)
+    if (is.null(csv)) {
+      batch_meta_upload_status("WARNING: could not read that file as CSV.")
+      return()
+    }
+    names(csv) <- tolower(trimws(names(csv)))
+    if (!"sample" %in% names(csv)) {
+      batch_meta_upload_status("WARNING: CSV needs a 'sample' column matching the uploaded file names.")
+      return()
+    }
+    csv$sample <- trimws(csv$sample)
+
+    # Canonicalize sample_type against the controlled vocabulary --
+    # case/spacing/punctuation-insensitive ("Quality Control", "QC", "qc"
+    # all map to "quality_control") so a human-typed CSV isn't rejected
+    # over formatting differences. Anything that still doesn't map is kept
+    # as typed and flagged, rather than silently coerced to "unknown".
+    invalid_types <- character(0)
+    if ("sample_type" %in% names(csv)) {
+      norm <- gsub("^_|_$", "", gsub("[^a-z0-9]+", "_", tolower(trimws(csv$sample_type))))
+      canon <- c(unknown = "unknown", standard = "standard",
+                 quality_control = "quality_control", qc = "quality_control",
+                 reagent_blank = "reagent_blank", blank = "reagent_blank",
+                 matrix_blank = "matrix_blank")
+      mapped <- unname(canon[norm])
+      unmapped <- is.na(mapped) & nzchar(csv$sample_type)
+      invalid_types <- unique(csv$sample_type[unmapped])
+      csv$sample_type[!is.na(mapped)] <- mapped[!is.na(mapped)]
+    }
+
+    matched <- intersect(current$sample, csv$sample)
+    unmatched_csv <- setdiff(csv$sample, current$sample)
+    for (col in intersect(c("group", "timepoint", "sample_type"), names(csv))) {
+      for (s in matched) {
+        val <- csv[[col]][csv$sample == s][1]
+        if (!is.na(val) && nzchar(val)) current[current$sample == s, col] <- val
+      }
+    }
+    batch_meta_data(current)
+
+    msg <- sprintf("Sample info CSV applied: %d/%d uploaded samples matched.",
+                    length(matched), nrow(current))
+    if (length(unmatched_csv) > 0) {
+      msg <- paste0(msg, " Ignored ", length(unmatched_csv),
+                    " CSV row(s) with no matching uploaded file: ",
+                    paste(unmatched_csv, collapse = ", "), ".")
+    }
+    if (length(invalid_types) > 0) {
+      msg <- paste0(msg, " Sample Type value(s) not in {",
+                    paste(.SAMPLE_TYPE_LEVELS, collapse = ", "),
+                    "} kept as typed: ", paste(invalid_types, collapse = ", "), ".")
+    }
+    batch_meta_upload_status(msg)
   })
 
   ## ---- MS2 library explorer --------------------------------------------------
