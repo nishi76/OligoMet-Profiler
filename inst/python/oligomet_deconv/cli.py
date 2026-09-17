@@ -39,6 +39,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--z-min", type=int, default=3)
     p.add_argument("--z-max", type=int, default=20)
     p.add_argument("--min-intensity", type=float, default=1e4)
+    p.add_argument("--sn-threshold", type=float, default=None,
+                    help="when given, OVERRIDES --min-intensity with a per-file computed "
+                         "threshold = (this file's own noise level) * sn-threshold, instead "
+                         "of one fixed absolute number applied to every file")
     p.add_argument("--min-scans", type=int, default=3)
     p.add_argument("--max-gap-scans", type=int, default=2)
     p.add_argument("--min-mass", type=float, default=200.0)
@@ -65,7 +69,7 @@ def main(argv=None) -> int:
         z_min=args.z_min, z_max=args.z_max, min_intensity=args.min_intensity,
         min_scans=args.min_scans, max_gap_scans=args.max_gap_scans,
         min_mass=args.min_mass, max_mass=args.max_mass, ms2_watch_ppm=args.ms2_watch_ppm,
-        min_charge_states=args.min_charge_states,
+        min_charge_states=args.min_charge_states, sn_threshold=args.sn_threshold,
     )
 
     ms2_output_file = args.ms2_output_file

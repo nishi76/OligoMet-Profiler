@@ -46,6 +46,19 @@ DEFAULT_PIPELINE_PARAMS <- list(
   frag_tol_ppm   = 25,    # fragment matching tolerance (ppm)
   frag_z_max     = 2,     # max fragment charge state considered -- z=1 dominates
                            # oligo MS2, z=2 appears for larger fragments, z=3+ is rare
+  min_intensity  = 1e4,   # fixed-value noise mode: hard background/noise floor
+                           # (absolute intensity) below which a peak/ROI is never
+                           # considered a real feature -- was already the batch/
+                           # Python ROI pipeline's own default (roi.py) but wasn't
+                           # exposed to either UI path, and the single-file R
+                           # path's extract_ms1_features() default of 100 is far
+                           # too permissive for real HRMS data (effectively no
+                           # filtering), which is exactly what floods matching
+                           # with noise
+  sn_threshold   = 3,     # S/N noise mode (the default mode): absolute threshold
+                           # = (this file's own noise level) * sn_threshold --
+                           # 3x is a conventional LOD-adjacent starting point,
+                           # not a validated cutoff for any specific instrument
 
   # -- Batch MS processing (optional) --
   enable_batch      = FALSE,

@@ -39,7 +39,7 @@ def run_batch(paths, params: DeconvParams, output_dir: str,
     os.makedirs(output_dir, exist_ok=True)
     n_workers = n_workers or max(1, (os.cpu_count() or 2) - 1)
 
-    all_features, all_ms2, failures, profile_mode_files = [], [], [], []
+    all_features, all_ms2, failures, profile_mode_files, noise_thresholds = [], [], [], [], []
     tasks = [(p, params, precursor_watchlist_path) for p in paths]
 
     # _process_one() isolates any per-file failure and returns it as data
@@ -62,6 +62,13 @@ def run_batch(paths, params: DeconvParams, output_dir: str,
                     all_ms2.extend(ms2)
                     if meta.get("profile_mode_detected"):
                         profile_mode_files.append({"sample": meta["sample"], "source_file": meta["source_file"]})
+                    if params.sn_threshold is not None:
+                        noise_thresholds.append({
+                            "sample": meta["sample"], "source_file": meta["source_file"],
+                            "noise_level": meta.get("noise_level"),
+                            "sn_threshold": params.sn_threshold,
+                            "effective_min_intensity": meta.get("effective_min_intensity"),
+                        })
     except Exception as exc:
         raise RuntimeError(
             f"Batch worker pool failed with {n_workers} worker(s): {type(exc).__name__}: {exc}\n"
@@ -92,5 +99,14 @@ def run_batch(paths, params: DeconvParams, output_dir: str,
     if profile_mode_files:
         pd.DataFrame(profile_mode_files).to_csv(
             os.path.join(output_dir, "_profile_mode_warnings.tsv"), sep="\t", index=False)
+
+    # Only produced in S/N-threshold mode (sn_threshold is None otherwise,
+    # so this list stays empty) -- the whole point of deriving the
+    # threshold from each file's own noise level is that it comes out
+    # DIFFERENT per file, so it's worth a visible record of what number
+    # actually got applied where, not just the one sn_threshold input.
+    if noise_thresholds:
+        pd.DataFrame(noise_thresholds).to_csv(
+            os.path.join(output_dir, "_noise_thresholds.tsv"), sep="\t", index=False)
 
     return feat_path, ms2_path, failures, profile_mode_files

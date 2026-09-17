@@ -44,21 +44,79 @@ class ROIPeak:
     n_scans: int
 
 
+class _NoiseReservoir:
+    """Bounded-memory estimate of the file's background intensity level,
+    built as a byproduct of the SAME scan-by-scan streaming pass ROIBuilder
+    already does -- no second file read needed.
+
+    Takes a small random subsample of EACH scan (one vectorized
+    `rng.choice()` call per scan, capped at `per_scan_cap` points) rather
+    than a strict single running reservoir over every individual point --
+    a true fixed-capacity reservoir needs a Python-level loop per point to
+    get the inclusion probabilities right, and that per-point-Python-loop
+    pattern is exactly what made ROIBuilder.add_scan() itself appear to
+    hang on real profile-mode data before it was vectorized (see the
+    comment on that fix further down this file). Total sample size grows
+    with scan count (capped per scan, not overall), which for realistic
+    scan counts (thousands) stays a few million floats at most -- bounded
+    enough in practice, and every step is a single numpy call.
+    """
+
+    def __init__(self, per_scan_cap: int = 200, seed: int = 0):
+        self.per_scan_cap = per_scan_cap
+        self._rng = np.random.default_rng(seed)
+        self._samples: list[np.ndarray] = []
+
+    def observe(self, values: np.ndarray) -> None:
+        if len(values) == 0:
+            return
+        if len(values) <= self.per_scan_cap:
+            self._samples.append(values)
+        else:
+            self._samples.append(self._rng.choice(values, size=self.per_scan_cap, replace=False))
+
+    def noise_level(self) -> float:
+        """Median of the sampled intensities -- most individual centroided
+        peaks in a real LC-MS run are background/chemical noise rather than
+        real analyte signal, so the median of ALL observed peak intensities
+        is a simple, defensible proxy for the noise floor (not a windowed
+        RMS baseline like dedicated vendor software computes, which would
+        need per-region local statistics this v1 doesn't attempt)."""
+        if not self._samples:
+            return float("nan")
+        return float(np.median(np.concatenate(self._samples)))
+
+
 class ROIBuilder:
-    """Feed scans one at a time via `add_scan()`, then call `finalize()`."""
+    """Feed scans one at a time via `add_scan()`, then call `finalize()`.
+
+    `min_intensity` is a hard absolute floor; `sn_threshold`, when given,
+    OVERRIDES it with an absolute threshold derived from THIS file's own
+    noise level: effective_threshold = noise_level * sn_threshold (see
+    _NoiseReservoir above), matching "Absolute MS Signal Threshold = MS
+    Noise Level x S/N Threshold" -- a fixed number picked for one file
+    (or one instrument's typical baseline) is rarely right for another
+    file with a different background level, which sn_threshold is meant
+    to correct for.
+    """
 
     def __init__(self, roi_ppm: float = 15.0, max_gap_scans: int = 2,
-                 min_intensity: float = 1e4, min_scans: int = 3):
+                 min_intensity: float = 1e4, min_scans: int = 3,
+                 sn_threshold: "float | None" = None):
         self.roi_ppm = roi_ppm
         self.max_gap_scans = max_gap_scans
         self.min_intensity = min_intensity
         self.min_scans = min_scans
+        self.sn_threshold = sn_threshold
+        self._noise = _NoiseReservoir() if sn_threshold is not None else None
         self._open: list[_OpenROI] = []
         self._closed_points: list[list] = []
 
     def add_scan(self, rt: float, mz_array: np.ndarray, intensity_array: np.ndarray) -> None:
         if rt is None or len(mz_array) == 0:
             return
+        if self._noise is not None:
+            self._noise.observe(intensity_array)
         order = np.argsort(mz_array)
         mzs = mz_array[order]
         ints = intensity_array[order]
@@ -127,6 +185,21 @@ class ROIBuilder:
 
         from scipy.signal import find_peaks
 
+        # effective_min_intensity is exposed as an attribute (not just used
+        # locally) so callers can report back what threshold actually got
+        # applied to THIS file -- useful when it's S/N-derived, since the
+        # same sn_threshold produces a different absolute cutoff on every
+        # file depending on that file's own background level.
+        if self.sn_threshold is not None:
+            noise = self._noise.noise_level()
+            self.noise_level = noise
+            self.effective_min_intensity = (
+                noise * self.sn_threshold if not np.isnan(noise) else self.min_intensity
+            )
+        else:
+            self.noise_level = None
+            self.effective_min_intensity = self.min_intensity
+
         peaks: list[ROIPeak] = []
         for points in self._closed_points:
             if len(points) < self.min_scans:
@@ -161,7 +234,7 @@ class ROIBuilder:
                     continue
                 apex_i = int(np.argmax(seg_ints))
                 apex_intensity = float(seg_ints[apex_i])
-                if apex_intensity < self.min_intensity:
+                if apex_intensity < self.effective_min_intensity:
                     continue
                 area = float(_trapz(seg_ints, seg_rts)) if len(seg_rts) > 1 else apex_intensity
                 mz_mean = float(np.average(seg_mzs, weights=seg_ints))
