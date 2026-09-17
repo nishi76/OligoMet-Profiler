@@ -42,15 +42,34 @@ def run_batch(paths, params: DeconvParams, output_dir: str,
     all_features, all_ms2, failures, profile_mode_files = [], [], [], []
     tasks = [(p, params, precursor_watchlist_path) for p in paths]
 
-    with cf.ProcessPoolExecutor(max_workers=n_workers) as executor:
-        for path, features, ms2, meta, error in executor.map(_process_one, tasks):
-            if error:
-                failures.append({"file": path, "error": error})
-            else:
-                all_features.extend(features)
-                all_ms2.extend(ms2)
-                if meta.get("profile_mode_detected"):
-                    profile_mode_files.append({"sample": meta["sample"], "source_file": meta["source_file"]})
+    # _process_one() isolates any per-file failure and returns it as data
+    # (the `error` string below) -- but a WORKER POOL failure (a spawned
+    # worker process dying, or on Windows -- where multiprocessing always
+    # uses "spawn", never "fork" -- a pickling/import failure re-creating
+    # the worker) escapes that isolation entirely: it surfaces as an
+    # exception from executor.map() itself, outside the per-task try/except,
+    # and previously crashed run_batch() with whatever raw
+    # concurrent.futures traceback happened to result. That's opaque to
+    # diagnose from the R side (system2() just reports "non-zero exit"),
+    # so turn it into one clear, actionable error instead.
+    try:
+        with cf.ProcessPoolExecutor(max_workers=n_workers) as executor:
+            for path, features, ms2, meta, error in executor.map(_process_one, tasks):
+                if error:
+                    failures.append({"file": path, "error": error})
+                else:
+                    all_features.extend(features)
+                    all_ms2.extend(ms2)
+                    if meta.get("profile_mode_detected"):
+                        profile_mode_files.append({"sample": meta["sample"], "source_file": meta["source_file"]})
+    except Exception as exc:
+        raise RuntimeError(
+            f"Batch worker pool failed with {n_workers} worker(s): {type(exc).__name__}: {exc}\n"
+            "This is a process-pool-level failure (a worker process crashed or "
+            "could not be started/pickled), not a single bad input file -- "
+            "retrying with --n-workers 1 will confirm whether it's parallelism-"
+            "related and still process the files sequentially."
+        ) from exc
 
     feat_df = pd.DataFrame(all_features, columns=FEATURE_COLUMNS)
     feat_path = os.path.join(output_dir, output_file)
