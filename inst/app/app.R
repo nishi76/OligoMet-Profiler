@@ -2018,6 +2018,14 @@ server <- function(input, output, session) {
 
           list(features = feats, results = batch_results, meta = batch_meta_data())
         }, error = function(e) {
+          # conditionMessage(e) carries the full captured Python stdout/stderr
+          # (see run_batch_deconvolution()'s stop() call in
+          # R/batch_ms_processing.R) -- printing it to the console, not just
+          # into rv$status_text, means a batch failure is visible immediately
+          # in the R/RStudio console instead of only in the app's Status
+          # panel, which the rest of the pipeline (workbook/report/plots)
+          # completes past silently since they all tolerate a NULL batch_out.
+          message("Batch MS processing failed:\n", conditionMessage(e))
           rv$status_text <- paste0(rv$status_text,
             "WARNING: Batch MS processing failed: ", conditionMessage(e), "\n")
           NULL
