@@ -20,6 +20,18 @@
 # identical to Python genuinely being absent. Actually invoking each
 # candidate with --version (not just resolving its path) catches this
 # before run_batch_deconvolution() ever gets to the real work.
+#' Locate a working Python 3 interpreter
+#'
+#' Tries `"python3"` then `"python"` on `PATH`, actually invoking each
+#' with `--version` (not just resolving its path via `Sys.which()`) to
+#' rule out a resolvable-but-non-functional entry -- see the comment
+#' above for why that check matters on Windows in particular.
+#'
+#' @return `"python3"` or `"python"` (whichever works), or `NA_character_`
+#'   if neither does. Used as the default `python_bin` for
+#'   [run_batch_deconvolution()].
+#' @seealso [run_batch_deconvolution()]
+#' @export
 find_python <- function() {
   for (bin in c("python3", "python")) {
     if (!nzchar(Sys.which(bin))) next
@@ -55,6 +67,23 @@ find_python <- function() {
 # defaults to 50 ppm), so using the H-adduct-only PRM list is sufficient:
 # DDA fragmentation is triggered off the dominant charge/adduct envelope in
 # practice, and the final confirmation match in R is exact regardless.
+#' Write a precursor m/z watch-list for targeted MS2 capture
+#'
+#' Writes the (H-adduct-only) theoretical precursor m/z list from
+#' [prm_inclusion_list()] to a plain text file, one value per line, for
+#' [run_batch_deconvolution()]'s `precursor_watchlist` argument. Only
+#' needs to be a broad net -- the Python side's own `ms2_watch_ppm`
+#' widens the match, and DDA fragmentation is triggered off the dominant
+#' charge/adduct envelope in practice regardless.
+#'
+#' @param mets A list of metabolite objects (see [generate_metabolites()]).
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @param z_range,max_oxid,h_offset Passed to [prm_inclusion_list()].
+#' @param out_path File path to write the watch-list to.
+#' @return `out_path`, returned for chaining into
+#'   [run_batch_deconvolution()]'s `precursor_watchlist` argument.
+#' @seealso [prm_inclusion_list()], [run_batch_deconvolution()]
+#' @export
 write_precursor_watchlist <- function(mets, dict = STANDARD_DICT, z_range = 3:12,
                                        max_oxid = 6, h_offset = 0, out_path) {
   prm <- prm_inclusion_list(mets, dict, z_range = z_range, h_offset = h_offset,
@@ -213,6 +242,16 @@ run_batch_deconvolution <- function(files, output_dir = tempdir(),
 # lookup like `name_map[feats$sample]` (R indexes a named vector by a
 # NUMERIC vector positionally, not by name) -- coerce back to character
 # right after reading so `sample` is always a stable join/lookup key.
+#' Read the combined feature table from a batch deconvolution run
+#'
+#' @param tsv_path Path to the feature TSV (see
+#'   [run_batch_deconvolution()]'s `features_path`).
+#' @return A data.frame with `sample` forced to character (see the
+#'   comment above for why -- numeric-looking sample names, e.g. Shiny's
+#'   renamed uploads, would otherwise silently become a numeric column).
+#' @seealso [run_batch_deconvolution()], [read_batch_ms2()],
+#'   [match_ms1_batch()]
+#' @export
 read_batch_features <- function(tsv_path) {
   if (!file.exists(tsv_path)) stop("Feature table not found: ", tsv_path)
   df <- utils::read.delim(tsv_path, stringsAsFactors = FALSE)
@@ -220,6 +259,19 @@ read_batch_features <- function(tsv_path) {
   df
 }
 
+#' Read the combined MS2 table from a batch deconvolution run
+#'
+#' Unpacks the semicolon-delimited `mz_list`/`intensity_list` columns the
+#' Python side writes (one row per MS2 scan) into one row per peak.
+#'
+#' @param tsv_path Path to the MS2 TSV (see [run_batch_deconvolution()]'s
+#'   `ms2_path`), or `NULL`/nonexistent (returns the empty shape below).
+#' @return A data.frame: `sample`, `ms2_scan_id`, `rt`, `precursor_mz`,
+#'   `precursor_z`, `mz`, `intensity` -- one row per peak. Empty
+#'   data.frame (same columns) if `tsv_path` is `NULL`, missing, or has
+#'   no rows.
+#' @seealso [run_batch_deconvolution()], [confirm_ms2_batch()]
+#' @export
 read_batch_ms2 <- function(tsv_path) {
   empty <- data.frame(sample = character(), ms2_scan_id = character(), rt = numeric(),
                        precursor_mz = numeric(), precursor_z = integer(),
@@ -293,11 +345,23 @@ match_ms1_batch <- function(mets, features, dict = STANDARD_DICT,
 }
 
 ## ---- Retained unidentified peaks -------------------------------------------
-# match_ms1() doesn't expose which feature row it picked as "best" for a
-# given theoretical candidate, but it does copy `rt` and `intensity`
-# (= max_intensity) through UNROUNDED from ms1_features -- so an exact-
-# equality join on (sample, rt, intensity) reliably identifies which
-# original features were used, without touching match_ms1() itself.
+#' Retain the batch features that matched no theoretical metabolite
+#'
+#' [match_ms1()] doesn't expose which feature row it picked as "best"
+#' for a given theoretical candidate, but it does copy `rt` and
+#' `intensity` (= `max_intensity`) through UNROUNDED from the original
+#' features -- so an exact-equality join on (`sample`, `rt`, `intensity`)
+#' reliably identifies which original features were used, without
+#' needing to touch [match_ms1()] itself.
+#'
+#' @param features A multi-sample feature table (see
+#'   [read_batch_features()]).
+#' @param ms1_matches Output of [match_ms1_batch()]/
+#'   [annotate_metabolites_batch()].
+#' @return `features`, filtered down to rows with no corresponding row
+#'   in `ms1_matches` -- retained for QC/follow-up rather than discarded.
+#' @seealso [annotate_metabolites_batch()]
+#' @export
 unmatched_features_batch <- function(features, ms1_matches) {
   if (is.null(features) || nrow(features) == 0) return(features)
   if (is.null(ms1_matches) || nrow(ms1_matches) == 0) return(features)
@@ -307,14 +371,38 @@ unmatched_features_batch <- function(features, ms1_matches) {
 }
 
 ## ---- MS2 confirmation of matched hits (reuses confirm_metabolite() verbatim)
-# Returns a data.frame -- unchanged from before -- but with the acquired
-# spectrum used for each row's confirmation stashed in a "spectra"
-# attribute, keyed by "sample|met_id|k_oxid|z|adduct". That's for callers
-# (the mirror-plot UI) that want to re-render the acquired-vs-theoretical
-# comparison for a specific row without re-running find_ms2_spectra(); it
-# rides along as an attribute rather than changing the return shape so
-# existing data.frame-only callers (nrow(), $sample, column selection) keep
-# working unmodified.
+#' Confirm batch MS1 hits with their acquired MS2 spectra
+#'
+#' For each unique (sample, metabolite, oxidation, charge, adduct) MS1
+#' hit, finds its acquired MS2 spectrum ([find_ms2_spectra()]) and scores
+#' fragment confirmation against it ([confirm_metabolite()]) -- unlike
+#' [annotate_metabolites()]'s single-file path, this searches the exact
+#' adduct the MS1 hit matched (since [match_ms1_batch()] tracks it per
+#' hit), not the full requested adduct set.
+#'
+#' @param mets A list of metabolite objects (see [generate_metabolites()]).
+#' @param ms1_matches Output of [match_ms1_batch()].
+#' @param ms2_by_sample A multi-sample MS2 table (see [read_batch_ms2()]).
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @param frag_tol_ppm,frag_z_range,include_internal Fragment matching
+#'   parameters -- see [confirm_metabolite()].
+#' @param h_offset Charge-envelope offset -- see [match_ms1()].
+#' @param ms2_lookup_ppm_tol Precursor m/z tolerance for finding the MS2
+#'   spectrum to confirm against -- see [find_ms2_spectra()].
+#' @return A data.frame, one row per confirmed (sample, metabolite,
+#'   oxidation, charge, adduct) hit: `sample`, `met_id`, `met_name`,
+#'   `k_oxid`, `z`, `adduct`, `n_ms2_peaks`, `n_frag_matches`,
+#'   `coverage`, `confirmation_score`, `n_diagnostics`, `confident`.
+#'   Also carries a `"spectra"` attribute: a named list (keyed
+#'   `"sample|met_id|k_oxid|z|adduct"`) of the acquired spectrum used for
+#'   each row's confirmation, for callers (the mirror-plot UI) that want
+#'   to re-render the comparison without re-running
+#'   [find_ms2_spectra()] -- this rides along as an attribute rather than
+#'   changing the return shape, so `nrow()`/`$sample`/column-selection
+#'   callers keep working unmodified.
+#' @seealso [annotate_metabolites_batch()], [confirm_metabolite()],
+#'   [plot_mirror_spectrum()]
+#' @export
 confirm_ms2_batch <- function(mets, ms1_matches, ms2_by_sample, dict = STANDARD_DICT,
                                frag_tol_ppm = 25, frag_z_range = 1:2, h_offset = 0,
                                ms2_lookup_ppm_tol = 20, include_internal = FALSE) {
