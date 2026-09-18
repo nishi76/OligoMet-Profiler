@@ -20,7 +20,14 @@
 # =============================================================================
 
 ## ---- Truncation helpers ----------------------------------------------------
-# Remove k nucleotides from the 3' end.
+#' Truncate an oligo_spec from the 3' end (exonuclease truncation)
+#'
+#' @param spec An `oligo_spec` list (see [parse_input()]).
+#' @param k Number of nucleotides to remove, `1` to `n-1`.
+#' @return A truncated spec-like list (`bases`, `sugars`, `linkages`,
+#'   `conj5`, `conj3 = "none"` (lost with the 3' end), `n`).
+#' @seealso [truncate_5p()], [generate_metabolites()]
+#' @export
 truncate_3p <- function(spec, k) {
   if (k < 1 || k >= spec$n) stop("3' truncation k must be in 1..(n-1)")
   n2 <- spec$n - k
@@ -34,7 +41,14 @@ truncate_3p <- function(spec, k) {
   )
 }
 
-# Remove k nucleotides from the 5' end.
+#' Truncate an oligo_spec from the 5' end (exonuclease truncation)
+#'
+#' @param spec An `oligo_spec` list (see [parse_input()]).
+#' @param k Number of nucleotides to remove, `1` to `n-1`.
+#' @return A truncated spec-like list (`bases`, `sugars`, `linkages`,
+#'   `conj5 = "none"` (lost with the 5' end), `conj3`, `n`).
+#' @seealso [truncate_3p()], [generate_metabolites()]
+#' @export
 truncate_5p <- function(spec, k) {
   if (k < 1 || k >= spec$n) stop("5' truncation k must be in 1..(n-1)")
   n2 <- spec$n - k
@@ -63,8 +77,31 @@ truncate_5p <- function(spec, k) {
 # pair is still short by exactly one S->O swap (15.9772 Da); sulfur
 # content (not the literal "s"/"u" code) decides which cap to use, same
 # rationale as count_linkages() above.
-# Returns list(frag5, frag3, frag5_p, frag3_p) -- frag5/frag3 keep the old
-# free-terminus behaviour, frag5_p/frag3_p carry the terminal (thio)phosphate.
+#' Split an oligo_spec at an endonuclease cleavage site
+#'
+#' Cleaves a single phosphodiester (or phosphorothioate) bond between
+#' position `i` and `i+1`. Hydrolysis leaves the bridging phosphate on
+#' exactly one product, never neither and never both -- which side keeps
+#' it depends on the nuclease, so both mass-balanced outcomes are
+#' returned: the free-3'-OH/free-5'-OH pair (the majority mechanism for
+#' most DNases) and the complementary pair where the phosphate stays on
+#' the other product (RNase A/RNase H-like). The terminal cap matches the
+#' cleaved bond's own chemistry -- a phosphorothioate linkage leaves a
+#' terminal thiophosphate, decided by the linkage's sulfur content, not
+#' by its literal code.
+#'
+#' @param spec An `oligo_spec` list (see [parse_input()]).
+#' @param i Cleavage site: the bond between position `i` and `i+1`,
+#'   `1` to `n-1`.
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @return A list of four spec-like fragments: `frag5`/`frag3` (free
+#'   3'-OH / free 5'-OH -- the bridging phosphate went to the OTHER
+#'   fragment), `frag5_p`/`frag3_p` (carrying the terminal (thio)phosphate
+#'   instead). Use `frag5` with `frag3_p`, or `frag5_p` with `frag3`, as
+#'   a mass-balanced pair -- never `frag5` with `frag3` together (that
+#'   drops the bridging phosphate entirely).
+#' @seealso [generate_metabolites()]
+#' @export
 endo_cleave <- function(spec, i, dict = STANDARD_DICT) {
   if (i < 1 || i >= spec$n) stop("endo cleavage site i must be in 1..(n-1)")
   lk_formula <- dict[[spec$linkages[i]]]$formula
@@ -103,6 +140,18 @@ endo_cleave <- function(spec, i, dict = STANDARD_DICT) {
 # (no desulfurization series at all) for any other sulfur-bearing backbone
 # in the dictionary (mesyl-phosphoramidate, thio-PACE, a user-defined PS
 # analogue added via the Custom Chemistry table).
+#' Count phosphorothioate vs. phosphodiester linkages in an oligo_spec
+#'
+#' A linkage counts as phosphorothioate by sulfur content in its own
+#' dictionary formula, not by matching the literal codes `"s"`/`"u"` --
+#' so a custom sulfur-bearing backbone (mesyl phosphoramidate, thioPACE,
+#' a user-defined PS analogue) is counted correctly too.
+#'
+#' @param spec An `oligo_spec` list (see [parse_input()]).
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @return A list: `n_ps`, `n_po`, `n_bonds` (total internal linkages).
+#' @seealso [generate_metabolites()] (drives the PS -> PO oxidation series)
+#' @export
 count_linkages <- function(spec, dict = STANDARD_DICT) {
   lk <- spec$linkages[!is.na(spec$linkages)]
   n_ps <- sum(vapply(lk, function(code) {
@@ -114,8 +163,14 @@ count_linkages <- function(spec, dict = STANDARD_DICT) {
 }
 
 ## ---- Gap detection (for gapmer endonuclease cleavage) ----------------------
-# Return positions where the sugar is deoxyribose (the DNA gap).
-# For non-gapmers (all-modified) this returns integer(0).
+#' Locate a gapmer's DNA gap
+#'
+#' @param spec An `oligo_spec` list (see [parse_input()]).
+#' @return Integer positions where the sugar is deoxyribose (`"d"`) --
+#'   the DNA gap. `integer(0)` for a non-gapmer (no deoxyribose
+#'   positions).
+#' @seealso [generate_metabolites()] (`endo_sites = "gap"`)
+#' @export
 find_gap <- function(spec) {
   which(spec$sugars == "d")
 }
@@ -135,15 +190,38 @@ find_gap <- function(spec) {
 }
 
 ## ---- Main generator --------------------------------------------------------
-# opts:
-#   oligo_name   : prefix for metabolite names (e.g. "inotersen")
-#   max_3p       : max 3' exonuclease truncations (default 10)
-#   max_5p       : max 5' exonuclease truncations (default 10)
-#   endo         : include endonuclease fragments? (default TRUE)
-#   endo_sites   : "all" | "gap" | integer vector of cleavage positions
-#   min_frag_len : minimum fragment length to keep (default 3)
-#   dedupe       : collapse structurally identical species? (default TRUE;
-#                  see dedupe_metabolites() below)
+#' Generate the theoretical metabolite library for an oligonucleotide
+#'
+#' The main library-generation entry point: builds the parent, the 3'
+#' and 5' exonuclease truncation series, and (optionally) endonuclease
+#' internal fragments (both mass-balanced termini per cleavage site --
+#' see [endo_cleave()]), then collapses structurally identical species
+#' produced by more than one route (see [dedupe_metabolites()]).
+#'
+#' @param spec An `oligo_spec` list (see [parse_input()]).
+#' @param opts A list of options:
+#'   \describe{
+#'     \item{oligo_name}{Prefix for metabolite names, e.g. `"inotersen"`.}
+#'     \item{max_3p, max_5p}{Max exonuclease truncations from each end
+#'       (default 10 each; capped at `spec$n - 1`).}
+#'     \item{endo}{Include endonuclease internal fragments? (default `TRUE`)}
+#'     \item{endo_sites}{`"all"` (every internal bond), `"gap"` (only
+#'       within a gapmer's DNA gap -- see [find_gap()]), or an integer
+#'       vector of specific cleavage positions.}
+#'     \item{min_frag_len}{Minimum fragment length to keep (default 3).}
+#'     \item{dedupe}{Collapse structurally identical species across
+#'       routes? (default `TRUE`; see [dedupe_metabolites()])}
+#'   }
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @return A list of metabolite objects, each with `id` (`"M01"`,
+#'   `"M02"`, ...), `name`, `kind` (`"parent"`/`"exo_3p"`/`"exo_5p"`/
+#'   `"endo_5frag"`/`"endo_3frag"`/`"endo_5frag_p"`/`"endo_3frag_p"`),
+#'   `modification`, `site`, `n`, `bases`/`sugars`/`linkages`,
+#'   `conj5`/`conj3`, `n_ps`/`n_po`/`n_bonds`, `parent_id`, and (after
+#'   deduplication) `kind_all`/`n_routes`.
+#' @seealso [metabolite_mass_info()], [metabolite_table()],
+#'   [match_ms1()]
+#' @export
 generate_metabolites <- function(spec, opts = list(), dict = STANDARD_DICT) {
   oligo_name <- opts$oligo_name %||% "OLIGO"
   max_3p     <- opts$max_3p %||% 10
@@ -211,16 +289,25 @@ generate_metabolites <- function(spec, opts = list(), dict = STANDARD_DICT) {
 }
 
 ## ---- De-duplicate structurally identical species ---------------------------
-# With endo = TRUE, endo_sites = "all", a 3' exonuclease truncation and an
-# endonuclease 5' fragment (or a 5' truncation and an endonuclease 3'
-# fragment) can be the exact same molecule -- same sequence, same termini,
-# same mass -- differing only in the `kind` label attached by whichever
-# route produced it. Left uncollapsed, degradation_summary() (which sums
-# signal by `kind`) counts that one species twice on the degradant side,
-# inflating % degradation. Collapse on a structural key (sequence + sugars
-# + linkages + terminal conjugates) and keep every route that produces the
-# surviving species in `kind_all`/`n_routes`, so the reporting stays
-# informative even after the count no longer double-counts mass.
+#' Collapse structurally identical metabolites produced by multiple routes
+#'
+#' With `endo = TRUE, endo_sites = "all"`, a 3' exonuclease truncation
+#' and an endonuclease 5' fragment (or a 5' truncation and an
+#' endonuclease 3' fragment) can be the exact same molecule -- same
+#' sequence, same termini, same mass -- differing only in the `kind`
+#' label attached by whichever route produced it. Left uncollapsed,
+#' [degradation_summary()] (which sums signal by `kind`) would count
+#' that one species twice on the degradant side, inflating % degradation.
+#' Collapses on a structural key (sequence + sugars + linkages + terminal
+#' conjugates), keeping every route that produces the surviving species
+#' in `kind_all`/`n_routes` so the reporting stays informative.
+#'
+#' @param mets A list of metabolite objects (see [generate_metabolites()]).
+#' @return The deduplicated list -- one entry per distinct structure,
+#'   each with `kind_all` (every `kind` that produced this structure) and
+#'   `n_routes` added.
+#' @seealso [generate_metabolites()]
+#' @export
 dedupe_metabolites <- function(mets) {
   key <- vapply(mets, function(m) paste(paste(m$bases, collapse = ""),
                                         paste(m$sugars, collapse = ""),
@@ -237,7 +324,14 @@ dedupe_metabolites <- function(mets) {
 }
 
 ## ---- Flatten to a display table -------------------------------------------
-# Returns a data.frame with one row per metabolite (spec vectors as strings).
+#' Flatten a metabolite list to a display data.frame
+#'
+#' @param mets A list of metabolite objects (see [generate_metabolites()]).
+#' @return A data.frame, one row per metabolite: `id`, `name`, `kind`,
+#'   `n`, `n_ps`, `n_po`, `bases` (collapsed to a single string),
+#'   `modification`, `site`.
+#' @seealso [generate_metabolites()]
+#' @export
 metabolite_table <- function(mets) {
   do.call(rbind, lapply(mets, function(m) data.frame(
     id = m$id, name = m$name, kind = m$kind, n = m$n,

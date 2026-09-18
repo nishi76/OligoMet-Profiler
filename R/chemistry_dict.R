@@ -54,7 +54,22 @@
   f
 }
 
-# Parse a formula string like "C5H5N5O" into a full element vector.
+#' Parse a molecular formula string into a full element vector
+#'
+#' Reads a string like `"C5H5N5O"` (element symbol + optional count,
+#' repeated) into a named numeric vector over the full element set this
+#' package tracks (`C H N O P S F Na K I Cl Br`, missing elements = 0).
+#' Silently skips anything it doesn't recognize -- by design, so stray
+#' characters in older data don't hard-fail it; use
+#' [is_valid_formula_string()] first when you need to reject a malformed
+#' string outright (e.g. before accepting a custom chemistry override).
+#'
+#' @param s A formula string, e.g. `"C7H12O4"`.
+#' @return A named numeric vector over every tracked element (0 for
+#'   elements not present in `s`).
+#' @seealso [is_valid_formula_string()], [format_formula()],
+#'   [formula_mass()]
+#' @export
 parse_formula <- function(s) {
   f <- .empty_formula()
   if (is.null(s) || !nzchar(s)) return(f)
@@ -80,6 +95,22 @@ parse_formula <- function(s) {
 # ("c7h12o4", "Q5", "C7 H12", "not a formula") is caught here, before it
 # reaches build_dictionary() and silently propagates a wrong mass into
 # every downstream metabolite mass.
+#' Strictly validate a formula string
+#'
+#' Unlike [parse_formula()] (which silently skips anything it doesn't
+#' recognize), this rejects any string not consumed ENTIRELY by valid
+#' element(count) tokens drawn from the tracked element set -- a typo or
+#' wrong case (`"c7h12o4"`, `"Q5"`, `"C7 H12"`, `"not a formula"`) is
+#' caught here. Intended for use before accepting a custom chemistry
+#' override (see the Custom Chemistry table in the Shiny app), so a bad
+#' formula string doesn't silently reach [build_dictionary()] and
+#' propagate a wrong mass into every downstream metabolite.
+#'
+#' @param s A formula string to validate.
+#' @return `TRUE` if `s` is entirely valid element(count) tokens from the
+#'   tracked element set, `FALSE` otherwise.
+#' @seealso [parse_formula()], [build_dictionary()]
+#' @export
 is_valid_formula_string <- function(s) {
   s <- trimws(as.character(s)[1])
   if (is.na(s) || !nzchar(s)) return(FALSE)
@@ -92,7 +123,14 @@ is_valid_formula_string <- function(s) {
   length(els) > 0 && all(els %in% .ELEMENTS)
 }
 
-# Formula -> string (only non-zero elements, canonical order).
+#' Render a formula vector as a string
+#'
+#' @param f A formula vector (compact or full -- coerced via internal
+#'   `.as_formula()`).
+#' @return A string with only the non-zero elements, in canonical
+#'   element order, e.g. `"C230H318N69O121P19S19"`.
+#' @seealso [parse_formula()]
+#' @export
 format_formula <- function(f) {
   f <- .as_formula(f)
   parts <- vapply(seq_along(f), function(i) {
@@ -103,13 +141,29 @@ format_formula <- function(f) {
   paste0(parts[parts != ""], collapse = "")
 }
 
-# Add two formulas (coerce to full order first).
+#' Add two molecular formulas
+#'
+#' @param a,b Formula vectors (compact or full).
+#' @return `a + b` as a full element vector.
+#' @export
 add_formulas <- function(a, b) .as_formula(a) + .as_formula(b)
 
-# Scale a formula by an integer (e.g. 14 * PS linkage).
+#' Scale a molecular formula by an integer
+#'
+#' @param a A formula vector (compact or full).
+#' @param k Scale factor, e.g. the number of repeats of a residue.
+#' @return `a * k` as a full element vector.
+#' @export
 scale_formula <- function(a, k) .as_formula(a) * k
 
-# Formula -> monoisotopic or average mass.
+#' Compute a formula's monoisotopic or average mass
+#'
+#' @param f A formula vector (compact or full).
+#' @param mono `TRUE` (default) for monoisotopic mass, `FALSE` for
+#'   average (molecular weight).
+#' @return A single numeric mass, in Da.
+#' @seealso [parse_formula()], [format_formula()]
+#' @export
 formula_mass <- function(f, mono = TRUE) {
   f <- .as_formula(f)
   m <- if (mono) .atomic_mass_mono else .atomic_mass_avg
@@ -342,9 +396,28 @@ CONJUGATE_FORMULAS <- list(
 )
 
 ## ---- Dictionary assembly / override ----------------------------------------
-# Build a single lookup list combining base/sugar/linkage/conjugate entries,
-# each value = list(formula=<full vector>, name, verify, kind).
-# User can pass overrides as a named list of compact formulas to replace/extend.
+#' Build a chemistry dictionary
+#'
+#' Combines the built-in base/sugar/linkage/conjugate tables
+#' (`BASE_FORMULAS`, `SUGAR_FORMULAS`, `LINKAGE_FORMULAS`,
+#' `CONJUGATE_FORMULAS`) into one lookup list, optionally extended or
+#' overridden with project-specific chemistry. [STANDARD_DICT] is this
+#' function's result with no overrides -- the default every module in
+#' this package falls back to.
+#'
+#' @param overrides A named list of custom entries. Each value can be:
+#'   a formula string (`"C7H12O4"`), a compact named vector
+#'   (`c(C=7,H=12,O=4)`), or a list with `formula` (string or vector)
+#'   plus optional `name`, `kind` (`"base"`/`"sugar"`/`"linkage"`/
+#'   `"conjugate"`; defaults to `"custom"` for a brand-new code, or the
+#'   existing entry's kind when overriding one), `attach`
+#'   (`"add"`/`"replace_H"`/`"replace_OH"`, conjugates only), and
+#'   `verify` (flag it as a best-estimate formula).
+#' @return A named list, one entry per code: each value is
+#'   `list(formula, name, verify, kind, attach)`.
+#' @seealso [STANDARD_DICT], [is_valid_formula_string()],
+#'   [assemble_oligo_formula()]
+#' @export
 build_dictionary <- function(overrides = list()) {
   d <- list()
   add <- function(tbl, kind) for (nm in names(tbl)) {
@@ -393,12 +466,23 @@ STANDARD_DICT <- build_dictionary()
 REFERENCE_DICT <- STANDARD_DICT
 
 ## ---- Oligo formula assembly -------------------------------------------------
-# Given canonical per-position vectors (bases, sugars, linkages) and optional
-# 5'/3' conjugate codes, assemble the neutral molecular formula.
-#   bases, sugars: length n (1..n, 5'->3')
-#   linkages: length n; linkages[i] = bond between pos i and i+1; NA at 3' end (pos n)
-#   conj5, conj3: conjugate codes (default "none")
-# Returns a full element vector.
+#' Assemble an oligonucleotide's neutral molecular formula
+#'
+#' Sums every base/sugar/linkage residue's formula, subtracts the water
+#' lost to condensation (`n` glycosidic bonds + `n-1` phosphodiester
+#' bonds = `2n-1` waters), and attaches any terminal conjugates.
+#'
+#' @param bases,sugars Per-position codes, length `n`, 5' to 3' (see
+#'   [parse_input()] for the canonical `oligo_spec` shape these come
+#'   from).
+#' @param linkages Per-position codes, length `n`: `linkages[i]` is the
+#'   bond between position i and i+1; `NA` at the 3' end (position `n`,
+#'   which has no outgoing bond).
+#' @param conj5,conj3 Terminal conjugate codes (default `"none"`).
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @return A full element vector (the neutral molecular formula).
+#' @seealso [metabolite_mass_info()], [attach_conjugate()]
+#' @export
 assemble_oligo_formula <- function(bases, sugars, linkages, conj5 = "none",
                                     conj3 = "none", dict = STANDARD_DICT) {
   n <- length(bases)
@@ -421,6 +505,20 @@ assemble_oligo_formula <- function(bases, sugars, linkages, conj5 = "none",
   f
 }
 
+#' Attach a terminal conjugate to a molecular formula
+#'
+#' Adds the conjugate's own formula, then applies its attachment
+#' chemistry: `"replace_H"` (the conjugate replaces a terminal hydrogen),
+#' `"replace_OH"` (an ester condensation, losing water), or `"add"` (no
+#' correction -- the default for `code = "none"`).
+#'
+#' @param f A formula vector to attach the conjugate to.
+#' @param code A conjugate code from the dictionary (see
+#'   `CONJUGATE_FORMULAS`), or `"none"`/`NA`/empty to leave `f` unchanged.
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @return `f` with the conjugate attached.
+#' @seealso [assemble_oligo_formula()]
+#' @export
 attach_conjugate <- function(f, code, dict) {
   if (is.null(code) || is.na(code) || code == "none" || !nzchar(code)) return(f)
   e <- dict[[code]]
@@ -433,13 +531,27 @@ attach_conjugate <- function(f, code, dict) {
 }
 
 ## ---- parse_triplet (general-purpose; works with any dictionary) -----------
-# Parse a triplet-notation string into canonical vectors. Used by any
-# sequence, not just the reference example below -- also called from
-# oligo_io.R.
-# Convention: linkages[i] = bond from position i to position i+1 (outgoing);
-#             linkages[n] = NA (3' terminal has no outgoing bond).
-# In the triplet string the linkage prefix on token i is the INCOMING bond
-# (from i-1 to i), so it maps to linkages[i-1].
+#' Parse a triplet-notation sequence string
+#'
+#' Parses `"[linkage][base][sugar]"`-per-token, dash-separated notation
+#' (the 5' token has no linkage prefix) into canonical per-position
+#' vectors. Linkage codes are matched against the dictionary's own
+#' linkage codes, longest-first, so multi-character codes (`mp`, `msp`,
+#' `pace`, `tpace`, `pgo`, ...) parse correctly and aren't mistaken for a
+#' shorter code's prefix. Usually called indirectly via [parse_input()],
+#' which auto-detects this notation as the default for anything not
+#' recognized as another format.
+#'
+#' @param triplet The triplet-notation string, e.g.
+#'   `"Te-sSe-sAe-sSe-...-sGe"` (or BioPharma Finder's own triplet
+#'   notation, e.g. `"Ad-pTd-pCd-pAd"`).
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @return A list with `bases`, `sugars`, `linkages` (parallel vectors,
+#'   one per position; `linkages[i]` is the bond FROM position i to
+#'   i+1, `NA` at the 3' end) -- ready for [parse_input()] to finish
+#'   into a canonical `oligo_spec`.
+#' @seealso [parse_input()], [format_triplet()], [assemble_oligo_formula()]
+#' @export
 parse_triplet <- function(triplet, dict = STANDARD_DICT) {
   toks <- trimws(strsplit(triplet, "-")[[1]])
   toks <- toks[nzchar(toks)]
@@ -623,6 +735,25 @@ REFERENCE_OLIGOS <- list(
        published_avg = 7183.08)
 )
 
+#' Self-test the formula engine against two approved drugs' published formulas
+#'
+#' Re-derives nusinersen's and inotersen's molecular formulas from their
+#' sequences and chemistry, and compares each against the published
+#' free-acid formula on its product labelling. A regression check on the
+#' formula engine itself -- run it after editing the dictionary -- not a
+#' statement about whatever sequence you're actually analyzing.
+#'
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @param verbose Whether to `cat()` a human-readable report as it runs.
+#' @return Invisibly, a list: the primary anchor's own fields
+#'   (`name`, `formula`, `formula_vec`, `mass`, `avg_mass`, `ppm`,
+#'   `parsed`) at the top level for callers expecting a single result,
+#'   plus `ok` (`TRUE` only if BOTH anchors reproduce their published
+#'   formula within 1 ppm) and `all` (both anchors' full results, named
+#'   by drug).
+#' @seealso [build_dictionary()], [parse_triplet()],
+#'   [assemble_oligo_formula()]
+#' @export
 validate_reference <- function(dict = STANDARD_DICT, verbose = TRUE) {
   results <- lapply(.REFERENCE_ANCHORS, function(a) {
     p <- parse_triplet(a$triplet, dict)

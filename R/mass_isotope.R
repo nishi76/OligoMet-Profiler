@@ -34,7 +34,15 @@
 )
 
 ## ---- Metabolite mass info --------------------------------------------------
-# Returns mono mass, avg mass, formula string, formula vector for a metabolite.
+#' Compute a metabolite's mass and molecular formula
+#'
+#' @param met A metabolite object (see [generate_metabolites()]).
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @return A list: `mono_mass`, `avg_mass`, `formula_str`, `formula_vec`
+#'   (the full element vector, e.g. for [ps_oxid_formula()]).
+#' @seealso [assemble_oligo_formula()], [charge_envelope()],
+#'   [ps_oxidation_series()]
+#' @export
 metabolite_mass_info <- function(met, dict = STANDARD_DICT) {
   f <- assemble_oligo_formula(met$bases, met$sugars, met$linkages,
                               met$conj5, met$conj3, dict = dict)
@@ -47,8 +55,19 @@ metabolite_mass_info <- function(met, dict = STANDARD_DICT) {
 }
 
 ## ---- Charge envelope -------------------------------------------------------
-# [M - zH]^z-  =>  m/z = (M + h_offset - z*mp) / z
-# Returns data.frame(z, mz) for the monoisotopic peak at each charge state.
+#' Compute the negative-ESI charge envelope for a neutral mass
+#'
+#' `[M - zH]^z-` convention: `m/z = (M + h_offset - z*proton) / z`.
+#'
+#' @param mono_mass Monoisotopic neutral mass, in Da.
+#' @param z_range Charge states to compute.
+#' @param h_offset `0` for the standard `[M-zH]^z-` convention
+#'   (matches the eluforsen/FMVS papers); non-zero (e.g. `3.0046`) only
+#'   to reproduce a legacy workbook's own neutral-mass convention.
+#' @return A data.frame(`z`, `mz`): the monoisotopic peak's m/z at each
+#'   charge state.
+#' @seealso [isotope_mz_cluster()], [match_ms1()]
+#' @export
 charge_envelope <- function(mono_mass, z_range = 3:12, h_offset = 0) {
   z <- z_range[z_range >= 1]
   mz <- (mono_mass + h_offset - z * .PROTON) / z
@@ -56,10 +75,27 @@ charge_envelope <- function(mono_mass, z_range = 3:12, h_offset = 0) {
 }
 
 ## ---- PS->PO oxidation series ----------------------------------------------
-# Mass after k desulfurizations.
+#' Mass after k phosphorothioate-to-phosphodiester desulfurizations
+#'
+#' Each PS -> PO oxidation event replaces one sulfur with one oxygen
+#' (-15.977157 Da).
+#'
+#' @param mono_mass Monoisotopic mass before oxidation, in Da.
+#' @param k Number of desulfurization events.
+#' @return `mono_mass - k * 15.977157`.
+#' @seealso [ps_oxid_formula()], [ps_oxidation_series()]
+#' @export
 ps_oxid_mass <- function(mono_mass, k) mono_mass - k * .PS_TO_PO_SHIFT
 
-# Formula vector after k desulfurizations (S-k, O+k).
+#' Molecular formula after k phosphorothioate-to-phosphodiester oxidations
+#'
+#' @param formula_vec A full element formula vector (see
+#'   [metabolite_mass_info()]).
+#' @param k Number of desulfurization events (subtracted from S, added
+#'   to O).
+#' @return The formula vector after `k` oxidations.
+#' @seealso [ps_oxid_mass()], [ps_oxidation_series()]
+#' @export
 ps_oxid_formula <- function(formula_vec, k) {
   f <- formula_vec
   f[["S"]] <- f[["S"]] - k
@@ -67,8 +103,19 @@ ps_oxid_formula <- function(formula_vec, k) {
   f
 }
 
-# Full oxidation series for a metabolite: k = 0..min(n_ps, max_oxid)
-# Returns data.frame(k, mono_mass, formula_str) plus envelope if requested.
+#' Compute a metabolite's full PS -> PO oxidation series
+#'
+#' @param met A metabolite object (see [generate_metabolites()]).
+#' @param max_oxid Maximum oxidation events to model (capped at `met`'s
+#'   own phosphorothioate count).
+#' @param z_range,h_offset Unused by the current implementation (reserved
+#'   for an envelope column); kept for signature compatibility.
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @return A data.frame, one row per oxidation level `k = 0` (unoxidized)
+#'   through `min(met$n_ps, max_oxid)`: `k`, `mono_mass`, `avg_mass`,
+#'   `formula_str`.
+#' @seealso [ps_oxid_mass()], [ps_oxid_formula()]
+#' @export
 ps_oxidation_series <- function(met, max_oxid = 6, z_range = 3:12,
                                 h_offset = 0, dict = STANDARD_DICT) {
   info <- metabolite_mass_info(met, dict)
@@ -241,6 +288,31 @@ ps_oxidation_series <- function(met, max_oxid = 6, z_range = 3:12,
 # but cuts enviPat's enumeration cost dramatically -- this is what was
 # making full-library workbook/report builds (which call this once per
 # metabolite per PS-oxidation level) take tens of minutes.
+#' Compute a formula's isotope pattern
+#'
+#' Uses enviPat if available and `use_envipat = TRUE`, else falls back to
+#' a built-in binary-exponentiation convolution. Both paths are
+#' memoized by (formula, threshold, n_top), since the pattern depends
+#' only on the formula, never on charge state or adduct -- without that,
+#' the same expensive convolution would otherwise be recomputed once per
+#' charge state per adduct (see [isotope_mz_cluster()]/[compute_envelope()]).
+#'
+#' @param formula A formula string or vector (see [parse_formula()]).
+#' @param threshold Minimum relative abundance to keep during
+#'   enumeration/convolution (not the final per-peak cutoff -- only the
+#'   top `n_top` peaks by abundance are kept regardless). The default
+#'   (`1e-4`, 0.01% relative abundance) is well below any real MS noise
+#'   floor and rarely changes which peaks survive truncation, but keeps
+#'   enviPat's enumeration cost from exploding on large, S/P-heavy oligo
+#'   formulas.
+#' @param n_top Number of isotope peaks to keep, ranked by abundance.
+#' @param use_envipat Whether to try enviPat first (`FALSE` uses the
+#'   built-in convolution only).
+#' @return A data.frame(`mass`, `abundance`), sorted by mass, at most
+#'   `n_top` rows. `NULL` if neither path could compute a pattern (e.g.
+#'   enviPat unavailable and the built-in path also failed).
+#' @seealso [isotope_mz_cluster()], [compute_envelope()]
+#' @export
 isotope_pattern <- function(formula, threshold = 1e-4, n_top = 15,
                             use_envipat = TRUE) {
   if (is.character(formula)) formula <- parse_formula(formula)
@@ -252,10 +324,24 @@ isotope_pattern <- function(formula, threshold = 1e-4, n_top = 15,
 }
 
 ## ---- Isotope m/z cluster for a charge state --------------------------------
-# Returns data.frame(iso, mz, abundance, mass) for isotopes at charge z.
-# iso = 0 for monoisotopic (lowest mass), 1, 2, ... by increasing mass.
-# Selection: always include monoisotopic + top-(n_top-1) by abundance, so the
-# monoisotopic reference is never dropped even when it is not the most abundant.
+#' Compute the observable isotope m/z cluster at one charge state
+#'
+#' Selects the monoisotopic peak (always kept, even when it is not the
+#' most abundant) plus the top `n_top - 1` remaining peaks by abundance,
+#' then converts each to m/z at charge `z`.
+#'
+#' @param formula A formula string or vector (see [parse_formula()]).
+#' @param z Charge state.
+#' @param n_top Number of isotope peaks to include (monoisotopic +
+#'   `n_top - 1` most abundant others).
+#' @param h_offset Charge-envelope offset -- see [charge_envelope()].
+#' @param use_envipat Whether to use enviPat for the underlying pattern
+#'   -- see [isotope_pattern()].
+#' @return A data.frame(`iso`, `mz`, `abundance`, `mass`), ordered by
+#'   mass (`iso = 0` is monoisotopic, increasing thereafter). `NULL` if
+#'   no isotope pattern could be computed.
+#' @seealso [isotope_pattern()], [match_ms1()] (its `iso_fit` score)
+#' @export
 isotope_mz_cluster <- function(formula, z, n_top = 8, h_offset = 0,
                                use_envipat = TRUE) {
   if (is.character(formula)) formula <- parse_formula(formula)
@@ -275,15 +361,33 @@ isotope_mz_cluster <- function(formula, z, n_top = 8, h_offset = 0,
 }
 
 ## ---- Adduct variants -------------------------------------------------------
-# Mass shift for a single cation adduct (replaces one H).
+#' Mass shift for a single cation adduct
+#'
+#' Negative-mode adduct where one cation replaces one backbone hydrogen:
+#' `+Na` +21.981944 Da, `+K` +37.955882 Da, `+NH4` +17.026549 Da.
+#'
+#' @param adduct One of `"Na"`, `"K"`, `"NH4"`.
+#' @return The mass shift, in Da.
+#' @seealso [match_ms1()]
+#' @export
 adduct_shift <- function(adduct = c("Na", "K", "NH4")) {
   adduct <- match.arg(adduct)
   .ADDUCT_SHIFT[[adduct]]
 }
 
 ## ---- Depurination variants -------------------------------------------------
-# For each purine position (A or G), compute the abasic-site variant.
-# Mass shift = -base_mass + H2O_mass.  Formula: remove base, add H2O.
+#' Compute depurination (abasic-site) mass variants
+#'
+#' For each purine position (A or G), computes the mass/formula after
+#' loss of the free base with regain of water (an abasic site).
+#'
+#' @param met A metabolite object (see [generate_metabolites()]).
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @return A data.frame, one row per purine position: `position`, `base`,
+#'   `mono_mass`, `formula_str`, `mass_shift`. `NULL` if `met` has no
+#'   purine (A/G) positions.
+#' @seealso [oxidation_variant()]
+#' @export
 depurination_variants <- function(met, dict = STANDARD_DICT) {
   purines <- which(met$bases %in% c("A", "G"))
   if (length(purines) == 0) return(NULL)
@@ -301,7 +405,16 @@ depurination_variants <- function(met, dict = STANDARD_DICT) {
 }
 
 ## ---- +O oxidation variant --------------------------------------------------
-# One additional O (e.g. on a base or sugar).  Formula: O+1.
+#' Compute the +O oxidation mass variant
+#'
+#' One additional oxygen (e.g. on a base or sugar).
+#'
+#' @param met A metabolite object (see [generate_metabolites()]).
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @return A list: `mono_mass`, `formula_str`, `mass_shift` (the mass of
+#'   one oxygen atom).
+#' @seealso [depurination_variants()]
+#' @export
 oxidation_variant <- function(met, dict = STANDARD_DICT) {
   info <- metabolite_mass_info(met, dict)
   fv <- info$formula_vec
@@ -312,9 +425,27 @@ oxidation_variant <- function(met, dict = STANDARD_DICT) {
 }
 
 ## ---- Full envelope table for a metabolite ----------------------------------
-# Produces a tidy table: one row per (charge state, isotope) for the parent
-# metabolite, optionally across PS-oxidation levels.
-# Columns: met_id, k_oxid, z, iso, mz, abundance, mono_mass, formula
+#' Compute the full charge/isotope envelope table for a metabolite
+#'
+#' One row per (PS-oxidation level, charge state, isotope peak) --
+#' the table behind the app's Charge Envelopes workbook sheet and report
+#' section.
+#'
+#' @param met A metabolite object (see [generate_metabolites()]).
+#' @param z_range Charge states to include.
+#' @param n_iso Isotope peaks per (oxidation level, charge state) -- see
+#'   [isotope_mz_cluster()].
+#' @param max_oxid Maximum PS -> PO oxidation events to model (capped at
+#'   `met`'s own phosphorothioate count).
+#' @param h_offset Charge-envelope offset -- see [charge_envelope()].
+#' @param use_envipat Whether to use enviPat for isotope patterns -- see
+#'   [isotope_pattern()].
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @return A data.frame: `met_id`, `met_name`, `k_oxid`, `z`, `iso`,
+#'   `mz`, `abundance`, `mono_mass`, `formula` -- one row per (oxidation
+#'   level, charge state, isotope peak).
+#' @seealso [isotope_mz_cluster()], [ps_oxidation_series()]
+#' @export
 compute_envelope <- function(met, z_range = 3:12, n_iso = 8,
                              max_oxid = 0, h_offset = 0,
                              use_envipat = TRUE, dict = STANDARD_DICT) {

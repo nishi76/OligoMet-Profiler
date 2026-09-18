@@ -96,6 +96,32 @@
 # c, x are rarely the ions actually seen. Pass
 # ion_types = c("a","aB","b","bB","c","w","x","y") for full McLuckey
 # coverage (e.g. HCD, or other fragmentation methods that behave differently).
+#' Generate McLuckey terminal MS2 fragment ions for a metabolite
+#'
+#' Generates a/a-B/b/b-B/c/d ions (5'-terminal) and w/x/y/z ions
+#' (3'-terminal) at every backbone cleavage site, in negative ESI mode
+#' (`[ion - zH]^z-`). Complementary pairs (a/w, b/x, c/y, d/z) sum to
+#' exactly the neutral precursor mass by construction.
+#'
+#' @param met A metabolite object (see [generate_metabolites()]).
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @param ion_types Which ion types to generate. The default
+#'   (`c("aB", "w", "y", "b")`) covers what actually dominates negative-
+#'   ion CID spectra of oligonucleotides; pass
+#'   `c("a","aB","b","bB","c","w","x","y")` (optionally adding `include_dz
+#'   = TRUE` for d/z) for full McLuckey coverage.
+#' @param z_range Charge states for m/z calculation.
+#' @param h_offset Mass offset for non-standard envelope conventions --
+#'   see [charge_envelope()].
+#' @param include_dz Also include d/z ions (an approximate cleavage,
+#'   `FALSE` by default).
+#' @return A list of fragment objects (each with `met_id`, `ion_type`,
+#'   `direction`, `cleavage_site`, `frag_length`, `formula`,
+#'   `formula_vec`, `mono_mass`, `mz_table` (one row per charge state),
+#'   `base_loss`). Empty list for a metabolite shorter than 3 nt.
+#' @seealso [generate_internal_fragments()], [match_fragments()],
+#'   [confirm_metabolite()]
+#' @export
 generate_fragments <- function(met, dict = STANDARD_DICT,
                                 ion_types = c("aB", "w", "y", "b"),
                                 z_range = 1:2, h_offset = 0,
@@ -189,6 +215,25 @@ generate_fragments <- function(met, dict = STANDARD_DICT,
 # w-a(i,j) = I_{i+1..j} + L_i - H   (w adds L_i + O - H, a removes O)
 # w-b(i,j) = I_{i+1..j} + L_i + O - H  (w adds L_i + O - H, b retains 3'-OH)
 # w-d(i,j) = I_{i+1..j} + L_i - H - base_j + H2O  (w + d with base loss)
+#' Generate internal (double-cleavage) MS2 fragment ions for a metabolite
+#'
+#' Internal fragments from two backbone cleavages at positions `i < j`
+#' (spanning `i+1..j`): w-a (w-type 5' end + a-type 3' end), w-b, and
+#' optionally w-d (with additional base loss).
+#'
+#' @param met A metabolite object (see [generate_metabolites()]).
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @param types Which internal ion types to generate: `"wa"`, `"wb"`,
+#'   `"wd"`.
+#' @param z_range Charge states for m/z calculation.
+#' @param h_offset Mass offset -- see [charge_envelope()].
+#' @param min_len,max_len Minimum/maximum internal fragment length to
+#'   generate.
+#' @return A list of fragment objects, same shape as
+#'   [generate_fragments()] plus `internal_5`/`internal_3` (the two
+#'   cleavage positions). Empty list for a metabolite shorter than 4 nt.
+#' @seealso [generate_fragments()]
+#' @export
 generate_internal_fragments <- function(met, dict = STANDARD_DICT,
                                          types = c("wa", "wb"),
                                          z_range = 1:2, h_offset = 0,
@@ -307,6 +352,27 @@ generate_internal_fragments <- function(met, dict = STANDARD_DICT,
 # .make_frag()), independent of fragment charge. Always positive; peaks for
 # a given spectrum should be rescaled (e.g. to a 0-100 max) by the caller,
 # matching the MS1 library's convention -- see build_ms2_library().
+#' Rule-based relative intensity weight for a fragment ion
+#'
+#' NOT a calibrated intensity model -- there's no oligonucleotide
+#' equivalent of the large annotated spectral libraries peptide tools
+#' train on. Encodes only fragmentation propensities already established
+#' in the literature: phosphorothioate cleavage sites are more labile
+#' than phosphodiester; y/b ions predominate for MOE/2'-OMe chemistry and
+#' a-B/w for DNA chemistry; purine base-loss is more labile than
+#' pyrimidine; internal (double-cleavage) ions are consistently minor
+#' relative to terminal ions. Treat the result as a coarse "expect this
+#' peak relatively taller" ranking, not a predicted abundance -- confirm
+#' every real assignment against acquired data.
+#'
+#' @param f A fragment object (see [generate_fragments()]).
+#' @param met A metabolite object (see [generate_metabolites()]).
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @return A single positive numeric weight (independent of fragment
+#'   charge). Callers should rescale a spectrum's own set of weights
+#'   (e.g. to a 0-100 max), not treat this as an absolute intensity.
+#' @seealso [mirror_spectrum_data()]
+#' @export
 fragment_intensity_weight <- function(f, met, dict = STANDARD_DICT) {
   if (identical(f$direction, "internal")) {
     w <- .INTERNAL_ION_WEIGHT
@@ -331,7 +397,16 @@ fragment_intensity_weight <- function(f, met, dict = STANDARD_DICT) {
 }
 
 ## ---- Flatten fragments to a display table ---------------------------------
-# Returns data.frame with one row per (fragment, charge state).
+#' Flatten a fragment list to a display data.frame
+#'
+#' @param frags A list of fragment objects (see [generate_fragments()]/
+#'   [generate_internal_fragments()]).
+#' @return A data.frame, one row per (fragment, charge state): `met_id`,
+#'   `ion_type`, `direction`, `cleavage_site`, `frag_length`, `formula`,
+#'   `mono_mass`, `base_loss`, plus `z`/`mz` from each fragment's
+#'   `mz_table`.
+#' @seealso [generate_fragments()]
+#' @export
 fragment_table <- function(frags) {
   if (length(frags) == 0) return(data.frame())
   rows <- lapply(frags, function(f) {
@@ -370,6 +445,31 @@ fragment_table <- function(frags) {
   matched[sort(best_idx), , drop = FALSE]
 }
 
+#' Match theoretical fragments against observed MS2 peaks
+#'
+#' For each theoretical fragment, charge state, and adduct, finds the
+#' nearest observed peak within `tol_ppm`. When two different fragments
+#' (or the same fragment at two charge states) both claim the same
+#' observed peak, keeps only the best (lowest ppm error) claim -- without
+#' this, dense spectral regions would inflate
+#' [confirmation_score()]'s match count and coverage.
+#'
+#' @param frags A list of fragment objects (see [generate_fragments()]/
+#'   [generate_internal_fragments()]).
+#' @param ms2_peaks A data.frame with `mz`, `intensity` columns.
+#' @param tol_ppm Mass tolerance for a match.
+#' @param z_range Charge states to try.
+#' @param h_offset Currently unused by this function (reserved for
+#'   signature compatibility with the rest of the matching suite).
+#' @param adducts Adducts to try (`"H"` is unmodified).
+#' @return A data.frame, one row per matched (fragment, charge, adduct):
+#'   `met_id`, `ion_type`, `direction`, `cleavage_site`, `frag_length`,
+#'   `z`, `adduct`, `theo_mz`, `obs_mz` (copied verbatim from
+#'   `ms2_peaks$mz`, never rounded -- [mirror_spectrum_data()] relies on
+#'   exact-value lookup against it), `ppm_error`, `intensity`, `formula`,
+#'   `base_loss`. Empty data.frame if nothing matches.
+#' @seealso [confirmation_score()], [confirm_metabolite()]
+#' @export
 match_fragments <- function(frags, ms2_peaks, tol_ppm = 25,
                              z_range = 1:2, h_offset = 0,
                              adducts = c("H")) {
@@ -405,7 +505,18 @@ match_fragments <- function(frags, ms2_peaks, tol_ppm = 25,
 }
 
 ## ---- Check for PS diagnostic ions in MS2 data ------------------------------
-# Returns list of found diagnostic ions with observed m/z and intensity.
+#' Check for phosphorothioate diagnostic ions in an MS2 spectrum
+#'
+#' Looks for the two PS-specific marker ions (m/z 94.9452, 192.9746;
+#' Kim et al. 2019 / Ye et al. 2025) in an acquired spectrum.
+#'
+#' @param ms2_peaks A data.frame with `mz`, `intensity` columns.
+#' @param tol_ppm Mass tolerance for a match.
+#' @return A data.frame, one row per diagnostic ion found:
+#'   `diagnostic_mz`, `obs_mz`, `ppm_error`, `intensity`. Empty
+#'   data.frame if neither is found.
+#' @seealso [confirmation_score()], [confirm_metabolite()]
+#' @export
 check_ps_diagnostic <- function(ms2_peaks, tol_ppm = 50) {
   if (nrow(ms2_peaks) == 0) return(data.frame())
   rows <- list()
@@ -425,12 +536,17 @@ check_ps_diagnostic <- function(ms2_peaks, tol_ppm = 50) {
 }
 
 ## ---- Sequence coverage ----------------------------------------------------
-# Fraction of backbone cleavage sites confirmed by at least one matched ion.
-# cleavage sites: 1..(n-1) (between each pair of adjacent nucleotides)
-# A site is "covered" if any matched fragment has cleavage_site == that site.
-#
-# matched: data.frame from match_fragments()
-# n:       oligonucleotide length
+#' Compute MS2 sequence coverage from matched fragments
+#'
+#' Fraction of backbone cleavage sites (`1` to `n-1`, between each pair
+#' of adjacent nucleotides) confirmed by at least one matched fragment.
+#'
+#' @param matched Output of [match_fragments()].
+#' @param n Oligonucleotide length.
+#' @return A list: `coverage` (fraction, 0-1), `covered_sites` (the
+#'   distinct cleavage sites confirmed), `total_sites` (`n - 1`).
+#' @seealso [match_fragments()], [confirmation_score()]
+#' @export
 sequence_coverage <- function(matched, n) {
   total_sites <- n - 1
   if (total_sites < 1) return(list(coverage = 0, covered_sites = integer(0),
@@ -444,19 +560,28 @@ sequence_coverage <- function(matched, n) {
 }
 
 ## ---- Confirmation score ---------------------------------------------------
-# Composite score (0-100) for metabolite identification confidence.
-# Based on FMVS paper: total confirmation score = similarity of experimental
-# to theoretical isotope envelope (MS1); sequence coverage (MS2) > 50% threshold.
-#
-# We compute a practical score combining:
-#   - sequence coverage (0-50 points)
-#   - number of matched fragment ions (0-25 points)
-#   - mass accuracy of matches (0-15 points)
-#   - PS diagnostic ion presence (0-10 points)
-#
-# matched:     data.frame from match_fragments()
-# n:           oligonucleotide length
-# diagnostics: data.frame from check_ps_diagnostic()
+#' Compute a composite MS2 confirmation score (0-100)
+#'
+#' Combines sequence coverage (0-50 points, linear up to 80% coverage
+#' then capped), number of matched fragment ions (0-25, 10+ matches =
+#' full score), mass accuracy of matches (0-15, based on median ppm
+#' error), and PS diagnostic ion presence (0-10, 5 per diagnostic ion).
+#' Inspired by the FMVS paper's total confirmation score concept
+#' (isotope-envelope similarity for MS1, >50% sequence coverage
+#' threshold for MS2), adapted into one composite MS2-only score here.
+#'
+#' @param matched Output of [match_fragments()].
+#' @param n Oligonucleotide length.
+#' @param diagnostics Output of [check_ps_diagnostic()]; `NULL` treats
+#'   it as no diagnostic ions found.
+#' @return A list: `total_score` (0-100), `coverage`, `coverage_score`,
+#'   `n_matches`, `match_score`, `median_ppm`, `accuracy_score`,
+#'   `n_diagnostics`, `diagnostic_score`, `covered_sites`,
+#'   `total_sites`, `confident` (`TRUE` when `total_score >= 75` AND
+#'   `coverage >= 0.5`).
+#' @seealso [confirm_metabolite()], [match_fragments()],
+#'   [check_ps_diagnostic()]
+#' @export
 confirmation_score <- function(matched, n, diagnostics = NULL) {
   cov <- sequence_coverage(matched, n)
   n_match <- if (is.null(matched) || nrow(matched) == 0) 0 else nrow(matched)
@@ -497,8 +622,25 @@ confirmation_score <- function(matched, n, diagnostics = NULL) {
 }
 
 ## ---- Full fragment confirmation for a metabolite ---------------------------
-# Convenience: generate fragments, match, score in one call.
-# Returns list with fragments, matches, diagnostics, coverage, score.
+#' Confirm a metabolite against one MS2 spectrum in a single call
+#'
+#' Convenience wrapper: [generate_fragments()] (plus
+#' [generate_internal_fragments()] when requested), [match_fragments()],
+#' [check_ps_diagnostic()], and [confirmation_score()], in one call.
+#'
+#' @param met A metabolite object (see [generate_metabolites()]).
+#' @param ms2_peaks A data.frame with `mz`, `intensity` columns: one
+#'   acquired MS2 spectrum.
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @param tol_ppm,z_range,ion_types,include_internal,include_dz,h_offset,adducts
+#'   Fragment generation/matching parameters -- see [generate_fragments()]/
+#'   [match_fragments()].
+#' @return A list: `metabolite`, `fragments` (all generated, matched or
+#'   not), `matched` (see [match_fragments()]), `diagnostics` (see
+#'   [check_ps_diagnostic()]), `coverage`, `score` (see
+#'   [confirmation_score()]).
+#' @seealso [annotate_metabolites()], [mirror_spectrum_data()]
+#' @export
 confirm_metabolite <- function(met, ms2_peaks, dict = STANDARD_DICT,
                                 tol_ppm = 25, z_range = 1:2,
                                 ion_types = c("aB", "w", "y", "b"),
@@ -520,9 +662,27 @@ confirm_metabolite <- function(met, ms2_peaks, dict = STANDARD_DICT,
 }
 
 ## ---- PRM inclusion list export --------------------------------------------
-# Generate a targeted inclusion list for PRM acquisition from the metabolite
-# library. Returns data.frame with precursor m/z, charge, metabolite name.
-# This is a first-class output of the library generator for MS acquisition.
+#' Generate a targeted PRM/MS1 inclusion list from the metabolite library
+#'
+#' Enumerates theoretical precursor m/z (per metabolite, PS-oxidation
+#' level, and charge state) within a typical Q1 scan range (100-3000
+#' m/z), for targeted PRM acquisition or an MS1 inclusion list. A
+#' first-class output of the library generator, not just a matching
+#' intermediate.
+#'
+#' @param mets A list of metabolite objects (see [generate_metabolites()]).
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @param z_range Charge states to include.
+#' @param h_offset Charge-envelope offset -- see [charge_envelope()].
+#' @param max_oxid Maximum PS -> PO oxidation events to model per
+#'   metabolite (capped at each metabolite's own phosphorothioate count).
+#' @param ppm_window Isolation window to record alongside each precursor
+#'   (informational; not applied as a filter here).
+#' @return A data.frame, one row per (metabolite, oxidation level,
+#'   charge state) within the Q1 range: `met_id`, `met_name`, `kind`,
+#'   `n`, `k_oxid`, `z`, `precursor_mz`, `isolation_ppm`.
+#' @seealso [write_precursor_watchlist()]
+#' @export
 prm_inclusion_list <- function(mets, dict = STANDARD_DICT, z_range = 3:12,
                                 h_offset = 0, max_oxid = 0,
                                 ppm_window = 10) {
