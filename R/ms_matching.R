@@ -268,10 +268,85 @@ import_peak_list <- function(file, type = c("ms1", "ms2"), sep = ",") {
 # via unitAccession UO:0000031, but this parser -- like the rest of this
 # module -- doesn't convert units, so a file using different units would
 # need a correspondingly different rt_tol).
+# Median of ALL observed MS1 peak intensities -- most individual centroided
+# peaks in a real LC-MS run are background/chemical noise rather than real
+# analyte signal, so this is a simple, defensible proxy for the noise floor
+# (not a windowed local-RMS baseline the way dedicated vendor software
+# computes it, which needs per-region statistics this doesn't attempt).
+# Mirrors _NoiseReservoir.noise_level() in the Python batch pipeline
+# (inst/python/oligomet_deconv/roi.py), same idea applied to the R-native
+# single-file path.
+#' Estimate a file's MS1 background/noise level
+#'
+#' Median of every observed MS1 peak intensity. Most individual
+#' centroided peaks in a real LC-MS run are background/chemical noise
+#' rather than real analyte signal, so this is a simple, defensible proxy
+#' for the noise floor -- not a windowed local-RMS baseline the way
+#' dedicated vendor software computes it, which needs per-region
+#' statistics this doesn't attempt.
+#'
+#' @param ms1_peaks A data.frame with an `intensity` column (e.g.
+#'   `read_ms_file(file)$ms1`).
+#' @return A single numeric noise level (the median of all positive,
+#'   non-`NA` intensities), or `NA_real_` if there are none.
+#' @seealso [extract_ms1_features()]'s `sn_threshold` argument, which
+#'   uses this to compute `noise_level * sn_threshold` as the effective
+#'   intensity floor.
+#' @export
+estimate_ms_noise_level <- function(ms1_peaks) {
+  ints <- ms1_peaks$intensity
+  ints <- ints[!is.na(ints) & ints > 0]
+  if (length(ints) == 0) return(NA_real_)
+  stats::median(ints)
+}
+
+# `sn_threshold`, when given, OVERRIDES min_intensity with a threshold
+# derived from THIS file's own noise level: effective_threshold =
+# estimate_ms_noise_level(ms1_peaks) * sn_threshold ("Absolute MS Signal
+# Threshold = MS Noise Level x S/N Threshold"). A fixed min_intensity
+# picked for one file's background level is rarely right for another file
+# with a different one -- sn_threshold corrects for that, at the cost of
+# the applied number no longer being a literal, predictable value up front.
+#' Extract MS1 features from raw peaks
+#'
+#' Groups nearby raw MS1 (rt, mz, intensity) peaks into features:
+#' clusters by retention-time proximity first, then chains by ppm
+#' tolerance within each RT cluster (mirroring the RT-then-mass
+#' clustering the Python batch pipeline uses -- see
+#' `inst/python/oligomet_deconv/charge_group.py`), so peaks sharing an
+#' m/z but eluting at unrelated times are never merged into one feature.
+#'
+#' @param ms1_peaks A data.frame with `rt`, `mz`, `intensity` columns
+#'   (e.g. `read_ms_file(file)$ms1`).
+#' @param ppm m/z chaining tolerance within an RT cluster.
+#' @param min_intensity Fixed absolute intensity floor; ignored (falls
+#'   back to it only if the noise estimate is `NA`) when `sn_threshold`
+#'   is given.
+#' @param rt_tol Retention-time clustering tolerance, in the same units
+#'   `ms1_peaks$rt` uses (conventionally minutes; this parser doesn't
+#'   convert units).
+#' @param sn_threshold When given, OVERRIDES `min_intensity` with a
+#'   threshold derived from THIS file's own noise level:
+#'   `effective_min_intensity = estimate_ms_noise_level(ms1_peaks) *
+#'   sn_threshold` ("Absolute MS Signal Threshold = MS Noise Level x S/N
+#'   Threshold"). Corrects for files/instruments with different
+#'   background levels, at the cost of the applied number no longer
+#'   being a fixed, predictable value picked up front.
+#' @return A data.frame of extracted features (columns include `mz`,
+#'   `rt`, `max_intensity`, `n_scans`), one row per chained feature.
+#'   Empty data.frame if `ms1_peaks` is empty or nothing clears the
+#'   threshold.
+#' @seealso [estimate_ms_noise_level()], [read_ms_file()]
+#' @export
 extract_ms1_features <- function(ms1_peaks, ppm = 10, min_intensity = 100,
-                                  rt_tol = 0.15) {
+                                  rt_tol = 0.15, sn_threshold = NULL) {
   if (nrow(ms1_peaks) == 0) return(data.frame())
-  df <- ms1_peaks[ms1_peaks$intensity >= min_intensity, ]
+  effective_min_intensity <- min_intensity
+  if (!is.null(sn_threshold)) {
+    noise <- estimate_ms_noise_level(ms1_peaks)
+    if (!is.na(noise)) effective_min_intensity <- noise * sn_threshold
+  }
+  df <- ms1_peaks[ms1_peaks$intensity >= effective_min_intensity, ]
   if (nrow(df) == 0) return(data.frame())
 
   # Stage 1: cluster by RT proximity (adjacent-gap chaining).

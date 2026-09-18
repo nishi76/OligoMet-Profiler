@@ -24,6 +24,31 @@
 }
 
 ## ---- Degradation summary ------------------------------------------------------
+#' Summarize % degradation of the parent oligonucleotide, per sample
+#'
+#' `% degradation = 1 - (parent_signal / (parent_signal + degradant_signal))`,
+#' computed per sample from [annotate_metabolites_batch()]'s
+#' `ms1_matches`, grouped by the existing metabolite `kind` taxonomy from
+#' [generate_metabolites()] (parent, exo_3p, exo_5p, endo_5frag,
+#' endo_3frag, and their phosphorylated counterparts). Uses peak area
+#' (AUC) as signal when available, falling back to max intensity
+#' per-sample if area is entirely unavailable (e.g. the single-file
+#' R-native reading path, which doesn't compute AUC).
+#'
+#' @param ms1_matches The `ms1_matches` data.frame from
+#'   [annotate_metabolites_batch()]/[match_ms1_batch()].
+#' @param top_n How many top degradant species to report per sample in
+#'   `top_degradants`.
+#' @return A list: `per_sample` (`sample`, `signal_used`, `parent_signal`,
+#'   `degradant_signal`, `total_signal`, `pct_degradation`); `composition`
+#'   (`sample`, `kind`, `class_signal`, `pct_of_total`,
+#'   `pct_of_degradants` -- grouped by the RAW `kind` value, e.g.
+#'   `exo_3p`/`endo_5frag`, not pre-collapsed into a 5'/3'/endo framing,
+#'   so a caller can still render either view); `top_degradants`
+#'   (`sample`, `met_id`, `met_name`, `kind`, `signal`,
+#'   `pct_of_degradants`, `rank`); and `signal_used` (`"area"`,
+#'   `"intensity"`, or `NA` if there's nothing to summarize).
+#' @export
 # Returns list(
 #   per_sample    = data.frame(sample, signal_used, parent_signal,
 #                               degradant_signal, total_signal, pct_degradation),

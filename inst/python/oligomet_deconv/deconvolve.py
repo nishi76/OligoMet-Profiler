@@ -31,6 +31,13 @@ class DeconvParams:
     max_mass: float = 50000.0
     ms2_watch_ppm: float = 50.0
     min_charge_states: int = 2
+    # When set, OVERRIDES min_intensity with a per-file computed threshold:
+    # effective_min_intensity = (this file's own noise level) * sn_threshold
+    # -- see roi.py's _NoiseReservoir/ROIBuilder. A fixed min_intensity
+    # picked for one file's background level is rarely right for another
+    # file with a different one; this corrects for that at the cost of the
+    # threshold no longer being a literal, predictable number up front.
+    sn_threshold: "float | None" = None
 
 
 def _load_watchlist(path: Optional[str]) -> Optional[np.ndarray]:
@@ -63,7 +70,8 @@ def process_file(path: str, params: DeconvParams, precursor_watchlist_path: Opti
     """
     watchlist = _load_watchlist(precursor_watchlist_path)
     roi_builder = ROIBuilder(roi_ppm=params.roi_ppm, max_gap_scans=params.max_gap_scans,
-                              min_intensity=params.min_intensity, min_scans=params.min_scans)
+                              min_intensity=params.min_intensity, min_scans=params.min_scans,
+                              sn_threshold=params.sn_threshold)
     ms2_rows = []
     sample = os.path.splitext(os.path.basename(path))[0]
     profile_mode_detected = None
@@ -103,4 +111,6 @@ def process_file(path: str, params: DeconvParams, precursor_watchlist_path: Opti
             "rt_start": g.rt_start, "rt_end": g.rt_end, "area": g.area,
         })
     return features, ms2_rows, {"sample": sample, "source_file": path,
-                                 "profile_mode_detected": profile_mode_detected}
+                                 "profile_mode_detected": profile_mode_detected,
+                                 "noise_level": roi_builder.noise_level,
+                                 "effective_min_intensity": roi_builder.effective_min_intensity}

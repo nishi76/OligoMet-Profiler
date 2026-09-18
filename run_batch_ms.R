@@ -70,24 +70,43 @@ BATCH_FILES <- list.files("raw_data", pattern = "\\.(mzML|mzXML)$",
 # --- Experimental design ------------------------------------------------------
 # Provide EITHER a `group` column (two-group or multi-group comparison) OR a
 # `timepoint` column (time-series trend), matching `sample` to BATCH_FILES.
+# `sample_type` (unknown/standard/quality_control/reagent_blank/matrix_blank)
+# and `concentration` are optional -- fill them in (concentration for
+# standard/quality_control rows only) if you want absolute quantification
+# via ABSOLUTE_QUANT_MET_IDS below; leave sample_type as "unknown" and
+# concentration blank for a study without calibration standards, which
+# means every metabolite falls back to relative quantification.
 # Example two-group design:
 SAMPLE_META <- data.frame(
   sample = tools::file_path_sans_ext(basename(BATCH_FILES)),
   group = NA_character_,      # e.g. "control", "control", "treated", "treated"
+  sample_type = "unknown",    # or standard/quality_control/reagent_blank/matrix_blank
+  concentration = NA_character_,  # nominal concentration for standard/QC rows
   stringsAsFactors = FALSE
 )
 # Example time-series design instead:
 # SAMPLE_META <- data.frame(
 #   sample = tools::file_path_sans_ext(basename(BATCH_FILES)),
 #   timepoint = c(0, 0, 1, 1, 2, 2),
+#   sample_type = "unknown", concentration = NA_character_,
 #   stringsAsFactors = FALSE
 # )
 
 ANALYSIS_MODE <- "two_group"   # "two_group" | "multi_group" | "time_series"
 GROUP_A <- "control"           # only used when ANALYSIS_MODE == "two_group"
 GROUP_B <- "treated"
+CONTROL_GROUP <- GROUP_A       # baseline for relative quantification (group designs only)
 
 RUN_MS2_CONFIRMATION <- TRUE   # confirm MS1 hits with experimental MS2 spectra
+
+# Metabolite IDs (met$id, see generate_metabolites()) to absolute-quantify
+# from their own calibration curve, built from SAMPLE_META rows with
+# sample_type == "standard" and a concentration -- e.g. c("PARENT"). Every
+# OTHER metabolite is relative-quantified instead: fold-change vs the
+# earliest timepoint (time-series designs) or vs CONTROL_GROUP (group
+# designs). Leave empty for relative quantification across the board.
+ABSOLUTE_QUANT_MET_IDS <- character(0)
+CALIBRATION_WEIGHTING <- "1/x2"   # "1/x2" | "1/x" | "none" -- see fit_calibration_curve()
 
 # --- Pipeline parameters ------------------------------------------------------
 PARAMS <- list(
@@ -101,7 +120,13 @@ PARAMS <- list(
                                              # z=2 for larger fragments, z=3+ rarely observed
   # Python deconvolution parameters (see inst/python/oligomet_deconv/cli.py):
   deconv_z_range = 3:20, deconv_ppm_tol = 20, roi_ppm = 15, rt_tol = 0.15,
-  min_intensity = 1e4, min_scans = 3, max_gap_scans = 2, ms2_watch_ppm = 50,
+  # Background/noise threshold: EITHER set sn_threshold (per-file computed
+  # threshold = that file's own noise level * sn_threshold, the default --
+  # see estimate_ms_noise_level()/ROIBuilder's noise reservoir) OR set
+  # sn_threshold to NULL and use min_intensity instead (one fixed absolute
+  # number applied to every file alike).
+  sn_threshold  = 3, min_intensity = 1e4,
+  min_scans = 3, max_gap_scans = 2, ms2_watch_ppm = 50,
   n_workers     = NULL,           # NULL = os.cpu_count() - 1
   output_prefix = "my_oligo_batch",
   results_dir   = "results_batch"
@@ -147,7 +172,9 @@ run_batch_pipeline <- function() {
     output_file = paste0(PARAMS$output_prefix, "_features.tsv"),
     precursor_watchlist = watchlist_path, ms2_watch_ppm = PARAMS$ms2_watch_ppm,
     roi_ppm = PARAMS$roi_ppm, rt_tol = PARAMS$rt_tol, mass_tol_ppm = PARAMS$deconv_ppm_tol,
-    z_range = PARAMS$deconv_z_range, min_intensity = PARAMS$min_intensity,
+    z_range = PARAMS$deconv_z_range,
+    min_intensity = PARAMS$min_intensity,  # fallback if sn_threshold is NULL or noise estimate fails
+    sn_threshold = PARAMS$sn_threshold,
     min_scans = PARAMS$min_scans, max_gap_scans = PARAMS$max_gap_scans,
     n_workers = PARAMS$n_workers, progress = function(m) cat(" ", m, "\n"))
   features <- read_batch_features(deconv$features_path)
@@ -158,6 +185,14 @@ run_batch_pipeline <- function() {
         "(not centroided):", paste(deconv$profile_mode_files$sample, collapse = ", "), "\n")
     cat("           ROI/charge-envelope detection is designed for centroided peaks --",
         "convert with `msconvert --centroid` first for reliable results.\n")
+  }
+  if (!is.null(deconv$noise_thresholds) && nrow(deconv$noise_thresholds) > 0) {
+    cat("  S/N noise threshold applied per file (x", deconv$noise_thresholds$sn_threshold[1], "):\n")
+    for (i in seq_len(nrow(deconv$noise_thresholds))) {
+      nt <- deconv$noise_thresholds[i, ]
+      cat(sprintf("    %s: noise=%.0f -> threshold=%.0f\n",
+                  nt$sample, nt$noise_level, nt$effective_min_intensity))
+    }
   }
 
   # Step 4: match against theoretical library + MS2 confirmation
@@ -219,6 +254,32 @@ run_batch_pipeline <- function() {
     cat("\n  Skipping statistics (fill in SAMPLE_META's group/timepoint column to enable)\n")
   }
 
+  # Step 5b: quantification -- absolute (calibration curve) for
+  # ABSOLUTE_QUANT_MET_IDS, relative (fold-change vs pre-dose/time-0 or vs
+  # CONTROL_GROUP) for every other metabolite. See quantify_metabolites()
+  # in R/statistics.R. Runs under the same has_meta gate as Step 5, since
+  # relative quantification needs the same group/timepoint columns.
+  quant_results <- NULL
+  if (has_meta) {
+    cat("\n--- Quantification ---\n")
+    quant_results <- quantify_metabolites(
+      batch_results$ms1_matches, SAMPLE_META,
+      absolute_met_ids = ABSOLUTE_QUANT_MET_IDS,
+      mode = if (ANALYSIS_MODE == "time_series") "time_series" else "group",
+      control_group = if (ANALYSIS_MODE == "time_series") NULL else CONTROL_GROUP,
+      weighting = CALIBRATION_WEIGHTING)
+    if (nrow(quant_results$absolute) > 0) {
+      abs_csv <- file.path(PARAMS$results_dir, paste0(PARAMS$output_prefix, "_absolute_quantification.csv"))
+      utils::write.csv(quant_results$absolute, abs_csv, row.names = FALSE)
+      cat("  Absolute quantification:", abs_csv, "(", nrow(quant_results$absolute), "rows )\n")
+    }
+    if (nrow(quant_results$relative) > 0) {
+      rel_csv <- file.path(PARAMS$results_dir, paste0(PARAMS$output_prefix, "_relative_quantification.csv"))
+      utils::write.csv(quant_results$relative, rel_csv, row.names = FALSE)
+      cat("  Relative quantification:", rel_csv, "(", nrow(quant_results$relative), "rows )\n")
+    }
+  }
+
   # Step 6: extend the workbook with batch/statistics sheets
   cat("\n--- Building Excel workbook ---\n")
   build_opts <- list(z_range = PARAMS$z_range, n_iso = PARAMS$n_iso,
@@ -244,7 +305,7 @@ run_batch_pipeline <- function() {
 
   invisible(list(spec = spec, mets = mets, dict = dict, features = features,
                  batch_results = batch_results, stats_results = stats_results,
-                 workbook = wb_path))
+                 quant_results = quant_results, workbook = wb_path))
 }
 
 ## ---- Run --------------------------------------------------------------------

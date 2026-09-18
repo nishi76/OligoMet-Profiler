@@ -64,12 +64,56 @@ write_precursor_watchlist <- function(mets, dict = STANDARD_DICT, z_range = 3:12
 }
 
 ## ---- Invoking the batch deconvolution CLI ----------------------------------
+#' Run the parallel Python charge-envelope deconvolution pipeline
+#'
+#' Shells out to `python -m oligomet_deconv.cli` (see
+#' `inst/python/oligomet_deconv/`) to run ROI/charge-envelope
+#' deconvolution across many mzML/mzXML files in parallel, then reads the
+#' resulting per-file sidecars back into R.
+#'
+#' @param files Paths to mzML/mzXML files (already resolved -- see
+#'   [resolve_ms_input_file()] for vendor-format conversion).
+#' @param output_dir Directory the Python side writes its outputs into.
+#' @param output_file,ms2_output_file Feature/MS2 table filenames within
+#'   `output_dir`. `ms2_output_file` defaults to `"combined_ms2.tsv"`
+#'   when `precursor_watchlist` is given.
+#' @param precursor_watchlist Optional path to a precursor-mz watch-list
+#'   (see [write_precursor_watchlist()]) enabling targeted MS2 capture.
+#' @param ms2_watch_ppm,roi_ppm,rt_tol,mass_tol_ppm,z_range,min_scans,max_gap_scans,min_charge_states
+#'   Deconvolution parameters passed straight through to the Python CLI
+#'   -- see `inst/python/oligomet_deconv/cli.py`'s `--help` for what each
+#'   one does.
+#' @param min_intensity Fixed absolute intensity floor for a candidate
+#'   ROI peak; used as a fallback when `sn_threshold` is `NULL` or a
+#'   file's noise estimate comes back unavailable.
+#' @param sn_threshold When given, OVERRIDES `min_intensity` with a
+#'   PER-FILE threshold = (that file's own noise level) * `sn_threshold`
+#'   -- see `_noise_thresholds.tsv` in the return value for what actually
+#'   got applied per file.
+#' @param n_workers Parallel worker processes; `NULL` lets the Python
+#'   side pick (`os.cpu_count() - 1`).
+#' @param python_bin,module_dir Interpreter and module location, normally
+#'   left at their defaults ([find_python()]/`.find_deconv_module_dir()`).
+#' @param progress,console_tracker Optional callbacks: `progress(msg)`
+#'   for a one-line status update before the subprocess runs;
+#'   `console_tracker(text)` for the subprocess's full captured
+#'   stdout/stderr afterward.
+#' @return A list: `features_path`, `ms2_path` (or `NULL`),
+#'   `profile_mode_files` (data.frame, or `NULL` -- files that appear to
+#'   be uncentroided profile-mode data), `noise_thresholds` (data.frame,
+#'   or `NULL` -- only present in S/N-threshold mode, one row per file
+#'   with its computed `noise_level`/`effective_min_intensity`), and
+#'   `log` (the subprocess's captured output).
+#' @seealso [read_batch_features()], [read_batch_ms2()],
+#'   [match_ms1_batch()], [annotate_metabolites_batch()]
+#' @export
 run_batch_deconvolution <- function(files, output_dir = tempdir(),
                                      output_file = "combined_features.tsv",
                                      ms2_output_file = NULL,
                                      precursor_watchlist = NULL, ms2_watch_ppm = 50,
                                      roi_ppm = 15, rt_tol = 0.15, mass_tol_ppm = 20,
-                                     z_range = 3:20, min_intensity = 1e4, min_scans = 3,
+                                     z_range = 3:20, min_intensity = 1e4, sn_threshold = NULL,
+                                     min_scans = 3,
                                      max_gap_scans = 2, min_charge_states = 2, n_workers = NULL,
                                      python_bin = find_python(),
                                      module_dir = .find_deconv_module_dir(),
@@ -96,6 +140,12 @@ run_batch_deconvolution <- function(files, output_dir = tempdir(),
     "--max-gap-scans", max_gap_scans, "--min-charge-states", min_charge_states
   )
   if (!is.null(n_workers)) args <- c(args, "--n-workers", n_workers)
+  # sn_threshold OVERRIDES --min-intensity on the Python side (see
+  # DeconvParams/ROIBuilder in inst/python/oligomet_deconv/) with a
+  # threshold derived from each file's OWN noise level -- still passed
+  # regardless, since a file where the noise estimate comes back NaN
+  # (e.g. an empty file) falls back to --min-intensity there.
+  if (!is.null(sn_threshold)) args <- c(args, "--sn-threshold", sn_threshold)
   if (!is.null(precursor_watchlist)) {
     args <- c(args, "--precursor-watchlist", precursor_watchlist,
               "--ms2-watch-ppm", ms2_watch_ppm, "--ms2-output-file", ms2_output_file)
@@ -137,10 +187,20 @@ run_batch_deconvolution <- function(files, output_dir = tempdir(),
     utils::read.delim(profile_warn_path, stringsAsFactors = FALSE)
   } else NULL
 
+  # Only produced when sn_threshold was set -- records the per-file noise
+  # level and the resulting absolute threshold actually applied, since the
+  # whole point of sn_threshold is that the same multiple produces a
+  # DIFFERENT number on every file depending on its own background level.
+  noise_path <- file.path(output_dir, "_noise_thresholds.tsv")
+  noise_thresholds <- if (file.exists(noise_path)) {
+    utils::read.delim(noise_path, stringsAsFactors = FALSE)
+  } else NULL
+
   list(
     features_path = file.path(output_dir, output_file),
     ms2_path = if (!is.null(precursor_watchlist)) file.path(output_dir, ms2_output_file) else NULL,
     profile_mode_files = profile_mode_files,
+    noise_thresholds = noise_thresholds,
     log = status
   )
 }
@@ -186,6 +246,27 @@ read_batch_ms2 <- function(tsv_path) {
 }
 
 ## ---- Multi-sample MS1 matching (reuses match_ms1() verbatim) ---------------
+#' Match MS1 features against a metabolite library, per sample
+#'
+#' Thin per-sample loop over [match_ms1()]: splits a multi-sample feature
+#' table by `sample`, runs the same single-sample matching logic on each
+#' (theoretical metabolite x oxidation x charge x adduct enumeration
+#' against that sample's features), and stacks the results back together
+#' with a `sample` column. No new matching math of its own.
+#'
+#' @param mets A list of metabolite objects (see [generate_metabolites()]).
+#' @param features A multi-sample feature table (see
+#'   [read_batch_features()]) with `sample`, `mz`, `rt`, `max_intensity`,
+#'   `n_scans`, and optionally `area` columns.
+#' @param dict,ppm_tol,z_range,adducts,max_oxid,h_offset,n_iso,use_envipat
+#'   Passed straight through to [match_ms1()] for each sample.
+#' @return A data.frame, one row per (sample, metabolite, oxidation,
+#'   charge, adduct) match within tolerance, with the same columns
+#'   [match_ms1()] produces plus `sample`. Empty data.frame if `features`
+#'   is empty or nothing matches.
+#' @seealso [match_ms1()], [annotate_metabolites_batch()],
+#'   [unmatched_features_batch()]
+#' @export
 match_ms1_batch <- function(mets, features, dict = STANDARD_DICT,
                              ppm_tol = 10, z_range = 3:12,
                              adducts = c("H", "Na", "K", "NH4"),
@@ -277,6 +358,36 @@ confirm_ms2_batch <- function(mets, ms1_matches, ms2_by_sample, dict = STANDARD_
 }
 
 ## ---- Full batch annotation pipeline -----------------------------------------
+#' Run the full batch annotation pipeline: MS1 match, envelope, MS2, degradation
+#'
+#' The end-to-end batch analysis step: MS1 matching ([match_ms1_batch()]),
+#' per-sample charge-envelope consistency, unmatched-peak retention
+#' ([unmatched_features_batch()]), optional MS2 confirmation
+#' ([confirm_ms2_batch()]), and an optional degradation summary
+#' ([degradation_summary()]) -- everything [run_batch_deconvolution()]'s
+#' output needs before it's ready for statistics/quantification or
+#' export.
+#'
+#' @param mets A list of metabolite objects (see [generate_metabolites()]).
+#' @param features A multi-sample feature table (see
+#'   [read_batch_features()]).
+#' @param ms2_by_sample Optional multi-sample MS2 table (see
+#'   [read_batch_ms2()]) for MS2 confirmation; `NULL` skips that step.
+#' @param dict,ppm_tol,z_range,adducts,max_oxid,h_offset,n_iso,use_envipat
+#'   MS1 matching parameters -- see [match_ms1()].
+#' @param frag_tol_ppm,frag_z_range,include_internal MS2 confirmation
+#'   parameters -- see [confirm_metabolite()].
+#' @param compute_degradation Whether to also compute
+#'   [degradation_summary()] from the MS1 matches.
+#' @return A list: `ms1_matches`, `envelope` (charge-envelope consistency,
+#'   per sample), `unmatched` (retained unmatched features),
+#'   `ms2_confirmations`, `ms2_spectra` (named list keyed
+#'   `"sample|met_id|k_oxid|z|adduct"`, for mirror-plot rendering), and
+#'   `degradation` (`NULL` if `compute_degradation = FALSE` or there are
+#'   no MS1 matches).
+#' @seealso [match_ms1_batch()], [run_batch_deconvolution()],
+#'   [quantify_metabolites()]
+#' @export
 annotate_metabolites_batch <- function(mets, features, ms2_by_sample = NULL,
                                         dict = STANDARD_DICT, ppm_tol = 10,
                                         z_range = 3:12, adducts = c("H", "Na", "K", "NH4"),

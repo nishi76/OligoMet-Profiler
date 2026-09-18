@@ -205,8 +205,10 @@ options(shiny.maxRequestSize = 20 * 1024^3)  # 20 GB
   "z_min", "z_max", "n_iso", "max_oxid", "h_offset", "use_envipat",
   "method_length", "ms2_z_min", "ms2_z_max", "hcd_nce",
   "ms1_target_cap", "ms2_target_cap",
-  "enable_ms", "ppm_tol", "adducts", "frag_tol_ppm", "frag_z_max",
-  "enable_batch", "batch_run_ms2", "batch_n_workers", "batch_deconv_ppm", "batch_dir",
+  "enable_ms", "ppm_tol", "noise_mode", "min_intensity", "sn_threshold",
+  "adducts", "frag_tol_ppm", "frag_z_max",
+  "enable_batch", "batch_run_ms2", "batch_n_workers", "batch_deconv_ppm",
+  "batch_noise_mode", "batch_min_intensity", "batch_sn_threshold", "batch_dir",
   "man_bases", "man_sugars", "man_linkages"
 )
 # One update*Input() call per id above -- dispatch table so loading a
@@ -237,6 +239,9 @@ options(shiny.maxRequestSize = 20 * 1024^3)  # 20 GB
   ms2_target_cap = function(s, v) updateNumericInput(s, "ms2_target_cap", value = v),
   enable_ms      = function(s, v) updateCheckboxInput(s, "enable_ms", value = v),
   ppm_tol        = function(s, v) updateNumericInput(s, "ppm_tol", value = v),
+  noise_mode     = function(s, v) updateRadioButtons(s, "noise_mode", selected = v),
+  min_intensity  = function(s, v) updateNumericInput(s, "min_intensity", value = v),
+  sn_threshold   = function(s, v) updateNumericInput(s, "sn_threshold", value = v),
   adducts        = function(s, v) updateCheckboxGroupInput(s, "adducts", selected = v),
   frag_tol_ppm   = function(s, v) updateNumericInput(s, "frag_tol_ppm", value = v),
   frag_z_max     = function(s, v) updateNumericInput(s, "frag_z_max", value = v),
@@ -244,6 +249,9 @@ options(shiny.maxRequestSize = 20 * 1024^3)  # 20 GB
   batch_run_ms2  = function(s, v) updateCheckboxInput(s, "batch_run_ms2", value = v),
   batch_n_workers  = function(s, v) updateNumericInput(s, "batch_n_workers", value = v),
   batch_deconv_ppm = function(s, v) updateNumericInput(s, "batch_deconv_ppm", value = v),
+  batch_noise_mode = function(s, v) updateRadioButtons(s, "batch_noise_mode", selected = v),
+  batch_min_intensity = function(s, v) updateNumericInput(s, "batch_min_intensity", value = v),
+  batch_sn_threshold = function(s, v) updateNumericInput(s, "batch_sn_threshold", value = v),
   batch_dir      = function(s, v) updateTextInput(s, "batch_dir", value = v),
   man_bases      = function(s, v) updateTextInput(s, "man_bases", value = v),
   man_sugars     = function(s, v) updateTextInput(s, "man_sugars", value = v),
@@ -548,6 +556,31 @@ ui <- fluidPage(
                  "otherwise upload an .mzML/.mzXML export instead."),
           numericInput("ppm_tol", "MS1 tolerance (ppm)",
                       value = DEFAULT_PIPELINE_PARAMS$ppm_tol, min = 1, max = 50),
+          radioButtons("noise_mode", "Background/noise threshold",
+                       choices = c("Signal-to-noise multiple" = "sn",
+                                   "Fixed intensity value" = "fixed"),
+                       selected = "sn", inline = TRUE),
+          conditionalPanel(
+            condition = "input.noise_mode == 'sn'",
+            numericInput("sn_threshold", "S/N threshold (x noise level)",
+                        value = DEFAULT_PIPELINE_PARAMS$sn_threshold, min = 0, step = 0.5),
+            tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -10px;",
+                   "Absolute threshold = (this file's own noise level) x this ",
+                   "number. Noise level is the median of every MS1 peak's ",
+                   "intensity in the file -- most individual peaks in a real ",
+                   "run ARE background, so this tracks each file's own ",
+                   "baseline instead of one fixed number picked for a ",
+                   "different file/instrument.")
+          ),
+          conditionalPanel(
+            condition = "input.noise_mode == 'fixed'",
+            numericInput("min_intensity", "Fixed intensity threshold",
+                        value = DEFAULT_PIPELINE_PARAMS$min_intensity, min = 0),
+            tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -10px;",
+                   "Hard cutoff: peaks below this absolute intensity are ",
+                   "dropped before matching, regardless of this file's own ",
+                   "noise floor.")
+          ),
           checkboxGroupInput("adducts", "Adducts",
                              choices = c("H", "Na", "K", "NH4"),
                              selected = DEFAULT_PIPELINE_PARAMS$adducts, inline = TRUE),
@@ -599,11 +632,30 @@ ui <- fluidPage(
                    "remote/hosted deployment it's the server's filesystem, ",
                    "not yours). Takes precedence over the upload above when ",
                    "both are set."),
+            fluidRow(
+              column(6, downloadButton("dl_batch_meta_template", "Download CSV template",
+                                        class = "btn-outline-secondary btn-sm w-100")),
+              column(6, fileInput("batch_meta_csv", NULL, accept = ".csv",
+                                   placeholder = "Upload filled-in sample info CSV..."))
+            ),
+            tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -10px;",
+                   "Columns: sample, group, timepoint, sample_type, concentration. ",
+                   "The template is pre-filled with the sample names from the ",
+                   "files/folder above -- fill in the rest in Excel and ",
+                   "re-upload. Rows are matched by sample name (not row order), ",
+                   "so a partial or reordered CSV merges in safely; upload ",
+                   "files/pick a folder first so there's a sample list to merge ",
+                   "onto."),
+            uiOutput("batch_meta_upload_status"),
             DT::DTOutput("sample_meta_table"),
             tags$p(style = "font-size: 11px; color: #6c757d; margin-top: 4px;",
                    "One row per uploaded file. Fill in Group (2+ groups) or ",
                    "Timepoint (time series) before running -- leave both blank ",
-                   "to only extract and match features, with no statistics."),
+                   "to only extract and match features, with no statistics. ",
+                   "Sample Type defaults to \"unknown\" -- set it to standard or ",
+                   "quality_control for calibration curve/QC samples (with a ",
+                   "Concentration value), or reagent_blank/matrix_blank to ",
+                   "label the rest of the non-study-sample rows."),
             checkboxInput("batch_run_ms2", "Confirm hits with MS2",
                           value = DEFAULT_PIPELINE_PARAMS$batch_run_ms2),
             fluidRow(
@@ -611,7 +663,56 @@ ui <- fluidPage(
                         value = DEFAULT_PIPELINE_PARAMS$batch_n_workers, min = 1, max = 64)),
               column(6, numericInput("batch_deconv_ppm", "Deconv mass tol (ppm)",
                         value = DEFAULT_PIPELINE_PARAMS$batch_deconv_ppm, min = 1, max = 100))
-            )
+            ),
+            radioButtons("batch_noise_mode", "Background/noise threshold",
+                         choices = c("Signal-to-noise multiple" = "sn",
+                                     "Fixed intensity value" = "fixed"),
+                         selected = "sn", inline = TRUE),
+            conditionalPanel(
+              condition = "input.batch_noise_mode == 'sn'",
+              numericInput("batch_sn_threshold", "S/N threshold (x noise level)",
+                          value = DEFAULT_PIPELINE_PARAMS$sn_threshold, min = 0, step = 0.5),
+              tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -10px;",
+                     "Absolute threshold = (each file's OWN noise level) x this ",
+                     "number, computed separately per file (see the ",
+                     "_noise_thresholds.tsv sidecar for what got applied where) ",
+                     "-- corrects for files/instruments with different ",
+                     "background levels, unlike one fixed number applied to ",
+                     "every file.")
+            ),
+            conditionalPanel(
+              condition = "input.batch_noise_mode == 'fixed'",
+              numericInput("batch_min_intensity", "Fixed intensity threshold",
+                          value = DEFAULT_PIPELINE_PARAMS$min_intensity, min = 0),
+              tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -10px;",
+                     "Hard cutoff applied before ROI/charge-envelope detection: ",
+                     "a raw peak below this absolute intensity is never treated ",
+                     "as the start of a real chromatographic feature, on every ",
+                     "file alike.")
+            ),
+            tags$hr(),
+            tags$h6("Quantification (optional)"),
+            selectizeInput("absolute_quant_mets",
+                           "Absolute-quantify these metabolites (calibration curve)",
+                           choices = character(0), multiple = TRUE,
+                           options = list(placeholder = "None selected -- every metabolite uses relative quantification")),
+            fluidRow(
+              column(6, selectInput("calibration_weighting", "Calibration curve weighting",
+                        choices = c("1/x² weighted (recommended)" = "1/x2",
+                                    "1/x weighted" = "1/x",
+                                    "Unweighted (OLS)" = "none"))),
+              column(6, selectInput("control_group", "Control group (relative quant)",
+                        choices = character(0)))
+            ),
+            tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -10px;",
+                   "Selected metabolites are absolute-quantified from their own ",
+                   "calibration curve, built from Sample Type = standard rows ",
+                   "with a Concentration value (QC rows get a %RE accuracy ",
+                   "check against their own Concentration). Every other ",
+                   "metabolite is relative-quantified: fold-change vs. pre-dose/ ",
+                   "time-0 for a time-course design (Timepoint filled in), or ",
+                   "vs. the Control group above for a group-comparison design ",
+                   "(Group filled in).")
           )
         )
       ),
@@ -737,6 +838,7 @@ ui <- fluidPage(
           tabsetPanel(
             id = "help_tabs",
             tabPanel("Quick start",     uiOutput("help_quickstart")),
+            tabPanel("No-Shiny (CLI)",  uiOutput("help_quickstart_cli")),
             tabPanel("Sequence guide",  uiOutput("help_sequence")),
             tabPanel("Modifications",   uiOutput("help_modifications"))
           )
@@ -1031,6 +1133,43 @@ ui <- fluidPage(
                              class = "btn-outline-primary")
             )
           ),
+          tabPanel("Quantification",
+            conditionalPanel(
+              condition = "output.quant_ready == 'true'",
+              tags$div(style = "padding-top: 12px;",
+                tags$h6("Absolute quantification (calibration curve)"),
+                tags$p(style = "font-size: 12px; color: #6c757d;",
+                  "One row per (metabolite, sample) for every metabolite selected ",
+                  "under Batch MS Processing → Quantification. concentration_calc ",
+                  "is back-calculated from that metabolite's own calibration curve ",
+                  "(Sample Type = standard rows with a Concentration value); ",
+                  "percent_re compares standard/QC rows against their own nominal ",
+                  "Concentration; extrapolated flags a result outside the curve's ",
+                  "observed standard range, which is not a reliable value."),
+                DT::DTOutput("quant_absolute_table"),
+                tags$div(style = "height: 8px;"),
+                downloadButton("dl_quant_absolute_csv", "Download absolute quantification (.csv)",
+                               class = "btn-outline-primary"),
+                tags$hr(),
+                tags$h6("Relative quantification (fold-change)"),
+                tags$p(style = "font-size: 12px; color: #6c757d;",
+                  "Every metabolite NOT selected for absolute quantification. ",
+                  "relative_signal is that sample's signal divided by the ",
+                  "baseline: the pre-dose/time-0 mean for a time-course design, ",
+                  "or the Control group's mean for a group-comparison design."),
+                DT::DTOutput("quant_relative_table"),
+                tags$div(style = "height: 8px;"),
+                downloadButton("dl_quant_relative_csv", "Download relative quantification (.csv)",
+                               class = "btn-outline-primary")
+              )
+            ),
+            conditionalPanel(
+              condition = "output.quant_ready != 'true'",
+              tags$p(style = "padding-top: 12px; color: #6c757d;",
+                     "Run batch MS processing with Group or Timepoint filled in ",
+                     "to see absolute/relative quantification here.")
+            )
+          ),
           tabPanel("Ask OligoMet",
             tags$div(style = "padding-top: 12px;",
               tags$p(style = "font-size: 12px; color: #6c757d;",
@@ -1187,21 +1326,34 @@ server <- function(input, output, session) {
     status_text = "Enter a sequence and click \"1. Generate Library\".\n",
     batch_features = NULL, batch_ms_results = NULL,
     sample_meta = NULL, stats_results = NULL, kind_stats_results = NULL,
+    quant_results = NULL,
     library_ready = FALSE,
     agent_messages = list(), agent_ctx = list(), agent_busy = FALSE
   )
 
-  ## ---- Batch sample metadata table (group/timepoint assignment) -------------
+  ## ---- Batch sample metadata table (group/timepoint/sample_type/concentration)
   # Seeded from the uploaded batch_files' original filenames; edited in place
-  # via DT's edit feature. Blank group/timepoint columns mean "extract and
-  # match only, no statistics" -- see the Run handler below.
+  # via DT's edit feature, or in bulk via the sample info CSV upload below.
+  # Blank group/timepoint columns mean "extract and match only, no
+  # statistics" -- see the Run handler below. sample_type defaults to
+  # "unknown" (one of its own controlled-vocabulary values, not blank) since
+  # every row IS some kind of sample even before the user has classified it.
+  # concentration is the nominal/spiked concentration for a calibration
+  # standard or QC sample (blank for study "unknown" samples) -- stored as
+  # character like every other column here so DT cell-edits and the CSV
+  # merge don't need special-casing; parsed to numeric only where consumed
+  # (fit_calibration_curve() in R/statistics.R).
+  .SAMPLE_TYPE_LEVELS <- c("unknown", "standard", "quality_control",
+                           "reagent_blank", "matrix_blank")
+
   batch_meta_data <- reactiveVal(data.frame(
     sample = character(0), group = character(0), timepoint = character(0),
-    stringsAsFactors = FALSE))
+    sample_type = character(0), concentration = character(0), stringsAsFactors = FALSE))
 
   observeEvent(input$batch_files, {
     samples <- tools::file_path_sans_ext(input$batch_files$name)
     batch_meta_data(data.frame(sample = samples, group = "", timepoint = "",
+                                sample_type = "unknown", concentration = "",
                                 stringsAsFactors = FALSE))
   })
 
@@ -1217,6 +1369,7 @@ server <- function(input, output, session) {
       if (length(paths) > 0) {
         samples <- tools::file_path_sans_ext(basename(paths))
         batch_meta_data(data.frame(sample = samples, group = "", timepoint = "",
+                                    sample_type = "unknown", concentration = "",
                                     stringsAsFactors = FALSE))
       }
     }
@@ -1292,6 +1445,144 @@ server <- function(input, output, session) {
     df[edit$row, edit$col + 1] <- edit$value
     batch_meta_data(df)
   })
+
+  ## ---- Sample info CSV: template download + bulk upload ---------------------
+  # Template is pre-filled with whatever sample list is already on the
+  # table (from uploaded files or a local folder), so round-tripping through
+  # Excel doesn't require retyping/copy-pasting sample names by hand.
+  output$dl_batch_meta_template <- downloadHandler(
+    filename = function() "sample_info_template.csv",
+    content = function(file) {
+      df <- batch_meta_data()
+      if (nrow(df) == 0) {
+        df <- data.frame(sample = character(0), group = character(0),
+                          timepoint = character(0), sample_type = character(0),
+                          concentration = character(0))
+      }
+      utils::write.csv(df, file, row.names = FALSE)
+    }
+  )
+
+  batch_meta_upload_status <- reactiveVal(NULL)
+  output$batch_meta_upload_status <- renderUI({
+    msg <- batch_meta_upload_status()
+    if (is.null(msg)) return(NULL)
+    color <- if (startsWith(msg, "WARNING")) "#a3231b" else "#2e7d32"
+    tags$p(style = paste0("font-size: 11px; color: ", color, "; margin: -6px 0 6px;"), msg)
+  })
+
+  # Merges by `sample` name, not row position -- the sample list already on
+  # the table (derived from the actual uploaded/local files) stays
+  # authoritative for WHICH samples exist; the CSV only supplies values for
+  # group/timepoint/sample_type, so it can be partial or reordered safely.
+  observeEvent(input$batch_meta_csv, {
+    current <- batch_meta_data()
+    if (nrow(current) == 0) {
+      batch_meta_upload_status(
+        "WARNING: upload batch files (or set a local folder) first, so there's a sample list to merge the CSV onto.")
+      return()
+    }
+    csv <- tryCatch(
+      utils::read.csv(input$batch_meta_csv$datapath, stringsAsFactors = FALSE, colClasses = "character"),
+      error = function(e) NULL)
+    if (is.null(csv)) {
+      batch_meta_upload_status("WARNING: could not read that file as CSV.")
+      return()
+    }
+    names(csv) <- tolower(trimws(names(csv)))
+    if (!"sample" %in% names(csv)) {
+      batch_meta_upload_status("WARNING: CSV needs a 'sample' column matching the uploaded file names.")
+      return()
+    }
+    csv$sample <- trimws(csv$sample)
+
+    # Canonicalize sample_type against the controlled vocabulary --
+    # case/spacing/punctuation-insensitive ("Quality Control", "QC", "qc"
+    # all map to "quality_control") so a human-typed CSV isn't rejected
+    # over formatting differences. Anything that still doesn't map is kept
+    # as typed and flagged, rather than silently coerced to "unknown".
+    invalid_types <- character(0)
+    if ("sample_type" %in% names(csv)) {
+      norm <- gsub("^_|_$", "", gsub("[^a-z0-9]+", "_", tolower(trimws(csv$sample_type))))
+      canon <- c(unknown = "unknown", standard = "standard",
+                 quality_control = "quality_control", qc = "quality_control",
+                 reagent_blank = "reagent_blank", blank = "reagent_blank",
+                 matrix_blank = "matrix_blank")
+      mapped <- unname(canon[norm])
+      unmapped <- is.na(mapped) & nzchar(csv$sample_type)
+      invalid_types <- unique(csv$sample_type[unmapped])
+      csv$sample_type[!is.na(mapped)] <- mapped[!is.na(mapped)]
+    }
+
+    # concentration must parse as a plain number (blank stays blank, meaning
+    # "not a standard/QC" or "no target set") -- a non-numeric entry is kept
+    # as typed and flagged, same treatment as an unmapped sample_type, since
+    # fit_calibration_curve() would otherwise silently drop it with no
+    # explanation of why that sample never made it onto the curve.
+    invalid_conc <- character(0)
+    if ("concentration" %in% names(csv)) {
+      non_numeric <- nzchar(csv$concentration) & is.na(suppressWarnings(as.numeric(csv$concentration)))
+      invalid_conc <- unique(csv$concentration[non_numeric])
+    }
+
+    matched <- intersect(current$sample, csv$sample)
+    unmatched_csv <- setdiff(csv$sample, current$sample)
+    for (col in intersect(c("group", "timepoint", "sample_type", "concentration"), names(csv))) {
+      for (s in matched) {
+        val <- csv[[col]][csv$sample == s][1]
+        if (!is.na(val) && nzchar(val)) current[current$sample == s, col] <- val
+      }
+    }
+    batch_meta_data(current)
+
+    msg <- sprintf("Sample info CSV applied: %d/%d uploaded samples matched.",
+                    length(matched), nrow(current))
+    if (length(unmatched_csv) > 0) {
+      msg <- paste0(msg, " Ignored ", length(unmatched_csv),
+                    " CSV row(s) with no matching uploaded file: ",
+                    paste(unmatched_csv, collapse = ", "), ".")
+    }
+    if (length(invalid_types) > 0) {
+      msg <- paste0(msg, " Sample Type value(s) not in {",
+                    paste(.SAMPLE_TYPE_LEVELS, collapse = ", "),
+                    "} kept as typed: ", paste(invalid_types, collapse = ", "), ".")
+    }
+    if (length(invalid_conc) > 0) {
+      msg <- paste0(msg, " Concentration value(s) not numeric, kept as typed: ",
+                    paste(invalid_conc, collapse = ", "), ".")
+    }
+    batch_meta_upload_status(msg)
+  })
+
+  ## ---- Quantification controls: keep dropdown choices in sync --------------
+  # Absolute-quant metabolite choices come from the library just built
+  # (rv$mets), not from any matches yet -- the selection has to exist
+  # BEFORE the batch run that will act on it. Re-populates whenever a new
+  # library is generated; existing selections that are still valid met_ids
+  # are preserved across a re-generation rather than silently cleared.
+  observeEvent(rv$mets, {
+    mets <- rv$mets
+    if (is.null(mets) || length(mets) == 0) {
+      updateSelectizeInput(session, "absolute_quant_mets", choices = character(0))
+      return()
+    }
+    ids <- vapply(mets, function(m) m$id, character(1))
+    labels <- vapply(mets, function(m) paste0(m$name, " (", m$id, ")"), character(1))
+    choices <- stats::setNames(ids, labels)
+    keep_selected <- intersect(isolate(input$absolute_quant_mets), ids)
+    updateSelectizeInput(session, "absolute_quant_mets", choices = choices, selected = keep_selected)
+  }, ignoreNULL = FALSE)
+
+  # Control-group choices come from whatever Group values are actually on
+  # the sample metadata table right now, so the dropdown never offers a
+  # group that doesn't exist -- updates live as the DT table is edited or a
+  # CSV is merged in.
+  observeEvent(batch_meta_data(), {
+    meta <- batch_meta_data()
+    groups <- if ("group" %in% names(meta)) unique(meta$group[nzchar(meta$group)]) else character(0)
+    keep_selected <- if (isolate(input$control_group) %in% groups) isolate(input$control_group) else NULL
+    updateSelectInput(session, "control_group", choices = groups, selected = keep_selected)
+  }, ignoreNULL = FALSE)
 
   ## ---- MS2 library explorer --------------------------------------------------
   # Cached separately from rv$ms_results etc.: building the full MS2 library
@@ -1555,6 +1846,7 @@ server <- function(input, output, session) {
   # Rendered lazily on first view and then cached by Shiny, so the markdown
   # is not converted on every page load of a collapsed panel.
   output$help_quickstart    <- renderUI(.help_ui("QUICKSTART.md"))
+  output$help_quickstart_cli <- renderUI(.help_ui("QUICKSTART_CLI.md"))
   output$help_sequence      <- renderUI(.help_ui("SEQUENCE_GUIDE.md"))
   output$help_modifications <- renderUI(.help_ui("MODIFICATIONS.md"))
 
@@ -1749,6 +2041,7 @@ server <- function(input, output, session) {
       rv$sample_meta <- NULL
       rv$stats_results <- NULL
       rv$kind_stats_results <- NULL
+      rv$quant_results <- NULL
 
       # Library-only workbook/report build (ms_results = NULL, no batch
       # results) -- this is the "save the library" deliverable; Phase 2
@@ -1917,7 +2210,11 @@ server <- function(input, output, session) {
                 "and/or produce poor results -- convert with `msconvert --centroid` first for ",
                 "reliable results.\n")
             }
-            ms1_features <- extract_ms1_features(ms_data$ms1, ppm = input$ppm_tol)
+            ms1_features <- if (input$noise_mode == "sn") {
+              extract_ms1_features(ms_data$ms1, ppm = input$ppm_tol, sn_threshold = input$sn_threshold)
+            } else {
+              extract_ms1_features(ms_data$ms1, ppm = input$ppm_tol, min_intensity = input$min_intensity)
+            }
             adducts <- input$adducts
             if (is.null(adducts)) adducts <- "H"
             annotate_metabolites(mets, ms1_features, ms_data$ms2,
@@ -1951,6 +2248,7 @@ server <- function(input, output, session) {
       rv$sample_meta <- NULL
       rv$stats_results <- NULL
       rv$kind_stats_results <- NULL
+      rv$quant_results <- NULL
       batch_files_df <- .batch_input_files()
       if (input$enable_batch && !is.null(batch_files_df) && nrow(batch_files_df) > 0) {
         incProgress(0.25, detail = "Batch deconvolution (parallel)")
@@ -1984,10 +2282,19 @@ server <- function(input, output, session) {
           resolved_paths <- resolved[ok]
           resolved_names <- batch_files_df$name[ok]
 
-          deconv <- run_batch_deconvolution(
-            resolved_paths, precursor_watchlist = watchlist_path,
-            mass_tol_ppm = input$batch_deconv_ppm, n_workers = input$batch_n_workers,
-            progress = function(msg) incProgress(0, detail = msg))
+          deconv <- if (input$batch_noise_mode == "sn") {
+            run_batch_deconvolution(
+              resolved_paths, precursor_watchlist = watchlist_path,
+              mass_tol_ppm = input$batch_deconv_ppm, n_workers = input$batch_n_workers,
+              sn_threshold = input$batch_sn_threshold,
+              progress = function(msg) incProgress(0, detail = msg))
+          } else {
+            run_batch_deconvolution(
+              resolved_paths, precursor_watchlist = watchlist_path,
+              mass_tol_ppm = input$batch_deconv_ppm, n_workers = input$batch_n_workers,
+              min_intensity = input$batch_min_intensity,
+              progress = function(msg) incProgress(0, detail = msg))
+          }
 
           if (!is.null(deconv$profile_mode_files) && nrow(deconv$profile_mode_files) > 0) {
             rv$status_text <- paste0(rv$status_text,
@@ -1996,6 +2303,19 @@ server <- function(input, output, session) {
               ". ROI/charge-envelope detection is designed for centroided peaks and may run ",
               "slowly and/or produce poor results -- convert with `msconvert --centroid` first ",
               "for reliable results.\n")
+          }
+
+          # Only present in S/N noise mode -- the same sn_threshold multiple
+          # produces a different absolute cutoff per file (each file has its
+          # own noise level), so worth surfacing what actually got applied
+          # rather than leaving it invisible inside the run.
+          if (!is.null(deconv$noise_thresholds) && nrow(deconv$noise_thresholds) > 0) {
+            nt <- deconv$noise_thresholds
+            summary_lines <- sprintf("%s: noise=%.0f -> threshold=%.0f",
+                                      nt$sample, nt$noise_level, nt$effective_min_intensity)
+            rv$status_text <- paste0(rv$status_text,
+              "S/N noise threshold applied per file (", nrow(nt), " x ", nt$sn_threshold[1], "):\n  ",
+              paste(summary_lines, collapse = "\n  "), "\n")
           }
 
           # Shiny renames uploads to random tmp paths (local-folder paths
@@ -2095,6 +2415,27 @@ server <- function(input, output, session) {
               NULL
             })
             rv$kind_stats_results <- kind_stats_res
+
+            # Absolute quantification (calibration curve) for the
+            # user-selected metabolites, relative quantification
+            # (fold-change vs pre-dose/time-0, or vs the Control group) for
+            # every other metabolite -- see quantify_metabolites() in
+            # R/statistics.R. Uses the FULL sample_meta (not the
+            # sample+group/timepoint slice above), since it also needs
+            # sample_type/concentration for the calibration curve half.
+            quant_res <- tryCatch({
+              quantify_metabolites(
+                batch_out$results$ms1_matches, meta,
+                absolute_met_ids = input$absolute_quant_mets,
+                mode = if (has_time) "time_series" else "group",
+                control_group = if (has_time) NULL else input$control_group,
+                weighting = input$calibration_weighting)
+            }, error = function(e) {
+              rv$status_text <- paste0(rv$status_text,
+                "WARNING: quantification failed: ", conditionMessage(e), "\n")
+              NULL
+            })
+            rv$quant_results <- quant_res
           }
         }
       }
@@ -2479,6 +2820,39 @@ server <- function(input, output, session) {
     if (!is.null(rv$kind_stats_results) && !is.null(rv$kind_stats_results$result)) "true" else "false"
   })
   outputOptions(output, "kind_stats_ready", suspendWhenHidden = FALSE)
+
+  ## ---- Quantification tab ----------------------------------------------------
+  output$quant_ready <- reactive({
+    q <- rv$quant_results
+    !is.null(q) && (nrow(q$absolute) > 0 || nrow(q$relative) > 0)
+  })
+  outputOptions(output, "quant_ready", suspendWhenHidden = FALSE)
+
+  output$quant_absolute_table <- DT::renderDT({
+    req(rv$quant_results)
+    DT::datatable(rv$quant_results$absolute, rownames = FALSE,
+                   options = list(pageLength = 15, scrollX = TRUE)) |>
+      DT::formatRound(intersect(c("signal", "concentration_calc", "nominal_concentration",
+                                   "percent_re", "curve_r_squared"),
+                                 names(rv$quant_results$absolute)), digits = 3)
+  })
+  output$dl_quant_absolute_csv <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_absolute_quantification.csv"),
+    content = function(file) utils::write.csv(rv$quant_results$absolute, file, row.names = FALSE)
+  )
+
+  output$quant_relative_table <- DT::renderDT({
+    req(rv$quant_results)
+    rel <- rv$quant_results$relative
+    disp_cols <- setdiff(names(rel), c(".time", ".arm"))
+    DT::datatable(rel[, disp_cols, drop = FALSE], rownames = FALSE,
+                   options = list(pageLength = 15, scrollX = TRUE)) |>
+      DT::formatRound(intersect(c("signal", "baseline_signal", "relative_signal"), disp_cols), digits = 3)
+  })
+  output$dl_quant_relative_csv <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_relative_quantification.csv"),
+    content = function(file) utils::write.csv(rv$quant_results$relative, file, row.names = FALSE)
+  )
 
   ## ---- Ask OligoMet: in-app LLM chat assistant ------------------------------
   # See R/agent_core.R (run_agent_turn(), the provider-agnostic ReAct loop)
