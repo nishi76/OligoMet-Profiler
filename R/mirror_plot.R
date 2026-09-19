@@ -37,6 +37,34 @@
 # fragment_intensity_weight() (see that function's header for exactly what
 # it does and does not encode), so only the *relative* peak pattern is
 # meaningful, never a shared absolute scale.
+#' Build the data behind an MS2 mirror plot
+#'
+#' Confirms `met` against one acquired MS2 spectrum
+#' ([confirm_metabolite()]) and returns both sides of a mirror plot --
+#' acquired peaks and theoretical library fragments -- each independently
+#' rescaled to 0-100 relative intensity (acquired intensities are real
+#' instrument counts, theoretical ones are [fragment_intensity_weight()]'s
+#' rule-based heuristic, so only the relative shape within each side is
+#' meaningful, never a shared absolute scale). Matched acquired peaks are
+#' labeled with their fragment-ion annotation; the theoretical side is an
+#' unlabeled reference (see the file header for why).
+#'
+#' @param met A metabolite object (see [generate_metabolites()]).
+#' @param ms2_peaks A data.frame with `mz`, `intensity` columns: one
+#'   acquired MS2 spectrum (see [find_ms2_spectra()]).
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @param tol_ppm,z_range,ion_types,include_internal,h_offset Fragment
+#'   matching parameters -- see [confirm_metabolite()].
+#' @return A list: `acquired` (data.frame: `mz`, `intensity` (rescaled
+#'   0-100), `matched`, `label` (full match label, or `NA`),
+#'   `plot_label` (a decluttered subset of `label` for
+#'   [plot_mirror_spectrum()] -- matched peaks above 10% relative
+#'   intensity, topped up to at least 10 labels when fewer clear that
+#'   bar and enough matched peaks exist)); `theoretical` (data.frame:
+#'   `mz`, `intensity`, `matched`, `label = NA` throughout); `score`
+#'   (from [confirm_metabolite()]); `met_name`.
+#' @seealso [plot_mirror_spectrum()], [confirm_metabolite()]
+#' @export
 mirror_spectrum_data <- function(met, ms2_peaks, dict = STANDARD_DICT,
                                   tol_ppm = 25, z_range = 1:2,
                                   ion_types = c("a", "aB", "b", "bB", "w", "y"),
@@ -157,6 +185,29 @@ mirror_spectrum_data <- function(met, ms2_peaks, dict = STANDARD_DICT,
 # acquired spectrum's own observed m/z range rather than auto-scaling to
 # include theoretical fragments that may fall outside what was actually
 # scanned.
+#' Plot an acquired-vs-theoretical MS2 mirror spectrum
+#'
+#' Acquired peaks drawn upward, theoretical library peaks downward
+#' (negative intensity), in the style of published acquired-vs-library
+#' mirror plots. Color encodes panel identity (acquired vs. theoretical),
+#' not match status; unmatched peaks in either panel are light grey.
+#' Only acquired-panel peaks are ever labeled -- see [mirror_spectrum_data()]
+#' and the file header for why. The x-axis is zoomed to the acquired
+#' spectrum's own observed m/z range, not auto-scaled to include
+#' theoretical fragments that may fall outside what was actually scanned.
+#'
+#' @param spec Output of [mirror_spectrum_data()].
+#' @param title Plot title.
+#' @param acquired_color,theoretical_color,unmatched_color Colors for
+#'   matched-acquired, matched-theoretical, and unmatched peaks
+#'   respectively.
+#' @param matched_color Deprecated alias for `acquired_color`.
+#' @param xlim_pad_frac,xlim_pad_min Padding around the acquired
+#'   spectrum's observed m/z range (as a fraction of its span, and a
+#'   minimum absolute pad).
+#' @return A ggplot object.
+#' @seealso [mirror_spectrum_data()]
+#' @export
 plot_mirror_spectrum <- function(spec, title = NULL,
                                   acquired_color = "#0279EE",
                                   theoretical_color = "#E08214",
@@ -253,6 +304,25 @@ plot_mirror_spectrum <- function(spec, title = NULL,
 # One page per confirmed batch MS2 hit -- reuses mirror_spectrum_data()/
 # plot_mirror_spectrum() exactly as the interactive single-hit plot does, so
 # the PDF matches what's shown in the app.
+#' Export every confirmed batch MS2 hit as a mirror-plot PDF
+#'
+#' One page per confirmed batch hit, reusing [mirror_spectrum_data()]/
+#' [plot_mirror_spectrum()] exactly as the interactive single-hit view
+#' does, so the PDF matches what's shown in the app.
+#'
+#' @param mets A list of metabolite objects (see [generate_metabolites()]).
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @param ms2_confirmations Output of [confirm_ms2_batch()]/
+#'   [annotate_metabolites_batch()].
+#' @param ms2_spectra The `"spectra"` attribute from the same call (a
+#'   named list keyed `"sample|met_id|k_oxid|z|adduct"`).
+#' @param file Output PDF path.
+#' @param tol_ppm,z_range,h_offset Fragment matching parameters -- see
+#'   [confirm_metabolite()]/[match_ms1()].
+#' @param width,height Page size in inches, passed to `grDevices::pdf()`.
+#' @return `file`, invisibly.
+#' @seealso [batch_annotated_msp_records()], [confirm_ms2_batch()]
+#' @export
 batch_mirror_plots_pdf <- function(mets, dict, ms2_confirmations, ms2_spectra,
                                     file, tol_ppm = 25, z_range = 1:2,
                                     h_offset = 0, width = 9, height = 5) {
@@ -283,6 +353,27 @@ batch_mirror_plots_pdf <- function(mets, dict, ms2_confirmations, ms2_spectra,
 # entry), this reuses the exact per-hit confirmation already computed for
 # that (sample, metabolite, charge, adduct) -- more precise, since it knows
 # exactly which fragment matched rather than the nearest library candidate.
+#' Export every confirmed batch MS2 hit's acquired spectrum as MSP records
+#'
+#' Exports the ACQUIRED spectrum (real instrument data) for every
+#' confirmed batch hit, with each peak annotated by the fragment ion the
+#' app's own in-memory confirmation already matched it to (blank where
+#' unmatched). More precise than re-matching an exported MSP library file
+#' by precursor-mz/charge lookup, since it reuses the exact per-hit
+#' confirmation already computed for that (sample, metabolite, charge,
+#' adduct) rather than the nearest library candidate.
+#'
+#' @param mets A list of metabolite objects (see [generate_metabolites()]).
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @param ms2_confirmations Output of [confirm_ms2_batch()]/
+#'   [annotate_metabolites_batch()].
+#' @param ms2_spectra The `"spectra"` attribute from the same call.
+#' @param tol_ppm,z_range,h_offset Fragment matching parameters -- see
+#'   [confirm_metabolite()]/[match_ms1()].
+#' @return A list of spectrum records (see `.spectrum_record()`/
+#'   [write_msp()]), one per confirmed hit.
+#' @seealso [batch_mirror_plots_pdf()], [write_msp()]
+#' @export
 batch_annotated_msp_records <- function(mets, dict, ms2_confirmations, ms2_spectra,
                                          tol_ppm = 25, z_range = 1:2, h_offset = 0) {
   hits <- .resolve_batch_ms2_hits(mets, dict, ms2_confirmations, ms2_spectra, h_offset)

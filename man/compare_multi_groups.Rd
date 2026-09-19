@@ -4,7 +4,12 @@
 \alias{compare_multi_groups}
 \title{Compare metabolite abundance across 3+ groups}
 \usage{
-compare_multi_groups(abundance_long, groups = NULL, min_n = 2)
+compare_multi_groups(
+  abundance_long,
+  groups = NULL,
+  min_n = 2,
+  p_adjust_method = "BH"
+)
 }
 \arguments{
 \item{abundance_long}{Long-format abundance data.frame from
@@ -18,6 +23,11 @@ the ANOVA factor levels. Defaults to every distinct value in
 test for a metabolite (clamped to at least 2). Below that, the
 metabolite gets `note = "insufficient replicates"` and `NA`
 statistics instead of being dropped.}
+
+\item{p_adjust_method}{Method passed to [stats::p.adjust()] for the
+across-metabolite correction on the omnibus p-values (`"BH"` by
+default). The Tukey HSD post-hoc `p_adj` is unaffected -- that's
+already family-wise adjusted by [stats::TukeyHSD()] itself.}
 }
 \value{
 `list(omnibus, posthoc)`: `omnibus` has one row per metabolite

@@ -33,6 +33,28 @@
 # parse_triplet() is defined in chemistry_dict.R and sourced before this file.
 
 ## ---- OligoDistiller parser -------------------------------------------------
+#' Parse an OligoDistiller-notation sequence
+#'
+#' Parses `"OH-Am*-Af*-Cm-...-Cm-OH"` style notation: `<base><sugar
+#' suffix>[*]` per residue, `*` marking a phosphorothioate bond OUT of
+#' that residue (phosphodiester otherwise). Usually called indirectly via
+#' [parse_input()], which auto-detects this notation from the `"OH-"`
+#' prefix.
+#'
+#' @param seq The OligoDistiller-notation string (must start `"OH-"` and
+#'   end `"-OH"`).
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @param sugar_map Named character vector mapping a single-letter sugar
+#'   suffix (as used in `seq`) to the dictionary's own sugar code, e.g.
+#'   `c(m = "m", f = "f", d = "d", r = "r", e = "MOE")` (the default).
+#'   Extend it for a suffix your data uses that isn't in the default map.
+#' @return A list with `bases`, `sugars`, `linkages` (parallel vectors,
+#'   one entry per position; `linkages[i]` is the bond FROM position i to
+#'   i+1, `NA` at the 3' end) -- the same shape [parse_triplet()]/
+#'   [parse_structured()] return, ready for [parse_input()] to finish
+#'   into a canonical `oligo_spec`.
+#' @seealso [parse_input()], [format_oligodistiller()]
+#' @export
 parse_oligodistiller <- function(seq, dict = STANDARD_DICT,
                                  sugar_map = .default_sugar_map) {
   s <- trimws(seq)
@@ -82,6 +104,25 @@ parse_oligodistiller <- function(seq, dict = STANDARD_DICT,
 # A terminal conjugate written into the header as a "5'-<code>"/"3'-<code>"
 # comment -- the way format_biopharma_fasta() itself writes them -- is
 # recovered on a best-effort basis; anything else in the header is ignored.
+#' Parse a FASTA-record sequence (triplet notation in the sequence line)
+#'
+#' Reads a FASTA-style record whose sequence line is ordinary triplet
+#' notation (what [format_biopharma_fasta()] writes, and what BioPharma
+#' Finder itself uses) -- strips the header/comment line(s) and parses
+#' what's left with [parse_triplet()]. A terminal conjugate written into
+#' the header as `5'-<code>`/`3'-<code>` (the way
+#' [format_biopharma_fasta()] writes them) is recovered on a best-effort
+#' basis. Usually called indirectly via [parse_input()], which
+#' auto-detects this notation from a leading `">"`.
+#'
+#' @param seq The FASTA record text (header line(s) starting `">"`,
+#'   then one or more sequence lines).
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @return A list with `bases`, `sugars`, `linkages`, `conj5`, `conj3` --
+#'   see [parse_oligodistiller()] for the shape, ready for
+#'   [parse_input()] to finish into a canonical `oligo_spec`.
+#' @seealso [parse_input()], [format_biopharma_fasta()]
+#' @export
 parse_fasta <- function(seq, dict = STANDARD_DICT) {
   lines <- strsplit(trimws(seq), "\n")[[1]]
   lines <- trimws(lines)
@@ -102,6 +143,24 @@ parse_fasta <- function(seq, dict = STANDARD_DICT) {
 }
 
 ## ---- Structured input parser ----------------------------------------------
+#' Parse a structured-list oligo specification
+#'
+#' Validates and normalizes a plain R list already in
+#' `list(bases=, sugars=, linkages=, conj5=, conj3=)` shape -- the only
+#' notation that can carry terminal conjugates directly. Usually called
+#' indirectly via [parse_input()], which dispatches to this whenever `x`
+#' is a list.
+#'
+#' @param spec A list with (at least) `bases`, `sugars`, `linkages`
+#'   character vectors of equal length, and optionally `conj5`/`conj3`
+#'   (default `"none"`).
+#' @param dict A chemistry dictionary (see [build_dictionary()]); not
+#'   used for validation here (see [validate_spec()]), only threaded
+#'   through for a consistent signature with the other parsers.
+#' @return A list with `bases`, `sugars`, `linkages`, `conj5`, `conj3` --
+#'   ready for [parse_input()] to finish into a canonical `oligo_spec`.
+#' @seealso [parse_input()]
+#' @export
 parse_structured <- function(spec, dict = STANDARD_DICT) {
   need <- c("bases", "sugars", "linkages")
   miss <- setdiff(need, names(spec))
@@ -180,6 +239,31 @@ parse_structured <- function(spec, dict = STANDARD_DICT) {
   !is.null(e) && (is.null(e$kind) || identical(e$kind, kind))
 }
 
+#' Parse bases/sugars/linkages given as three separate lines
+#'
+#' The layout a chemical analysis file or a BioPharma Finder sequence
+#' entry form gives you directly: one code per position for `bases` and
+#' `sugars`, one code per BOND for `linkages` (so `n-1` of them). A field
+#' holding a single code is recycled to every position/bond -- e.g.
+#' `sugars = "e"` for uniform MOE, `linkages = "s"` for fully
+#' phosphorothioate -- the common case for antisense drugs. Each field
+#' can be written as one character per code (`"TSASTTT..."`) when every
+#' code is a single character, or separated by space/comma/dash/slash/
+#' pipe for multi-character codes (`"MOE-MOE-d-d"`).
+#'
+#' @param bases,sugars,linkages Each either a single string (tokenized as
+#'   above) or an already-split character vector. `linkages` of length
+#'   `n` (matching `bases`) is also accepted -- the non-existent
+#'   trailing 3' "bond" is dropped, since sequence tables often carry a
+#'   placeholder there.
+#' @param conj5,conj3 Terminal conjugate codes, default `"none"`.
+#' @param dict A chemistry dictionary (see [build_dictionary()]), used to
+#'   tell a genuine single-code-for-all-positions field apart from a
+#'   separator-free multi-character code typed without separators.
+#' @return A canonical `oligo_spec` list (see [parse_input()]) -- this
+#'   calls [parse_input()] itself, so the result is already validated.
+#' @seealso [parse_input()], [format_three_line()]
+#' @export
 parse_three_line <- function(bases, sugars, linkages,
                              conj5 = "none", conj3 = "none",
                              dict = STANDARD_DICT) {
@@ -208,7 +292,31 @@ parse_three_line <- function(bases, sugars, linkages,
 }
 
 ## ---- Notation auto-detection + dispatcher ----------------------------------
-# Returns a canonical oligo_spec list.
+#' Parse an oligonucleotide sequence, auto-detecting its notation
+#'
+#' The main entry point for turning a sequence -- in any of triplet,
+#' OligoDistiller, FASTA, or structured-list notation -- into a
+#' validated, canonical `oligo_spec`. With `notation = "auto"` (the
+#' default), the notation is guessed from `x`: a list is structured, a
+#' string starting `">"` is FASTA, one starting `"OH-"` is
+#' OligoDistiller, anything else is triplet.
+#'
+#' @param x The sequence: a character string (triplet/OligoDistiller/
+#'   FASTA) or a structured list (see [parse_structured()]).
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @param sugar_map Sugar-suffix map for OligoDistiller notation -- see
+#'   [parse_oligodistiller()].
+#' @param notation Force a specific notation instead of auto-detecting.
+#' @return A canonical `oligo_spec` list: `bases`, `sugars`, `linkages`
+#'   (parallel vectors, one per position, `linkages[i]` = the bond FROM
+#'   position i, `NA` at the 3' end), `conj5`, `conj3`, `n` (length),
+#'   `notation` (which parser was actually used), and `raw` (the
+#'   original input, for reference). Already run through
+#'   [validate_spec()] -- every code is confirmed to exist in `dict` --
+#'   so a downstream caller can trust the spec without re-checking it.
+#' @seealso [generate_metabolites()], [format_spec()],
+#'   [format_triplet()], [validate_spec()]
+#' @export
 parse_input <- function(x, dict = STANDARD_DICT, sugar_map = .default_sugar_map,
                         notation = c("auto", "triplet", "oligodistiller",
                                      "fasta", "structured")) {
@@ -247,7 +355,20 @@ parse_input <- function(x, dict = STANDARD_DICT, sugar_map = .default_sugar_map,
 }
 
 ## ---- Spec validation -------------------------------------------------------
-# Check every base/sugar/linkage/conjugate code exists in the dictionary.
+#' Validate every code in an oligo_spec against a chemistry dictionary
+#'
+#' Checks that every base/sugar/linkage/conjugate code in `spec` exists
+#' in `dict` and is used as the right kind (e.g. a code registered as a
+#' sugar isn't accidentally used as a base). Called automatically by
+#' [parse_input()]; exposed separately for re-validating a spec built or
+#' edited by hand.
+#'
+#' @param spec An `oligo_spec` list (see [parse_input()]).
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @return `invisible(TRUE)` on success; throws an error naming the first
+#'   unknown or mismatched-kind code otherwise.
+#' @seealso [parse_input()]
+#' @export
 validate_spec <- function(spec, dict = STANDARD_DICT) {
   chk <- function(codes, kind, ctx) {
     for (cd in unique(codes[!is.na(codes)])) {
@@ -274,7 +395,12 @@ validate_spec <- function(spec, dict = STANDARD_DICT) {
 }
 
 ## ---- Renderers (round-trip back to notation) -------------------------------
-# Render an oligo_spec to triplet notation.
+#' Render an oligo_spec back to triplet notation
+#'
+#' @param spec An `oligo_spec` list (see [parse_input()]).
+#' @return A single triplet-notation string, e.g. `"Ge-uAn-sGn-..."`.
+#' @seealso [parse_input()] (`notation = "triplet"`), [format_spec()]
+#' @export
 format_triplet <- function(spec) {
   n <- spec$n
   toks <- character(n)
@@ -290,7 +416,16 @@ format_triplet <- function(spec) {
   paste(toks, collapse = "-")
 }
 
-# Render an oligo_spec to OligoDistiller notation.
+#' Render an oligo_spec back to OligoDistiller notation
+#'
+#' @param spec An `oligo_spec` list (see [parse_input()]).
+#' @param sugar_map Sugar-suffix map (dictionary code -> suffix is the
+#'   inverse of this) -- see [parse_oligodistiller()]. A sugar code with
+#'   no entry falls back to writing the raw dictionary code.
+#' @return A single OligoDistiller-notation string, e.g.
+#'   `"OH-Am*-Af*-Cm-...-OH"`.
+#' @seealso [parse_oligodistiller()]
+#' @export
 format_oligodistiller <- function(spec, sugar_map = .default_sugar_map) {
   n <- spec$n
   # invert sugar_map: dict code -> suffix (single-bracket lookup -> NA if absent)
@@ -305,11 +440,19 @@ format_oligodistiller <- function(spec, sugar_map = .default_sugar_map) {
   paste0("OH-", paste(toks, collapse = "-"), "-OH")
 }
 
-# Render an oligo_spec as the three plain lines a sequence table (or a
-# BioPharma Finder sequence entry form) is filled in with. Returns a named
-# character vector: bases (n codes), sugars (n codes), linkages (n-1 codes).
-# Multi-character codes are dash-separated so the string round-trips through
-# parse_three_line(); single-character codes are written compactly.
+#' Render an oligo_spec as three plain lines (bases / sugars / linkages)
+#'
+#' The layout a sequence table (or a BioPharma Finder sequence entry
+#' form) is filled in with. Multi-character codes are dash-separated so
+#' the result round-trips through [parse_three_line()]; single-character
+#' codes are written compactly (one character per position, no
+#' separator).
+#'
+#' @param spec An `oligo_spec` list (see [parse_input()]).
+#' @return A named character vector: `bases` (n codes), `sugars` (n
+#'   codes), `linkages` (n-1 codes).
+#' @seealso [parse_three_line()]
+#' @export
 format_three_line <- function(spec) {
   pack <- function(v) {
     if (any(nchar(v) > 1)) paste(v, collapse = "-") else paste(v, collapse = "")
@@ -336,8 +479,30 @@ format_three_line <- function(spec) {
 #     5'/3' conjugate on the spec is written into the header as a comment
 #     and must be set on the BPF side as a terminus modification.
 #
-# po_code = "p" writes BPF's phosphodiester prefix; set it to "o" to keep
-# this package's own notation instead.
+#' Render an oligo_spec as a BioPharma Finder FASTA record
+#'
+#' Writes a FASTA record for BPF's Sequence Manager ("Import FASTA
+#' File"): the sequence line is triplet notation (BPF's own
+#' [linkage][base][sugar]-per-residue building-block notation), with `p`
+#' for phosphodiester by default. A terminal conjugate on `spec` (which
+#' triplet notation has nowhere to put) is written into the header as a
+#' comment, to be set as a terminus modification on the BPF side.
+#'
+#' Two things depend on your BPF build rather than on this package:
+#' sugar codes are written as this package's dictionary codes (d/r/m/f/e
+#' or MOE/cEt/LNA), which need to match (or be renamed to match) your
+#' site's Building Block editor; and a terminal conjugate must be set
+#' manually as a terminus modification, per the header comment.
+#'
+#' @param spec An `oligo_spec` list (see [parse_input()]).
+#' @param name Record name for the FASTA header.
+#' @param po_code Phosphodiester linkage prefix to write; `"p"` (BPF's
+#'   own convention, the default) or `"o"` to keep this package's own
+#'   notation instead.
+#' @return A single string: the FASTA header line, a newline, the
+#'   triplet-notation sequence line, and a trailing newline.
+#' @seealso [parse_fasta()], [format_triplet()]
+#' @export
 format_biopharma_fasta <- function(spec, name = "oligo", po_code = "p") {
   s <- spec
   s$linkages <- ifelse(!is.na(s$linkages) & s$linkages == "o",
@@ -354,7 +519,12 @@ format_biopharma_fasta <- function(spec, name = "oligo", po_code = "p") {
   paste0(header, "\n", format_triplet(s), "\n")
 }
 
-# Human-readable one-line summary.
+#' One-line human-readable summary of an oligo_spec
+#'
+#' @param spec An `oligo_spec` list (see [parse_input()]).
+#' @return A single string like `"[triplet] n=18  bases=...  sugars=...
+#'   links=...  conj5=none  conj3=none"`.
+#' @export
 format_spec <- function(spec) {
   paste0("[", spec$notation, "] n=", spec$n,
          "  bases=", paste(spec$bases, collapse = ""),
