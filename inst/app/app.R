@@ -300,338 +300,576 @@ options(shiny.maxRequestSize = 20 * 1024^3)  # 20 GB
 ## UI
 ## =============================================================================
 ui <- fluidPage(
-  theme = bslib::bs_theme(version = 5, bootswatch = "flatly"),
+  theme = bslib::bs_theme(version = 5, bootswatch = "flatly",
+                          primary = "#C8912E", secondary = "#2c3e50"),
 
   titlePanel("OligoMet Profiler"),
 
   ## Research-use-only banner. Deliberately above the fold and not
   ## dismissible: every number this app produces is a prediction, and the
-  ## outputs get shared as files that leave the app.
+  ## outputs get shared as files that leave the app. Kept as persistent
+  ## chrome above the tab bar (not tab-scoped) -- see the About sub-tab
+  ## under Help & Quick Start for the full disclaimer text.
   tags$div(class = "ruo-banner",
     tags$span(class = "ruo-tag", "RESEARCH USE ONLY"),
     tags$span("Not for diagnostic, clinical, or regulatory submission use. ",
               "All values are computed predictions, not measurements -- ",
-              "confirm every assignment experimentally. Provided without ",
-              "warranty; the author accepts no liability for their use. "),
-    tags$a(href = "#about-section", "Full disclaimer")
+              "confirm every assignment experimentally."),
+    tags$a(href = "#", "See Help \u2192 About for the full disclaimer")
   ),
 
-  sidebarLayout(
+  tags$head(tags$style(HTML("
+    .sidebar-section { margin-bottom: 18px; }
+    .sidebar-section h5 { font-weight: 600; color: #2c3e50;
+                          border-bottom: 1px solid #ecf0f1; padding-bottom: 4px; }
+    .metric-card { background: #f8f9fa; border-radius: 6px; padding: 10px 14px;
+                   text-align: center; border: 1px solid #dee2e6; }
+    .metric-card .label { font-size: 11px; color: #6c757d; text-transform: uppercase;
+                          letter-spacing: 0.5px; }
+    .metric-card .value { font-size: 18px; font-weight: 600; color: #C8912E; }
+    .manual-entry { background: #f8f9fa; border: 1px solid #dee2e6;
+                    border-radius: 6px; padding: 14px 16px 6px;
+                    margin-bottom: 14px; }
+    .manual-entry h5 { font-weight: 600; color: #2c3e50; }
+    .manual-entry .hint { font-size: 12px; color: #6c757d; }
+    .manual-entry .form-group { margin-bottom: 8px; }
+    .man-ok { color: #18632f; font-size: 13px; }
+    .man-err { color: #a3231b; font-size: 13px; }
+    .man-seq { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+               font-size: 12px; word-break: break-all; }
+    .help-panel { border: 1px solid #dee2e6; border-radius: 6px;
+                  margin-bottom: 14px; background: #fff; }
+    .help-panel > summary { cursor: pointer; padding: 10px 16px;
+                            font-weight: 600; color: #2c3e50;
+                            list-style: revert; }
+    .help-panel[open] > summary { border-bottom: 1px solid #dee2e6; }
+    .help-body { padding: 10px 16px 4px; }
+    .help-doc { max-height: 60vh; overflow-y: auto; padding: 12px 4px 0;
+                font-size: 13px; }
+    .help-doc h1 { font-size: 20px; }
+    .help-doc h2 { font-size: 17px; margin-top: 18px; }
+    .help-doc h3 { font-size: 15px; margin-top: 14px; }
+    .help-doc table { font-size: 12px; margin-bottom: 12px;
+                      border-collapse: collapse; }
+    .help-doc th, .help-doc td { border: 1px solid #dee2e6;
+                                 padding: 3px 8px; }
+    .help-doc pre { background: #f8f9fa; border: 1px solid #e9ecef;
+                    border-radius: 4px; padding: 8px; font-size: 12px;
+                    overflow-x: auto; }
+    .help-doc code { font-size: 12px; }
+    .help-doc img { max-width: 100%; }
+    .ruo-banner { background: #fff8e6; border: 1px solid #f0d68a;
+                  border-radius: 6px; padding: 8px 14px; margin-bottom: 10px;
+                  font-size: 12px; color: #5c4813; line-height: 1.5; }
+    .ruo-tag { display: inline-block; background: #a3231b; color: #fff;
+               font-weight: 700; font-size: 10.5px; letter-spacing: 0.6px;
+               border-radius: 3px; padding: 1px 7px; margin-right: 8px; }
+    .about-block h6 { font-weight: 600; color: #2c3e50; font-size: 13px;
+                      margin-bottom: 4px; }
+    .about-block p { margin-bottom: 8px; font-size: 12px; color: #6c757d; }
+    .adv-panel { border: 1px solid #dee2e6; border-radius: 6px;
+                 margin-bottom: 14px; background: #fff; }
+    .adv-panel > summary { cursor: pointer; padding: 8px 12px;
+                           font-weight: 600; color: #2c3e50;
+                           list-style: revert; font-size: 14px; }
+    .adv-panel[open] > summary { border-bottom: 1px solid #dee2e6; }
+    .adv-body { padding: 10px 12px 4px; }
+    .session-row .btn { font-size: 12px; }
+    .chem-hint { font-size: 12px; color: #6c757d; }
+    /* Gold active-tab fill, matching the reconciled mockup */
+    .nav-tabs .nav-link.active { background-color: #C8912E !important;
+                                 color: #fff !important; font-weight: 700;
+                                 border-color: #C8912E; }
+    .nav-tabs .nav-link { color: #4B5563; }
+    .workflow-status-row { display: flex; align-items: center; gap: 9px;
+                           font-size: 12px; color: #374151; margin-bottom: 10px; }
+    .status-dot { width: 20px; height: 20px; border-radius: 50%; display: flex;
+                 align-items: center; justify-content: center; font-size: 11px;
+                 color: #fff; flex-shrink: 0; font-weight: 700; }
+    .status-dot.done { background: #22C55E; }
+    .status-dot.pending { background: #D1D5DB; }
+    .oligo-box { background: #FAFAFA; border: 1px solid #dee2e6; border-radius: 6px;
+                padding: 10px 12px; font-size: 11.5px; color: #374151; }
+    .stepper { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+    .wf-step { flex: 1; background: #F1F1F1; border-radius: 8px; padding: 14px 6px;
+              text-align: center; }
+    .wf-step.wf-active { background: #C8912E; }
+    .wf-step .wf-circ { width: 32px; height: 32px; border-radius: 50%; background: #fff;
+                        color: #9CA3AF; display: flex; align-items: center;
+                        justify-content: center; margin: 0 auto 6px; font-weight: 800; }
+    .wf-step.wf-active .wf-circ { color: #C8912E; }
+    .wf-step .wf-lbl { font-size: 11.5px; font-weight: 700; color: #6B7280; }
+    .wf-step.wf-active .wf-lbl { color: #fff; }
+    .wf-arrow { color: #C0C0C0; font-size: 16px; }
+    .dashboard-callout { background: #FDFBF3; border-left: 4px solid #C8912E;
+                         border-radius: 6px; padding: 14px 18px; }
+    .dashboard-callout p { font-size: 13px; margin: 0 0 10px; color: #374151; }
+    .placeholder-note { font-size: 11px; color: #B45309; background: #FFF7ED;
+                        border: 1px solid #FED7AA; border-radius: 5px;
+                        padding: 6px 10px; margin-top: 6px; }
+  "))),
 
-    ## ---- Sidebar: all parameters ------------------------------------------
-    sidebarPanel(
-      width = 4,
-      tags$head(tags$style(HTML("
-        .sidebar-section { margin-bottom: 18px; }
-        .sidebar-section h5 { font-weight: 600; color: #2c3e50;
-                              border-bottom: 1px solid #ecf0f1; padding-bottom: 4px; }
-        .metric-card { background: #f8f9fa; border-radius: 6px; padding: 10px 14px;
-                       text-align: center; border: 1px solid #dee2e6; }
-        .metric-card .label { font-size: 11px; color: #6c757d; text-transform: uppercase;
-                              letter-spacing: 0.5px; }
-        .metric-card .value { font-size: 18px; font-weight: 600; color: #2c3e50; }
-        .manual-entry { background: #f8f9fa; border: 1px solid #dee2e6;
-                        border-radius: 6px; padding: 14px 16px 6px;
-                        margin-bottom: 14px; }
-        .manual-entry h5 { font-weight: 600; color: #2c3e50; }
-        .manual-entry .hint { font-size: 12px; color: #6c757d; }
-        .manual-entry .form-group { margin-bottom: 8px; }
-        .man-ok { color: #18632f; font-size: 13px; }
-        .man-err { color: #a3231b; font-size: 13px; }
-        .man-seq { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-                   font-size: 12px; word-break: break-all; }
-        .help-panel { border: 1px solid #dee2e6; border-radius: 6px;
-                      margin-bottom: 14px; background: #fff; }
-        .help-panel > summary { cursor: pointer; padding: 10px 16px;
-                                font-weight: 600; color: #2c3e50;
-                                list-style: revert; }
-        .help-panel[open] > summary { border-bottom: 1px solid #dee2e6; }
-        .help-body { padding: 10px 16px 4px; }
-        .help-doc { max-height: 60vh; overflow-y: auto; padding: 12px 4px 0;
-                    font-size: 13px; }
-        .help-doc h1 { font-size: 20px; }
-        .help-doc h2 { font-size: 17px; margin-top: 18px; }
-        .help-doc h3 { font-size: 15px; margin-top: 14px; }
-        .help-doc table { font-size: 12px; margin-bottom: 12px;
-                          border-collapse: collapse; }
-        .help-doc th, .help-doc td { border: 1px solid #dee2e6;
-                                     padding: 3px 8px; }
-        .help-doc pre { background: #f8f9fa; border: 1px solid #e9ecef;
-                        border-radius: 4px; padding: 8px; font-size: 12px;
-                        overflow-x: auto; }
-        .help-doc code { font-size: 12px; }
-        .help-doc img { max-width: 100%; }
-        .ruo-banner { background: #fff8e6; border: 1px solid #f0d68a;
-                      border-radius: 6px; padding: 8px 14px; margin-bottom: 14px;
-                      font-size: 12px; color: #5c4813; line-height: 1.5; }
-        .ruo-tag { display: inline-block; background: #a3231b; color: #fff;
-                   font-weight: 700; font-size: 10.5px; letter-spacing: 0.6px;
-                   border-radius: 3px; padding: 1px 7px; margin-right: 8px; }
-        .about-block { border-top: 1px solid #dee2e6; margin-top: 24px;
-                       padding-top: 12px; font-size: 12px; color: #6c757d; }
-        .about-block h6 { font-weight: 600; color: #2c3e50; font-size: 13px;
-                          margin-bottom: 4px; }
-        .about-block p { margin-bottom: 8px; }
-        .adv-panel { border: 1px solid #dee2e6; border-radius: 6px;
-                     margin-bottom: 14px; background: #fff; }
-        .adv-panel > summary { cursor: pointer; padding: 8px 12px;
-                               font-weight: 600; color: #2c3e50;
-                               list-style: revert; font-size: 14px; }
-        .adv-panel[open] > summary { border-bottom: 1px solid #dee2e6; }
-        .adv-body { padding: 10px 12px 4px; }
-        .session-row .btn { font-size: 12px; }
-        .chem-hint { font-size: 12px; color: #6c757d; }
-        .summary-sticky { position: sticky; top: 0; z-index: 20;
-                          background: #fff; padding: 6px 0 4px;
-                          border-bottom: 1px solid #ecf0f1; }
-        .landing-placeholder { border: 1px dashed #dee2e6; border-radius: 8px;
-                               padding: 18px 20px; margin: 14px 0; background: #fbfbfc; }
-        .landing-placeholder h5 { font-weight: 600; color: #2c3e50; }
-        .landing-placeholder ul { padding-left: 20px; margin-bottom: 0; font-size: 13px; }
-        .landing-placeholder li { margin-bottom: 6px; }
-        .metric-card.placeholder .value { color: #adb5bd; }
-      "))),
+  tabsetPanel(id = "main_nav", type = "tabs",
 
-      ## -- Input section --
-      tags$div(class = "sidebar-section",
-        tags$h5("Input"),
-        textAreaInput("seq",
-                      label = .with_info("Sequence (triplet, OligoDistiller, or FASTA)",
-                        "Notation is auto-detected: starts with '>' = FASTA ",
-                        "(paste a BioPharma Finder-exported record directly), ",
-                        "starts with 'OH-' = OligoDistiller, otherwise triplet."),
-                      value = .EXAMPLE_SEQS[[1]]$seq, rows = 3,
-                      placeholder = "e.g. Te-sSe-sAe-sSe-... or OH-Am*-Gm*-...-OH or a pasted FASTA record"),
-        fluidRow(
-          column(8, selectInput("example_seq", NULL,
-                    choices = c("Choose an example..." = "", names(.EXAMPLE_SEQS)),
-                    selected = "")),
-          column(4, actionButton("load_example", "Load", class = "btn-sm btn-outline-secondary w-100"))
-        ),
-        textInput("oligo_name", "Oligo name", value = "my_oligo"),
-        textInput("output_prefix", "Output prefix", value = "my_oligo_metabolite"),
-        tags$label("Save to folder (optional)", style = "font-size: 14px; font-weight: 500;"),
-        fluidRow(
-          column(8, textInput("output_dir", NULL, value = "",
-                              placeholder = "e.g. C:/Users/you/Documents/results")),
-          column(4, if (.have_shinyfiles)
-            shinyFiles::shinyDirButton("browse_output_dir", "Browse...", "Choose a folder",
-                                       class = "btn-sm btn-outline-secondary w-100"))
-        ),
-        tags$p(style = "font-size: 11px; color: #6c757d; margin-top: -6px;",
-               "Leave blank to only use the download buttons below. If set, ",
-               "the workbook, report, PRM list, and acquisition method lists ",
-               "are also written directly to this folder (created if it ",
-               "doesn't exist) when you click Run. \"Browse...\" browses the ",
-               "filesystem of the machine R is running on -- if you're ",
-               "running this app locally (RStudio / Rscript on your own ",
-               "machine, as in the Quick Start), that's your own filesystem; ",
-               "under a remote/hosted deployment it would be the server's."),
-        selectInput("conj5", "5' conjugate", choices = .conj5_choices, selected = "none"),
-        selectInput("conj3", "3' conjugate", choices = .conj3_choices, selected = "none")
-      ),
-
-      ## -- Metabolite generation section --
-      tags$div(class = "sidebar-section",
-        tags$h5("Metabolite Generation"),
-        fluidRow(
-          column(6, numericInput("max_3p", "Max 3' trunc.",
-                                 value = DEFAULT_PIPELINE_PARAMS$max_3p, min = 0, max = 50)),
-          column(6, numericInput("max_5p", "Max 5' trunc.",
-                                 value = DEFAULT_PIPELINE_PARAMS$max_5p, min = 0, max = 50))
-        ),
-        checkboxInput("endo", "Include endonuclease fragments",
-                      value = DEFAULT_PIPELINE_PARAMS$endo),
-        radioButtons("endo_sites", "Endo cleavage sites",
-                     choices = c("All positions" = "all", "DNA gap only" = "gap"),
-                     selected = DEFAULT_PIPELINE_PARAMS$endo_sites, inline = TRUE),
-        numericInput("min_frag_len", "Min fragment length (nt)",
-                    value = DEFAULT_PIPELINE_PARAMS$min_frag_len, min = 1, max = 20),
-        tags$p(style = "font-size: 11px; color: #6c757d; margin-top: 6px;",
-               "The Charge Envelopes sheet computes a full isotope pattern for ",
-               "every metabolite x PS-oxidation level. Endonuclease fragments ",
-               "and a high \u201cMax PS oxid.\u201d both multiply that count -- for ",
-               "long sequences this can take several minutes.")
-      ),
-
-      ## -- Mass & isotope section --
-      tags$div(class = "sidebar-section",
-        tags$h5("Mass & Isotope"),
-        fluidRow(
-          column(6, numericInput("z_min", "Min charge z",
-                                 value = DEFAULT_PIPELINE_PARAMS$z_min, min = 1, max = 20)),
-          column(6, numericInput("z_max", "Max charge z",
-                                 value = DEFAULT_PIPELINE_PARAMS$z_max, min = 1, max = 30))
-        ),
-        fluidRow(
-          column(6, numericInput("n_iso", "Isotope peaks",
-                                 value = DEFAULT_PIPELINE_PARAMS$n_iso, min = 1, max = 20)),
-          column(6, numericInput("max_oxid",
-                    label = .with_info("Max PS oxid.",
-                      "Trades completeness for target count: a higher cap covers deeper ",
-                      "oxidation states but multiplies Charge Envelope rows and PRM/MS1 ",
-                      "targets \u2014 each metabolite is modeled at every oxidation level ",
-                      "from 0 up to this cap."),
-                    value = DEFAULT_PIPELINE_PARAMS$max_oxid, min = 0, max = 30))
-        ),
-        numericInput("h_offset",
-                    label = .with_info("Envelope offset (Da)",
-                      "0 = standard [M-zH]^z- charge envelope. Nonzero only to ",
-                      "reproduce a legacy or lab-specific mass convention."),
-                    value = DEFAULT_PIPELINE_PARAMS$h_offset, step = 0.001),
-        checkboxInput("use_envipat", "Use enviPat for isotopes",
-                      value = DEFAULT_PIPELINE_PARAMS$use_envipat),
-        tags$p(class = "chem-hint", style = "margin-top: -8px;",
-               "Unchecked uses a built-in binomial-convolution approximation; ",
-               "install enviPat (", tags$code("install.packages(\"enviPat\")"),
-               ") for higher-accuracy, literature isotope-abundance patterns.")
-      ),
-
-      ## -- Orbitrap Exploris acquisition method section (advanced; collapsed
-      ## by default -- most runs never touch these past their defaults) --
-      tags$details(class = "adv-panel",
-        tags$summary("Orbitrap Acquisition Method"),
-        tags$div(class = "adv-body",
-          numericInput("method_length",
-                      label = .with_info("Method length (min)",
-                        "Total LC-MS run time; sets the RT window end (Start/End Time) ",
-                        "for every row in the MS1 inclusion and MS2 PRM target lists."),
-                      value = DEFAULT_PIPELINE_PARAMS$method_length, min = 1, max = 999),
-          fluidRow(
-            column(6, numericInput("ms2_z_min", "MS2 charge z min",
-                                   value = DEFAULT_PIPELINE_PARAMS$ms2_z_min, min = 1, max = 30)),
-            column(6, numericInput("ms2_z_max", "MS2 charge z max",
-                                   value = DEFAULT_PIPELINE_PARAMS$ms2_z_max, min = 1, max = 30))
+    ## =========================================================================
+    ## TAB: Dashboard
+    ## =========================================================================
+    tabPanel("Dashboard",
+      tags$div(style = "height: 14px;"),
+      fluidRow(
+        column(4,
+          tags$div(class = "sidebar-section",
+            tags$h5("Session"),
+            downloadButton("dl_session", "Save Session (JSON)", class = "btn-primary w-100"),
+            tags$div(style = "height: 8px;"),
+            fileInput("load_session_file", NULL, accept = ".json",
+                      buttonLabel = "Load Session (JSON)...", placeholder = ""),
+            tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -8px;",
+                   "Saves/restores the sequence, custom chemistry, and all ",
+                   "parameters as a .json file -- not uploaded MS/batch files.")
           ),
-          numericInput("hcd_nce",
-                      label = .with_info("HCD NCE (%)",
-                        "20% is a PS-backbone starting point, not a validated instrument ",
-                        "parameter \u2014 optimize per method and per instrument before ",
-                        "relying on it."),
-                      value = DEFAULT_PIPELINE_PARAMS$hcd_nce, min = 1, max = 200),
-          fluidRow(
-            column(6, numericInput("ms1_target_cap",
-                      label = .with_info("Max MS1 targets",
-                        "PRM/targeted duty cycle degrades quickly as target count grows; ",
-                        "raising this cap can lengthen the instrument cycle time beyond ",
-                        "what's practical for the method."),
-                      value = DEFAULT_PIPELINE_PARAMS$ms1_target_cap, min = 1, max = 150000)),
-            column(6, numericInput("ms2_target_cap", "Max MS2 targets",
-                      value = DEFAULT_PIPELINE_PARAMS$ms2_target_cap, min = 1, max = 150000))
+          tags$div(class = "sidebar-section",
+            tags$h5("Workflow Status"),
+            uiOutput("dashboard_workflow_status")
           ),
-          tags$p(style = "font-size: 11px; color: #6c757d; margin-top: -6px;",
-                 "MS1/MS2 lists match the Orbitrap Exploris Method Editor's ",
-                 "Targeted Mass filter table (m/z & z, Start/End Time mode). ",
-                 "PRM duty cycle degrades quickly with target count, so MS2 ",
-                 "defaults to a narrower charge range than the full MS1 envelope.")
-        )
-      ),
-
-      ## -- Phase 1: generate the predicted library -------------------------
-      ## Runs steps 1-6 (dictionary, sequence parsing, metabolite generation,
-      ## masses, fragments, PRM list) plus a library-only workbook/report --
-      ## no MS data needed. This is the artifact you'd save/share before any
-      ## data is acquired; Phase 2 below (MS matching) becomes available once
-      ## this has run.
-      tags$hr(),
-      actionButton("run_phase1", "1. Generate Library",
-                   class = "btn-primary btn-lg w-100"),
-      tags$p(style = "font-size: 11px; color: #6c757d; margin: 4px 0 10px;",
-             "Builds the metabolite library, PRM inclusion list, and spectral ",
-             "libraries from the sequence and parameters above -- no MS data ",
-             "needed yet. Re-run this after changing any parameter above."),
-
-      ## -- MS matching section (optional) --
-      tags$div(class = "sidebar-section",
-        tags$h5("MS Matching (optional)"),
-        checkboxInput("enable_ms", "Enable MS matching",
-                      value = DEFAULT_PIPELINE_PARAMS$enable_ms),
-        conditionalPanel(
-          condition = "input.enable_ms == true",
-          fileInput("ms_file", "Upload MS file (.mzML, .mzXML, .raw, .csv)",
-                    accept = c(".mzML", ".mzXML", ".mzml", ".mzxml", ".raw", ".csv", ".txt")),
-          tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -10px;",
-                 "Vendor .raw files are converted to .mzML automatically via ",
-                 "ProteoWizard msconvert if it's on PATH (proteowizard.org) -- ",
-                 "otherwise upload an .mzML/.mzXML export instead."),
-          numericInput("ppm_tol", "MS1 tolerance (ppm)",
-                      value = DEFAULT_PIPELINE_PARAMS$ppm_tol, min = 1, max = 50),
-          radioButtons("noise_mode", "Background/noise threshold",
-                       choices = c("Signal-to-noise multiple" = "sn",
-                                   "Fixed intensity value" = "fixed"),
-                       selected = "sn", inline = TRUE),
-          conditionalPanel(
-            condition = "input.noise_mode == 'sn'",
-            numericInput("sn_threshold", "S/N threshold (x noise level)",
-                        value = DEFAULT_PIPELINE_PARAMS$sn_threshold, min = 0, step = 0.5),
-            tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -10px;",
-                   "Absolute threshold = (this file's own noise level) x this ",
-                   "number. Noise level is the median of every MS1 peak's ",
-                   "intensity in the file -- most individual peaks in a real ",
-                   "run ARE background, so this tracks each file's own ",
-                   "baseline instead of one fixed number picked for a ",
-                   "different file/instrument.")
-          ),
-          conditionalPanel(
-            condition = "input.noise_mode == 'fixed'",
-            numericInput("min_intensity", "Fixed intensity threshold",
-                        value = DEFAULT_PIPELINE_PARAMS$min_intensity, min = 0),
-            tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -10px;",
-                   "Hard cutoff: peaks below this absolute intensity are ",
-                   "dropped before matching, regardless of this file's own ",
-                   "noise floor.")
-          ),
-          checkboxGroupInput("adducts", "Adducts",
-                             choices = c("H", "Na", "K", "NH4"),
-                             selected = DEFAULT_PIPELINE_PARAMS$adducts, inline = TRUE),
-          fluidRow(
-            column(6, numericInput("frag_tol_ppm", "Fragment tol (ppm)",
-                      value = DEFAULT_PIPELINE_PARAMS$frag_tol_ppm, min = 5, max = 100)),
-            column(6, numericInput("frag_z_max", "Fragment max z",
-                      value = DEFAULT_PIPELINE_PARAMS$frag_z_max, min = 1, max = 5))
+          tags$div(class = "sidebar-section",
+            tags$h5("Active Oligo"),
+            uiOutput("dashboard_active_oligo")
           )
+        ),
+        column(8,
+          uiOutput("dashboard_stepper"),
+          tags$div(class = "dashboard-callout",
+            tags$p(tags$b("Step 1: "), "Enter your oligonucleotide sequence and generate the MS1 library (Library Generation)."),
+            tags$p(tags$b("Step 2: "), "Upload raw MS2 data to build an empirical fragment library (Empirical MS2 Library)."),
+            tags$p(tags$b("Step 3: "), "Process batch samples -- deconvolution, matching, and calibration/quantification (Batch Processing)."),
+            tags$p(style = "margin-bottom: 0;", tags$b("Step 4: "), "Run statistical analysis -- data matrix, univariate statistics, class comparison (Statistical Analysis).")
+          ),
+          tags$div(style = "height: 14px;"),
+          verbatimTextOutput("status", placeholder = TRUE)
         )
-      ),
+      )
+    ),
 
-      ## -- Batch MS processing section (optional, advanced; collapsed by
-      ## default). Independent of the single-file "MS Matching" section
-      ## above: uploads multiple raw files, runs them through the parallel
-      ## Python charge-envelope deconvolution pipeline
-      ## (inst/python/oligomet_deconv/), and matches/confirms/compares
-      ## across samples. See R/batch_ms_processing.R and R/statistics.R.
-      tags$details(class = "adv-panel",
-        tags$summary("Batch MS Processing (optional)"),
-        tags$div(class = "adv-body",
-          checkboxInput("enable_batch", "Enable batch processing",
-                        value = DEFAULT_PIPELINE_PARAMS$enable_batch),
-          conditionalPanel(
-            condition = "input.enable_batch == true",
-            fileInput("batch_files", "Upload raw files (.mzML, .mzXML, .raw)", multiple = TRUE,
-                      accept = c(".mzML", ".mzml", ".mzXML", ".mzxml", ".raw")),
-            tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -10px;",
-                   "Vendor .raw files are converted to .mzML automatically via ",
-                   "ProteoWizard msconvert if it's on PATH. Agilent/Bruker .d ",
-                   "folders can't be uploaded (they're directories, not files) ",
-                   "-- use the local-folder option below instead."),
-            uiOutput("batch_upload_notice"),
-            tags$label("...or point at a local folder (optional)",
-                       style = "font-size: 13px; font-weight: 500;"),
+    ## =========================================================================
+    ## TAB: Library Generation
+    ## =========================================================================
+    tabPanel("Library Generation",
+      tags$div(style = "height: 14px;"),
+      fluidRow(
+        column(4,
+          tags$div(class = "sidebar-section",
+            tags$h5("Input"),
+            textAreaInput("seq",
+                          label = .with_info("Sequence (triplet, OligoDistiller, or FASTA)",
+                            "Notation is auto-detected: starts with '>' = FASTA ",
+                            "(paste a BioPharma Finder-exported record directly), ",
+                            "starts with 'OH-' = OligoDistiller, otherwise triplet."),
+                          value = .EXAMPLE_SEQS[[1]]$seq, rows = 3,
+                          placeholder = "e.g. Te-sSe-sAe-sSe-... or OH-Am*-Gm*-...-OH or a pasted FASTA record"),
             fluidRow(
-              column(8, textInput("batch_dir", NULL, value = "",
-                                  placeholder = "e.g. /path/to/mzml_folder")),
+              column(8, selectInput("example_seq", NULL,
+                        choices = c("Choose an example..." = "", names(.EXAMPLE_SEQS)),
+                        selected = "")),
+              column(4, actionButton("load_example", "Load", class = "btn-sm btn-outline-secondary w-100"))
+            ),
+            textInput("oligo_name", "Oligo name", value = "my_oligo"),
+            textInput("output_prefix", "Output prefix", value = "my_oligo_metabolite"),
+            tags$label("Save to folder (optional)", style = "font-size: 14px; font-weight: 500;"),
+            fluidRow(
+              column(8, textInput("output_dir", NULL, value = "",
+                                  placeholder = "e.g. C:/Users/you/Documents/results")),
               column(4, if (.have_shinyfiles)
-                shinyFiles::shinyDirButton("browse_batch_dir", "Browse...", "Choose a folder",
+                shinyFiles::shinyDirButton("browse_output_dir", "Browse...", "Choose a folder",
                                            class = "btn-sm btn-outline-secondary w-100"))
             ),
             tags$p(style = "font-size: 11px; color: #6c757d; margin-top: -6px;",
-                   "Reads every .mzML/.mzXML file in this folder directly from ",
-                   "disk -- skips the browser upload entirely, so there's no ",
-                   "upload size limit and it's faster for large HRMS files. ",
-                   "Only works when the app and the data are on the same ",
-                   "machine (true if you're running this locally; under a ",
-                   "remote/hosted deployment it's the server's filesystem, ",
-                   "not yours). Takes precedence over the upload above when ",
-                   "both are set."),
+                   "Leave blank to only use the download buttons below. If set, ",
+                   "the workbook, report, PRM list, and acquisition method lists ",
+                   "are also written directly to this folder when you click Generate Library."),
+            selectInput("conj5", "5' conjugate", choices = .conj5_choices, selected = "none"),
+            selectInput("conj3", "3' conjugate", choices = .conj3_choices, selected = "none")
+          ),
+          tags$div(class = "sidebar-section",
+            tags$h5("Metabolite Generation"),
+            fluidRow(
+              column(6, numericInput("max_3p", "Max 3' trunc.",
+                                     value = DEFAULT_PIPELINE_PARAMS$max_3p, min = 0, max = 50)),
+              column(6, numericInput("max_5p", "Max 5' trunc.",
+                                     value = DEFAULT_PIPELINE_PARAMS$max_5p, min = 0, max = 50))
+            ),
+            checkboxInput("endo", "Include endonuclease fragments",
+                          value = DEFAULT_PIPELINE_PARAMS$endo),
+            radioButtons("endo_sites", "Endo cleavage sites",
+                         choices = c("All positions" = "all", "DNA gap only" = "gap"),
+                         selected = DEFAULT_PIPELINE_PARAMS$endo_sites, inline = TRUE),
+            numericInput("min_frag_len", "Min fragment length (nt)",
+                        value = DEFAULT_PIPELINE_PARAMS$min_frag_len, min = 1, max = 20)
+          ),
+          tags$div(class = "sidebar-section",
+            tags$h5("Mass & Isotope"),
+            fluidRow(
+              column(6, numericInput("z_min", "Min charge z",
+                                     value = DEFAULT_PIPELINE_PARAMS$z_min, min = 1, max = 20)),
+              column(6, numericInput("z_max", "Max charge z",
+                                     value = DEFAULT_PIPELINE_PARAMS$z_max, min = 1, max = 30))
+            ),
+            fluidRow(
+              column(6, numericInput("n_iso", "Isotope peaks",
+                                     value = DEFAULT_PIPELINE_PARAMS$n_iso, min = 1, max = 20)),
+              column(6, numericInput("max_oxid",
+                        label = .with_info("Max PS oxid.",
+                          "Trades completeness for target count: a higher cap covers deeper ",
+                          "oxidation states but multiplies Charge Envelope rows and PRM/MS1 ",
+                          "targets -- each metabolite is modeled at every oxidation level ",
+                          "from 0 up to this cap."),
+                        value = DEFAULT_PIPELINE_PARAMS$max_oxid, min = 0, max = 30))
+            ),
+            numericInput("h_offset",
+                        label = .with_info("Envelope offset (Da)",
+                          "0 = standard [M-zH]^z- charge envelope. Nonzero only to ",
+                          "reproduce a legacy or lab-specific mass convention."),
+                        value = DEFAULT_PIPELINE_PARAMS$h_offset, step = 0.001),
+            checkboxInput("use_envipat", "Use enviPat for isotopes",
+                          value = DEFAULT_PIPELINE_PARAMS$use_envipat)
+          ),
+          tags$details(class = "adv-panel",
+            tags$summary("Orbitrap Acquisition Method"),
+            tags$div(class = "adv-body",
+              numericInput("method_length",
+                          label = .with_info("Method length (min)",
+                            "Total LC-MS run time; sets the RT window end for every row ",
+                            "in the MS1 inclusion and MS2 PRM target lists."),
+                          value = DEFAULT_PIPELINE_PARAMS$method_length, min = 1, max = 999),
+              fluidRow(
+                column(6, numericInput("ms2_z_min", "MS2 charge z min",
+                                       value = DEFAULT_PIPELINE_PARAMS$ms2_z_min, min = 1, max = 30)),
+                column(6, numericInput("ms2_z_max", "MS2 charge z max",
+                                       value = DEFAULT_PIPELINE_PARAMS$ms2_z_max, min = 1, max = 30))
+              ),
+              numericInput("hcd_nce",
+                          label = .with_info("HCD NCE (%)",
+                            "20% is a PS-backbone starting point, not a validated instrument ",
+                            "parameter -- optimize per method and per instrument."),
+                          value = DEFAULT_PIPELINE_PARAMS$hcd_nce, min = 1, max = 200),
+              fluidRow(
+                column(6, numericInput("ms1_target_cap", "Max MS1 targets",
+                          value = DEFAULT_PIPELINE_PARAMS$ms1_target_cap, min = 1, max = 150000)),
+                column(6, numericInput("ms2_target_cap", "Max MS2 targets",
+                          value = DEFAULT_PIPELINE_PARAMS$ms2_target_cap, min = 1, max = 150000))
+              )
+            )
+          ),
+          tags$hr(),
+          actionButton("run_phase1", "Generate Library",
+                       class = "btn-primary btn-lg w-100"),
+          tags$p(style = "font-size: 11px; color: #6c757d; margin: 4px 0 10px;",
+                 "Builds the MS1-only library -- .mgf/.msp, inclusion lists, and the ",
+                 "Excel workbook. No MS2 library yet: that comes from real data ",
+                 "in the Empirical MS2 Library tab.")
+        ),
+
+        column(8,
+          tags$div(class = "manual-entry",
+            tags$h5("Manual sequence entry"),
+            tags$p(class = "hint",
+                   "Type the three lines from your chemical analysis file. New to ",
+                   "this? Open ", tags$strong("Help & Quick Start \u2192 Sequence Guide"), "."),
+            fluidRow(
+              column(4, textInput("man_bases", "Bases (5'->3')", value = "",
+                                  placeholder = "TSASTTTSATAATGSTGG")),
+              column(4, textInput("man_sugars", "Sugars", value = "",
+                                  placeholder = "eeeeeeeeeeeeeeeeee")),
+              column(4, textInput("man_linkages", "Linkages", value = "",
+                                  placeholder = "sssssssssssssssss"))
+            ),
+            fluidRow(
+              column(3, actionButton("man_submit", "Submit", class = "btn-primary w-100")),
+              column(3, actionButton("man_example", "Fill example", class = "btn-outline-secondary w-100")),
+              column(3, actionButton("man_clear", "Clear", class = "btn-outline-secondary w-100")),
+              column(3, downloadButton("dl_fasta", "BPF FASTA", class = "btn-outline-secondary w-100"))
+            ),
+            htmlOutput("man_feedback")
+          ),
+          tags$details(class = "help-panel",
+            tags$summary("Custom Chemistry (advanced)"),
+            tags$div(class = "help-body",
+              tags$p(class = "chem-hint",
+                     "Add custom base/sugar/linkage/conjugate entries not in the ",
+                     "standard dictionary."),
+              DT::dataTableOutput("custom_chem"),
+              tags$div(style = "height: 6px;"),
+              fluidRow(
+                column(3, actionButton("add_row", "Add Row", class = "btn-sm btn-outline-primary w-100")),
+                column(3, actionButton("remove_row", "Remove Row", class = "btn-sm btn-outline-secondary w-100"))
+              )
+            )
+          ),
+          conditionalPanel(
+            condition = "output.status_ready == 'true'",
+            tags$hr(),
+            fluidRow(
+              column(3, tags$div(class = "metric-card",
+                tags$div(class = "label", "Formula"), tags$div(class = "value", textOutput("m_formula")))),
+              column(2, tags$div(class = "metric-card",
+                tags$div(class = "label", "Mono Mass (Da)"), tags$div(class = "value", textOutput("m_mono_mass")))),
+              column(2, tags$div(class = "metric-card",
+                tags$div(class = "label", "Avg Mass (Da)"), tags$div(class = "value", textOutput("m_avg_mass")))),
+              column(1, tags$div(class = "metric-card",
+                tags$div(class = "label", "Length"), tags$div(class = "value", textOutput("m_length")))),
+              column(2, tags$div(class = "metric-card",
+                tags$div(class = "label", "Metabolites"), tags$div(class = "value", textOutput("m_n_mets")))),
+              column(2, tags$div(class = "metric-card",
+                tags$div(class = "label", "PRM Entries"), tags$div(class = "value", textOutput("m_n_prm"))))
+            ),
+            tags$div(style = "height: 10px;"),
+            tabsetPanel(
+              tabPanel("Charge Envelope", plotOutput("plot_envelope", height = "380px")),
+              tabPanel("Truncation Series", plotOutput("plot_truncation", height = "380px")),
+              tabPanel("Isotope Pattern", plotOutput("plot_isotope", height = "380px")),
+              tabPanel("Oxidation Series", plotOutput("plot_oxidation", height = "380px")),
+              tabPanel("MS2 Explorer (predicted)",
+                tags$div(style = "padding-top: 12px;",
+                  fluidRow(
+                    column(8, tags$p(style = "font-size: 12px; color: #6c757d;",
+                      "Predicted (theoretical) MS2 library for interactive browsing --",
+                      " see Empirical MS2 Library for spectra built from real data.")),
+                    column(4, actionButton("build_ms2_explorer", "Build / Refresh Library",
+                      class = "btn-sm btn-outline-primary w-100"))
+                  ),
+                  conditionalPanel(
+                    condition = "output.ms2_explorer_ready == 'true'",
+                    DT::dataTableOutput("ms2_explorer_table"),
+                    tags$hr(),
+                    uiOutput("ms2_explorer_title"),
+                    fluidRow(
+                      column(7, plotOutput("ms2_explorer_plot", height = "300px")),
+                      column(5, DT::dataTableOutput("ms2_explorer_peaks"))
+                    )
+                  )
+                )
+              )
+            ),
+            tags$div(style = "height: 10px;"),
+            tags$div(class = "sidebar-section",
+              tags$h5("Downloads -- Library (MS1-only)"),
+              fluidRow(
+                column(4, downloadButton("dl_workbook", "Excel Workbook (.xlsx)", class = "btn-success w-100")),
+                column(4, downloadButton("dl_report", "HTML Report (.html)", class = "btn-info w-100")),
+                column(4, downloadButton("dl_prm", "PRM Inclusion List (.csv)", class = "btn-warning w-100"))
+              ),
+              tags$div(style = "height: 8px;"),
+              fluidRow(
+                column(3, downloadButton("dl_ms1_inclusion", "MS1 Inclusion List (.csv)", class = "btn-outline-secondary w-100")),
+                column(3, downloadButton("dl_ms2_prm", "MS2 PRM Target List (.csv)", class = "btn-outline-secondary w-100")),
+                column(3, downloadButton("dl_frag_ref", "MS2 Fragment Reference (.csv)", class = "btn-outline-secondary w-100")),
+                column(3, downloadButton("dl_all", "Download All (.zip)", class = "btn-dark w-100"))
+              ),
+              tags$div(style = "height: 8px;"),
+              fluidRow(
+                column(6, downloadButton("dl_ms1_mgf", "MS1 library (.mgf)", class = "btn-outline-primary w-100")),
+                column(6, downloadButton("dl_ms1_msp", "MS1 library (.msp)", class = "btn-outline-primary w-100"))
+              )
+            )
+          )
+        )
+      )
+    ),
+
+    ## =========================================================================
+    ## TAB: Empirical MS2 Library
+    ## =========================================================================
+    tabPanel("Empirical MS2 Library",
+      tags$div(style = "height: 14px;"),
+      fluidRow(
+        column(4,
+          tags$div(class = "sidebar-section",
+            tags$h5("Acquisition Mode"),
+            radioButtons("ms2_acquisition_mode", NULL,
+                         choices = c("DDA" = "dda", "PRM" = "prm", "DIA" = "dia", "AcquireX" = "acquirex"),
+                         selected = "dda", inline = TRUE),
+            tags$p(style = "font-size: 10px; color: #B45309; background: #FFF7ED; border: 1px solid #FED7AA; border-radius: 5px; padding: 5px 8px; margin-top: 4px;",
+                   "DIA: wide-isolation precursor deconvolution is not implemented yet -- ",
+                   "matching below assumes a 1:1 precursor\u2194MS2 scan (DDA/PRM/AcquireX). ",
+                   "This selector is currently informational only.")
+          ),
+          tags$div(class = "sidebar-section",
+            tags$h5("MS Matching (single file)"),
+            checkboxInput("enable_ms", "Enable MS matching",
+                          value = DEFAULT_PIPELINE_PARAMS$enable_ms),
+            conditionalPanel(
+              condition = "input.enable_ms == true",
+              fileInput("ms_file", "Upload MS file (.mzML, .mzXML, .raw, .csv)",
+                        accept = c(".mzML", ".mzXML", ".mzml", ".mzxml", ".raw", ".csv", ".txt")),
+              numericInput("ppm_tol", "MS1 tolerance (ppm)",
+                          value = DEFAULT_PIPELINE_PARAMS$ppm_tol, min = 1, max = 50),
+              radioButtons("noise_mode", "Background/noise threshold",
+                           choices = c("Signal-to-noise multiple" = "sn",
+                                       "Fixed intensity value" = "fixed"),
+                           selected = "sn", inline = TRUE),
+              conditionalPanel(
+                condition = "input.noise_mode == 'sn'",
+                numericInput("sn_threshold", "S/N threshold (x noise level)",
+                            value = DEFAULT_PIPELINE_PARAMS$sn_threshold, min = 0, step = 0.5)
+              ),
+              conditionalPanel(
+                condition = "input.noise_mode == 'fixed'",
+                numericInput("min_intensity", "Fixed intensity threshold",
+                            value = DEFAULT_PIPELINE_PARAMS$min_intensity, min = 0)
+              ),
+              checkboxGroupInput("adducts", "Adducts",
+                                 choices = c("H", "Na", "K", "NH4"),
+                                 selected = DEFAULT_PIPELINE_PARAMS$adducts, inline = TRUE),
+              fluidRow(
+                column(6, numericInput("frag_tol_ppm", "Fragment tol (ppm)",
+                          value = DEFAULT_PIPELINE_PARAMS$frag_tol_ppm, min = 5, max = 100)),
+                column(6, numericInput("frag_z_max", "Fragment max z",
+                          value = DEFAULT_PIPELINE_PARAMS$frag_z_max, min = 1, max = 5))
+              )
+            )
+          ),
+          tags$div(class = "sidebar-section",
+            tags$h5("Batch Raw Files (multi-file)"),
+            checkboxInput("enable_batch", "Enable batch processing",
+                          value = DEFAULT_PIPELINE_PARAMS$enable_batch),
+            conditionalPanel(
+              condition = "input.enable_batch == true",
+              fileInput("batch_files", "Upload raw files (.mzML, .mzXML, .raw)", multiple = TRUE,
+                        accept = c(".mzML", ".mzml", ".mzXML", ".mzxml", ".raw")),
+              uiOutput("batch_upload_notice"),
+              tags$label("...or point at a local folder (optional)",
+                         style = "font-size: 13px; font-weight: 500;"),
+              fluidRow(
+                column(8, textInput("batch_dir", NULL, value = "",
+                                    placeholder = "e.g. /path/to/mzml_folder")),
+                column(4, if (.have_shinyfiles)
+                  shinyFiles::shinyDirButton("browse_batch_dir", "Browse...", "Choose a folder",
+                                             class = "btn-sm btn-outline-secondary w-100"))
+              ),
+              checkboxInput("batch_run_ms2", "Confirm hits with MS2 (build empirical library)",
+                            value = TRUE),
+              fluidRow(
+                column(6, numericInput("batch_n_workers", "Parallel workers",
+                          value = DEFAULT_PIPELINE_PARAMS$batch_n_workers, min = 1, max = 64)),
+                column(6, numericInput("batch_deconv_ppm", "Deconv mass tol (ppm)",
+                          value = DEFAULT_PIPELINE_PARAMS$batch_deconv_ppm, min = 1, max = 100))
+              ),
+              radioButtons("batch_noise_mode", "Background/noise threshold",
+                           choices = c("Signal-to-noise multiple" = "sn",
+                                       "Fixed intensity value" = "fixed"),
+                           selected = "sn", inline = TRUE),
+              conditionalPanel(
+                condition = "input.batch_noise_mode == 'sn'",
+                numericInput("batch_sn_threshold", "S/N threshold (x noise level)",
+                            value = DEFAULT_PIPELINE_PARAMS$sn_threshold, min = 0, step = 0.5)
+              ),
+              conditionalPanel(
+                condition = "input.batch_noise_mode == 'fixed'",
+                numericInput("batch_min_intensity", "Fixed intensity threshold",
+                            value = DEFAULT_PIPELINE_PARAMS$min_intensity, min = 0)
+              ),
+              tags$p(style = "font-size: 10.5px; color: #6c757d;",
+                     "Sample metadata (group/timepoint/type) is set on the Batch ",
+                     "Processing tab -- not needed just to build the empirical library.")
+            )
+          ),
+          conditionalPanel(
+            condition = "output.library_ready == 'true'",
+            actionButton("run_ms2_library", "Generate Empirical MS2 Library",
+                         class = "btn-primary btn-lg w-100")
+          ),
+          conditionalPanel(
+            condition = "output.library_ready != 'true'",
+            tags$p(style = "font-size: 11px; color: #6c757d;",
+                   "Run \"Generate Library\" on the Library Generation tab first.")
+          )
+        ),
+
+        column(8,
+          conditionalPanel(
+            condition = "input.enable_ms == true && output.status_ready == 'true'",
+            fluidRow(
+              column(4, tags$div(class = "metric-card",
+                tags$div(class = "label", "MS1 Matches (single file)"), tags$div(class = "value", textOutput("m_ms1_matches")))),
+              column(4, tags$div(class = "metric-card",
+                tags$div(class = "label", "Annotated Mets"), tags$div(class = "value", textOutput("m_annotated")))),
+              column(4, tags$div(class = "metric-card",
+                tags$div(class = "label", "Putative IDs"), tags$div(class = "value", textOutput("m_confident"))))
+            ),
+            tags$div(style = "height: 10px;")
+          ),
+          conditionalPanel(
+            condition = "output.batch_ready == 'true'",
+            fluidRow(
+              column(4, tags$div(class = "metric-card",
+                tags$div(class = "label", "MS2 Confirmed Hits"), tags$div(class = "value", textOutput("ms2lib_n_matched")))),
+              column(4, tags$div(class = "metric-card",
+                tags$div(class = "label", "MS2 Spectra Extracted"), tags$div(class = "value", textOutput("ms2lib_n_spectra")))),
+              column(4, tags$div(class = "metric-card",
+                tags$div(class = "label", "Consensus Spectra Built"), tags$div(class = "value", textOutput("ms2lib_n_consensus"))))
+            ),
+            tags$div(style = "height: 10px;")
+          ),
+          tabsetPanel(
+            tabPanel("MS2 Mirror Plot (single file)",
+              tags$div(style = "padding-top: 12px;",
+                conditionalPanel(
+                  condition = "output.ms2_mirror_ready == 'true'",
+                  DT::dataTableOutput("ms2_mirror_table"),
+                  tags$hr(),
+                  plotOutput("ms2_mirror_plot", height = "400px")
+                ),
+                conditionalPanel(
+                  condition = "output.ms2_mirror_ready != 'true'",
+                  tags$p(style = "color: #6c757d;",
+                    "Enable MS matching, upload an MS2-containing file, and run to see the mirror plot here.")
+                )
+              )
+            ),
+            tabPanel("Empirical Library",
+              tags$div(style = "padding-top: 12px;",
+                conditionalPanel(
+                  condition = "output.batch_ready == 'true'",
+                  DT::dataTableOutput("empirical_ms2_summary_table"),
+                  tags$div(style = "height: 8px;"),
+                  fluidRow(
+                    column(3, downloadButton("dl_empirical_ms2_msp", "Empirical MS2 (.msp)", class = "btn-outline-primary w-100")),
+                    column(3, downloadButton("dl_empirical_ms2_summary", "Summary (.csv)", class = "btn-outline-primary w-100")),
+                    column(3, downloadButton("dl_batch_annotated_msp", "Annotated MS2 (.msp)", class = "btn-outline-primary w-100")),
+                    column(3, downloadButton("dl_batch_mirror_pdf", "Mirror Plots (.pdf)", class = "btn-outline-primary w-100"))
+                  )
+                ),
+                conditionalPanel(
+                  condition = "output.batch_ready != 'true'",
+                  tags$p(style = "color: #6c757d;",
+                    "Upload raw files above and click \"Generate Empirical MS2 Library\" to see results here.")
+                ),
+                tags$hr(),
+                tags$h6("Predicted MS2 Library (theoretical)"),
+                fluidRow(
+                  column(6, tagAppendAttributes(
+                    downloadButton("dl_ms2_mgf", "Predicted MS2 (.mgf) \u26a0", class = "btn-outline-secondary w-100"),
+                    title = "MS2 intensities are placeholders (rule-based heuristic) -- match on m/z only.")),
+                  column(6, tagAppendAttributes(
+                    downloadButton("dl_ms2_msp", "Predicted MS2 (.msp) \u26a0", class = "btn-outline-secondary w-100"),
+                    title = "MS2 intensities are placeholders (rule-based heuristic) -- match on m/z only."))
+                )
+              )
+            )
+          )
+        )
+      )
+    ),
+
+    ## =========================================================================
+    ## TAB: Batch Processing
+    ## =========================================================================
+    tabPanel("Batch Processing",
+      tags$div(style = "height: 14px;"),
+      fluidRow(
+        column(4,
+          tags$div(class = "sidebar-section",
+            tags$h5("Sample Metadata"),
             fluidRow(
               column(6, downloadButton("dl_batch_meta_template", "Download CSV template",
                                         class = "btn-outline-secondary btn-sm w-100")),
@@ -640,675 +878,339 @@ ui <- fluidPage(
             ),
             tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -10px;",
                    "Columns: sample, group, timepoint, sample_type, concentration. ",
-                   "The template is pre-filled with the sample names from the ",
-                   "files/folder above -- fill in the rest in Excel and ",
-                   "re-upload. Rows are matched by sample name (not row order), ",
-                   "so a partial or reordered CSV merges in safely; upload ",
-                   "files/pick a folder first so there's a sample list to merge ",
-                   "onto."),
+                   "Timepoint must be numeric (0, 4, 24) -- flagged live below if not."),
             uiOutput("batch_meta_upload_status"),
             DT::DTOutput("sample_meta_table"),
             uiOutput("sample_meta_timepoint_warn"),
             tags$p(style = "font-size: 11px; color: #6c757d; margin-top: 4px;",
-                   "One row per uploaded file. Fill in Group (2+ groups) or ",
-                   "Timepoint (time series) before running -- leave both blank ",
-                   "to only extract and match features, with no statistics. ",
-                   "Sample Type defaults to \"unknown\" -- set it to standard or ",
-                   "quality_control for calibration curve/QC samples (with a ",
-                   "Concentration value), or reagent_blank/matrix_blank to ",
-                   "label the rest of the non-study-sample rows."),
-            checkboxInput("batch_run_ms2", "Confirm hits with MS2",
-                          value = DEFAULT_PIPELINE_PARAMS$batch_run_ms2),
-            fluidRow(
-              column(6, numericInput("batch_n_workers", "Parallel workers",
-                        value = DEFAULT_PIPELINE_PARAMS$batch_n_workers, min = 1, max = 64)),
-              column(6, numericInput("batch_deconv_ppm", "Deconv mass tol (ppm)",
-                        value = DEFAULT_PIPELINE_PARAMS$batch_deconv_ppm, min = 1, max = 100))
-            ),
-            radioButtons("batch_noise_mode", "Background/noise threshold",
-                         choices = c("Signal-to-noise multiple" = "sn",
-                                     "Fixed intensity value" = "fixed"),
-                         selected = "sn", inline = TRUE),
-            conditionalPanel(
-              condition = "input.batch_noise_mode == 'sn'",
-              numericInput("batch_sn_threshold", "S/N threshold (x noise level)",
-                          value = DEFAULT_PIPELINE_PARAMS$sn_threshold, min = 0, step = 0.5),
-              tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -10px;",
-                     "Absolute threshold = (each file's OWN noise level) x this ",
-                     "number, computed separately per file (see the ",
-                     "_noise_thresholds.tsv sidecar for what got applied where) ",
-                     "-- corrects for files/instruments with different ",
-                     "background levels, unlike one fixed number applied to ",
-                     "every file.")
-            ),
-            conditionalPanel(
-              condition = "input.batch_noise_mode == 'fixed'",
-              numericInput("batch_min_intensity", "Fixed intensity threshold",
-                          value = DEFAULT_PIPELINE_PARAMS$min_intensity, min = 0),
-              tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -10px;",
-                     "Hard cutoff applied before ROI/charge-envelope detection: ",
-                     "a raw peak below this absolute intensity is never treated ",
-                     "as the start of a real chromatographic feature, on every ",
-                     "file alike.")
-            ),
-            tags$hr(),
-            tags$h6("Quantification (optional)"),
-            selectizeInput("absolute_quant_mets",
-                           "Absolute-quantify these metabolites (calibration curve)",
-                           choices = character(0), multiple = TRUE,
-                           options = list(placeholder = "None selected -- every metabolite uses relative quantification")),
-            fluidRow(
-              column(6, selectInput("calibration_weighting", "Calibration curve weighting",
-                        choices = c("1/x² weighted (recommended)" = "1/x2",
-                                    "1/x weighted" = "1/x",
-                                    "Unweighted (OLS)" = "none"))),
-              column(6, selectInput("control_group", "Control group (relative quant)",
-                        choices = character(0)))
-            ),
-            tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -10px;",
-                   "Selected metabolites are absolute-quantified from their own ",
-                   "calibration curve, built from Sample Type = standard rows ",
-                   "with a Concentration value (QC rows get a %RE accuracy ",
-                   "check against their own Concentration). Every other ",
-                   "metabolite is relative-quantified: fold-change vs. pre-dose/ ",
-                   "time-0 for a time-course design (Timepoint filled in), or ",
-                   "vs. the Control group above for a group-comparison design ",
-                   "(Group filled in).")
-          )
-        )
-      ),
-
-      ## -- Phase 2: import & process MS data --------------------------------
-      ## Runs steps 7/7b (single-file and/or batch MS matching) against the
-      ## library Phase 1 just built, then rebuilds the workbook/report with
-      ## the MS-matching results included. Disabled until Phase 1 has
-      ## produced a library this session -- see rv$library_ready below.
-      tags$hr(),
-      conditionalPanel(
-        condition = "output.library_ready == 'true'",
-        actionButton("run_phase2", "2. Import & Process MS Data",
-                     class = "btn-primary btn-lg w-100"),
-        tags$p(style = "font-size: 11px; color: #6c757d; margin: 4px 0 10px;",
-               "Matches the uploaded/local MS file(s) above against the ",
-               "library from Step 1, then rebuilds the workbook/report with ",
-               "identification, ROI, and (in batch mode) statistics results.")
-      ),
-      conditionalPanel(
-        condition = "output.library_ready != 'true'",
-        tags$p(style = "font-size: 11px; color: #6c757d; margin: 4px 0 10px;",
-               "Run \"1. Generate Library\" above first to enable MS data ",
-               "import and processing.")
-      ),
-
-      ## -- Session save/load ---------------------------------------------
-      ## Captures the sequence, every parameter above, and the Custom
-      ## Chemistry table as one JSON file -- "what exactly produced this
-      ## inclusion list" is a reproducibility question for a tool whose
-      ## outputs feed instrument methods. Uploaded MS/batch files are not
-      ## included (re-upload those after loading a session).
-      tags$div(style = "margin-top: 10px;", class = "session-row",
-        fluidRow(
-          column(6, downloadButton("dl_session", "Save session",
-                                   class = "btn-sm btn-outline-secondary w-100")),
-          column(6, tags$div(
-            fileInput("load_session_file", NULL, accept = ".json",
-                      buttonLabel = "Load session...", placeholder = "")))
-        ),
-        tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -8px;",
-               "Saves/restores the sequence, custom chemistry, and all ",
-               "parameters above as a .json file -- not uploaded MS/batch files.")
-      )
-    ),
-
-    ## ---- Main panel: manual entry + status + summary + downloads ----------
-    mainPanel(
-      width = 8,
-
-      ## -- Manual sequence entry ---------------------------------------------
-      ## The other way in: instead of assembling triplet notation by hand in
-      ## the sidebar, type the three lines a chemical analysis file (or a
-      ## BioPharma Finder sequence entry) already gives you, and let the app
-      ## assemble the triplet. See inst/help/SEQUENCE_GUIDE.md.
-      tags$div(class = "manual-entry",
-        tags$h5("Manual sequence entry"),
-        tags$p(class = "hint",
-               "Type the three lines from your chemical analysis file. ",
-               "Bases and sugars need one code per position; linkages sit ",
-               "between positions, so there is one fewer of them. A single ",
-               "sugar or linkage code is applied to every position ",
-               "(\"e\" = all MOE, \"s\" = all phosphorothioate). Separate ",
-               "multi-character codes with commas or dashes ",
-               "(\"MOE-MOE-d-d\"). Submit fills in the sequence box on the ",
-               "left; then click \"1. Generate Library\". New to this? Open ",
-               tags$strong("Help & guides"), " below -- the sequence guide ",
-               "walks through reading a chemical analysis file and filling ",
-               "in these three fields."),
-        fluidRow(
-          column(4, textInput("man_bases", "Bases (5'->3')", value = "",
-                              placeholder = "TSASTTTSATAATGSTGG")),
-          column(4, textInput("man_sugars", "Sugars", value = "",
-                              placeholder = "eeeeeeeeeeeeeeeeee")),
-          column(4, textInput("man_linkages", "Linkages", value = "",
-                              placeholder = "sssssssssssssssss"))
-        ),
-        fluidRow(
-          column(3, actionButton("man_submit", "Submit",
-                                 class = "btn-primary w-100")),
-          column(3, actionButton("man_example", "Fill example",
-                                 class = "btn-outline-secondary w-100")),
-          column(3, actionButton("man_clear", "Clear",
-                                 class = "btn-outline-secondary w-100")),
-          column(3, downloadButton("dl_fasta", "BPF FASTA",
-                                   class = "btn-outline-secondary w-100"))
-        ),
-        htmlOutput("man_feedback")
-      ),
-
-      ## -- Custom chemistry (advanced) -----------------------------------------
-      ## Moved out of the sidebar and into the main panel: it's an advanced,
-      ## occasional-use feature, and editing DT table cells in a narrow
-      ## width-4 sidebar column was cramped. Full main-panel width gives the
-      ## table room to breathe, and collapsing it by default keeps it out of
-      ## the way of the primary Input -> Run flow for the common case where
-      ## no custom chemistry is needed.
-      tags$details(class = "help-panel",
-        tags$summary("Custom Chemistry (advanced)"),
-        tags$div(class = "help-body",
-          tags$p(class = "chem-hint",
-                 "Add custom base/sugar/linkage/conjugate entries not in the ",
-                 "standard dictionary. Empty rows are ignored; a row with a ",
-                 "code but no valid formula is flagged in the Status column ",
-                 "and blocks Run until it's fixed or cleared."),
-          DT::dataTableOutput("custom_chem"),
-          tags$div(style = "height: 6px;"),
-          fluidRow(
-            column(3, actionButton("add_row", "Add Row", class = "btn-sm btn-outline-primary w-100")),
-            column(3, actionButton("remove_row", "Remove Row", class = "btn-sm btn-outline-secondary w-100"))
-          )
-        )
-      ),
-
-      ## -- Help & guides -----------------------------------------------------
-      ## The three guides render straight from inst/help/, so they are
-      ## available to installed users, not just to people with a checkout.
-      ## Collapsed by default: they are long, and the dashboard should not
-      ## open on a wall of documentation.
-      tags$details(class = "help-panel",
-        tags$summary("Help & guides"),
-        tags$div(class = "help-body",
-          tabsetPanel(
-            id = "help_tabs",
-            tabPanel("Quick start",     uiOutput("help_quickstart")),
-            tabPanel("No-Shiny (CLI)",  uiOutput("help_quickstart_cli")),
-            tabPanel("Sequence guide",  uiOutput("help_sequence")),
-            tabPanel("Modifications",   uiOutput("help_modifications"))
-          )
-        )
-      ),
-
-      ## Status / log
-      verbatimTextOutput("status", placeholder = TRUE),
-
-      ## -- Pre-run placeholder --------------------------------------------
-      ## Before the first Run, everything below (metrics, plots, downloads)
-      ## is conditionalPanel-hidden -- correct behavior, since there's
-      ## nothing to show yet, but it leaves a lot of dead whitespace on
-      ## first load. This teaches the output structure instead.
-      conditionalPanel(
-        condition = "!((input.run_phase1 > 0 || input.run_phase2 > 0) && output.status_ready == 'true')",
-        tags$div(class = "landing-placeholder",
-          tags$h5("What this produces"),
-          tags$p(class = "chem-hint",
-                 "Enter a sequence (left) and click \"1. Generate Library\". A run computes:"),
-          fluidRow(
-            column(3, tags$div(class = "metric-card placeholder",
-              tags$div(class = "label", "Formula"), tags$div(class = "value", "—"))),
-            column(2, tags$div(class = "metric-card placeholder",
-              tags$div(class = "label", "Mono Mass (Da)"), tags$div(class = "value", "—"))),
-            column(2, tags$div(class = "metric-card placeholder",
-              tags$div(class = "label", "Avg Mass (Da)"), tags$div(class = "value", "—"))),
-            column(1, tags$div(class = "metric-card placeholder",
-              tags$div(class = "label", "Length"), tags$div(class = "value", "—"))),
-            column(2, tags$div(class = "metric-card placeholder",
-              tags$div(class = "label", "Metabolites"), tags$div(class = "value", "—"))),
-            column(2, tags$div(class = "metric-card placeholder",
-              tags$div(class = "label", "PRM Entries"), tags$div(class = "value", "—")))
+                   "One row per uploaded file (see Empirical MS2 Library tab to upload ",
+                   "raw files). Fill in Group (2+ groups) or Timepoint (time series) ",
+                   "before running -- leave both blank to only extract and match ",
+                   "features, with no statistics.")
           ),
-          tags$div(style = "height: 8px;"),
-          tags$ul(
-            tags$li(tags$strong("4 plots"), " -- charge envelope, truncation series, ",
-                    "isotope pattern, and PS-oxidation series for the parent oligo, ",
-                    "plus an interactive MS2 spectrum explorer."),
-            tags$li(tags$strong("Downloads"), " -- an Excel workbook, an HTML report, ",
-                    "a PRM inclusion list, Orbitrap Exploris MS1/MS2 acquisition method ",
-                    "lists, and MGF/MSP spectral libraries (bundled as one .zip, or ",
-                    "individually)."),
-            tags$li(tags$strong("MS matching results"), " (if enabled) -- MS1 match ",
-                    "counts and, for batch processing, per-sample feature tables and ",
-                    "group/time-series statistics.")
-          )
-        )
-      ),
-
-      ## Summary dashboard (hidden until run completes)
-      conditionalPanel(
-        condition = "(input.run_phase1 > 0 || input.run_phase2 > 0) && output.status_ready == 'true'",
-
-        tags$hr(),
-
-        ## Metrics cards: sticky to the top of the viewport, so they stay
-        ## visible while scrolling down through the plot tabs and downloads
-        ## below -- otherwise they scroll out of view exactly when you'd
-        ## want to check them against a plot or a download.
-        tags$div(class = "summary-sticky",
-          tags$h4("Summary"),
-
-          ## Metrics row
-          fluidRow(
-            column(3, tags$div(class = "metric-card",
-              tags$div(class = "label", "Formula"), tags$div(class = "value", textOutput("m_formula")))),
-            column(2, tags$div(class = "metric-card",
-              tags$div(class = "label", "Mono Mass (Da)"), tags$div(class = "value", textOutput("m_mono_mass")))),
-            column(2, tags$div(class = "metric-card",
-              tags$div(class = "label", "Avg Mass (Da)"), tags$div(class = "value", textOutput("m_avg_mass")))),
-            column(1, tags$div(class = "metric-card",
-              tags$div(class = "label", "Length"), tags$div(class = "value", textOutput("m_length")))),
-            column(2, tags$div(class = "metric-card",
-              tags$div(class = "label", "Metabolites"), tags$div(class = "value", textOutput("m_n_mets")))),
-            column(2, tags$div(class = "metric-card",
-              tags$div(class = "label", "PRM Entries"), tags$div(class = "value", textOutput("m_n_prm"))))
+          tags$div(class = "sidebar-section",
+            tags$h5("Processing Options"),
+            tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -6px;",
+                   "Re-uses the same noise-threshold and confirmation settings as ",
+                   "Empirical MS2 Library -- set there before running here.")
           ),
-          tags$div(style = "height: 10px;"),
-
-          ## MS metrics row (shown only if MS matching was enabled)
-          conditionalPanel(
-            condition = "input.enable_ms == true",
-            fluidRow(
-              column(4, tags$div(class = "metric-card",
-                tags$div(class = "label", "MS1 Matches"), tags$div(class = "value", textOutput("m_ms1_matches")))),
-              column(4, tags$div(class = "metric-card",
-                tags$div(class = "label", "Annotated Mets"), tags$div(class = "value", textOutput("m_annotated")))),
-              column(4, tags$div(class = "metric-card",
-                tags$div(class = "label",
-                  .with_info("Putative IDs (ppm match)",
-                    "Matched within the configured MS1 ppm tolerance, with a ",
-                    "consistent isotope pattern and charge state. Not confirmed by ",
-                    "retention time. MS/MS-confirmed only when Batch MS Processing's ",
-                    "\"Confirm hits with MS2\" was enabled and a spectrum was found ",
-                    "near the precursor -- otherwise this counts m/z matches only, ",
-                    "not orthogonally-confirmed identifications.")),
-                tags$div(class = "value", textOutput("m_confident"))))
-            ),
-            tags$div(style = "height: 10px;")
-          )
-        ),
-
-        ## Plot tabs
-        tabsetPanel(
-          tabPanel("Charge Envelope", plotOutput("plot_envelope", height = "400px")),
-          tabPanel("Truncation Series", plotOutput("plot_truncation", height = "400px")),
-          tabPanel("Isotope Pattern", plotOutput("plot_isotope", height = "400px")),
-          tabPanel("Oxidation Series", plotOutput("plot_oxidation", height = "400px")),
-          tabPanel("MS2 Explorer",
-            tags$div(style = "padding-top: 12px;",
+          tags$details(class = "adv-panel", open = NA,
+            tags$summary("Calibration & Quantification"),
+            tags$div(class = "adv-body",
+              selectizeInput("absolute_quant_mets",
+                             "Absolute-quantify these metabolites (calibration curve)",
+                             choices = character(0), multiple = TRUE,
+                             options = list(placeholder = "None selected -- every metabolite uses relative quantification")),
               fluidRow(
-                column(8, tags$p(style = "font-size: 12px; color: #6c757d;",
-                  "Builds the full MS2 spectral library (one spectrum per ",
-                  "metabolite x precursor charge) for interactive browsing -- ",
-                  "the same computation as the MS2 library download below, ",
-                  "so it can take a while for long sequences or a wide charge ",
-                  "range.")),
-                column(4, actionButton("build_ms2_explorer",
-                  "Build / Refresh Library",
-                  class = "btn-sm btn-outline-primary w-100"))
+                column(6, selectInput("calibration_weighting", "Calibration curve weighting",
+                          choices = c("1/x² weighted (recommended)" = "1/x2",
+                                      "1/x weighted" = "1/x",
+                                      "Unweighted (OLS)" = "none"))),
+                column(6, selectInput("control_group", "Control group (relative quant)",
+                          choices = character(0)))
+              ),
+              tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -10px;",
+                     "Selected metabolites are absolute-quantified from their own ",
+                     "calibration curve (Sample Type = standard rows with a ",
+                     "Concentration value; linear regression). Every other ",
+                     "metabolite is relative-quantified.")
+            )
+          ),
+          conditionalPanel(
+            condition = "output.library_ready == 'true'",
+            actionButton("run_phase2", "Run Batch Processing",
+                         class = "btn-primary btn-lg w-100")
+          ),
+          conditionalPanel(
+            condition = "output.library_ready != 'true'",
+            tags$p(style = "font-size: 11px; color: #6c757d;",
+                   "Run \"Generate Library\" on the Library Generation tab first.")
+          )
+        ),
+
+        column(8,
+          tabsetPanel(
+            tabPanel("Batch Results",
+              conditionalPanel(
+                condition = "output.batch_ready == 'true'",
+                tags$div(style = "padding-top: 12px;",
+                  DT::DTOutput("batch_matches_table"),
+                  tags$div(style = "height: 8px;"),
+                  downloadButton("dl_batch_tsv", "Download combined features (.tsv)", class = "btn-outline-primary"),
+                  tags$hr(),
+                  tags$h6("MS2 Mirror Plot"),
+                  tags$p(style = "font-size: 12px; color: #6c757d;",
+                    "Select a row above with MS2 confirmation data (n_ms2_peaks > 0) to plot it."),
+                  plotOutput("batch_mirror_plot", height = "380px")
+                )
               ),
               conditionalPanel(
-                condition = "output.ms2_explorer_ready == 'true'",
-                tags$p(style = "font-size: 12px; color: #6c757d;",
-                  "Filter by precursor m/z with the range slider, or by ",
-                  "charge with the dropdown, in the column headers below. ",
-                  "Click a row to plot its predicted MS2 spectrum."),
-                DT::dataTableOutput("ms2_explorer_table"),
-                tags$hr(),
-                uiOutput("ms2_explorer_title"),
-                fluidRow(
-                  column(7, plotOutput("ms2_explorer_plot", height = "320px")),
-                  column(5, DT::dataTableOutput("ms2_explorer_peaks"))
+                condition = "output.batch_ready != 'true'",
+                tags$p(style = "padding-top: 12px; color: #6c757d;",
+                       "Upload files (Empirical MS2 Library tab) and click Run Batch Processing to see results here.")
+              )
+            ),
+            tabPanel("Unidentified Peaks",
+              conditionalPanel(
+                condition = "output.batch_ready == 'true'",
+                tags$div(style = "padding-top: 12px;",
+                  DT::DTOutput("unmatched_table"),
+                  tags$div(style = "height: 8px;"),
+                  downloadButton("dl_unmatched_csv", "Download unidentified peaks (.csv)", class = "btn-outline-primary")
+                )
+              )
+            ),
+            tabPanel("Calibration Curves",
+              conditionalPanel(
+                condition = "output.quant_ready == 'true'",
+                tags$div(style = "padding-top: 12px;",
+                  tags$h6("Calibration curves"),
+                  tags$p(style = "font-size: 12px; color: #6c757d;",
+                    "One row per metabolite selected for absolute quantification. ",
+                    "\"note\" explains why a curve is missing instead of just disappearing."),
+                  DT::DTOutput("calibration_curves_table"),
+                  tags$div(style = "height: 8px;"),
+                  downloadButton("dl_calibration_curves_csv", "Download calibration curves (.csv)", class = "btn-outline-primary"),
+                  tags$hr(),
+                  tags$h6("Absolute quantification"),
+                  DT::DTOutput("quant_absolute_table"),
+                  tags$div(style = "height: 8px;"),
+                  downloadButton("dl_quant_absolute_csv", "Download absolute quantification (.csv)", class = "btn-outline-primary"),
+                  tags$hr(),
+                  tags$h6("Relative quantification (fold-change)"),
+                  DT::DTOutput("quant_relative_table"),
+                  tags$div(style = "height: 8px;"),
+                  downloadButton("dl_quant_relative_csv", "Download relative quantification (.csv)", class = "btn-outline-primary")
+                )
+              ),
+              conditionalPanel(
+                condition = "output.quant_ready != 'true'",
+                tags$p(style = "padding-top: 12px; color: #6c757d;",
+                       "Run batch processing with Group/Timepoint (and Sample Type = standard for calibration) filled in to see this here.")
+              )
+            ),
+            tabPanel("Degradation Summary",
+              conditionalPanel(
+                condition = "output.batch_ready == 'true'",
+                tags$div(style = "padding-top: 12px;",
+                  tags$h6("% Degradation per sample"),
+                  DT::DTOutput("degradation_per_sample_table"),
+                  tags$div(style = "height: 8px;"),
+                  tags$h6("Composition by class"),
+                  plotOutput("plot_degradation_composition", height = "300px"),
+                  DT::DTOutput("degradation_composition_table"),
+                  tags$div(style = "height: 8px;"),
+                  tags$h6("Top degradant species"),
+                  DT::DTOutput("degradation_top_table"),
+                  tags$div(style = "height: 8px;"),
+                  downloadButton("dl_degradation_csv", "Download degradation summary (.csv)", class = "btn-outline-primary")
                 )
               )
             )
+          )
+        )
+      )
+    ),
+
+    ## =========================================================================
+    ## TAB: Statistical Analysis
+    ## =========================================================================
+    tabPanel("Statistical Analysis",
+      tags$div(style = "height: 14px;"),
+      fluidRow(
+        column(4,
+          tags$div(class = "sidebar-section",
+            tags$h5("Experimental Design"),
+            uiOutput("stats_design_summary"),
+            fluidRow(
+              column(6, selectInput("stats_group_a", "Group A (optional override)", choices = character(0))),
+              column(6, selectInput("stats_group_b", "Group B (optional override)", choices = character(0)))
+            ),
+            tags$p(style = "font-size: 10px; color: #6c757d; margin-top: -8px;",
+                   "Leave both blank to auto-pick the first two Group values found. ",
+                   "Only used for a 2-group design; ignored for 3+ groups or time-course."),
+            fluidRow(
+              column(6, selectInput("stats_padjust", "P-value adjustment",
+                        choices = c("Benjamini-Hochberg" = "BH", "Bonferroni" = "bonferroni",
+                                    "Holm" = "holm", "None" = "none"), selected = "BH")),
+              column(6, numericInput("stats_log2fc_threshold", "Log2FC highlight threshold",
+                        value = 1, min = 0, step = 0.1))
+            )
           ),
-          tabPanel("MS2 Mirror Plot",
-            tags$div(style = "padding-top: 12px;",
+          tags$details(class = "adv-panel",
+            tags$summary("Charge Grouping (Advanced)"),
+            tags$div(class = "adv-body",
+              tags$p(style = "font-size: 9.5px; color: #6c757d; font-style: italic;",
+                     "Groups co-eluting peaks by neutral mass agreement (charge_group.py logic)."),
+              fluidRow(
+                column(6, numericInput("cg_rt_tol", "RT tolerance (min)", value = 0.15, min = 0, step = 0.01)),
+                column(6, numericInput("cg_mass_tol_ppm", "Mass tolerance (ppm)", value = 20, min = 1))
+              ),
+              numericInput("cg_min_charge_states", "Min charge states", value = 2, min = 1, max = 10),
+              actionButton("cg_rerun", "Re-run Aggregation", class = "btn-sm w-100",
+                          style = "background:#2F6FED;color:#fff;"),
+              uiOutput("cg_rerun_status")
+            )
+          ),
+          actionButton("run_stats", "Run Statistical Analysis", class = "btn-primary btn-lg w-100"),
+          tags$p(style = "font-size: 10.5px; color: #6c757d;",
+                 "Statistics already run automatically as part of Batch Processing when ",
+                 "Group/Timepoint is filled in -- this button just re-applies the ",
+                 "P-adjustment/threshold settings above to the existing results.")
+        ),
+
+        column(8,
+          tabsetPanel(
+            tabPanel("Data Matrix",
               conditionalPanel(
-                condition = "output.ms2_mirror_ready == 'true'",
-                tags$p(style = "font-size: 12px; color: #6c757d;",
-                  "Acquired MS/MS spectrum (top) vs. theoretical fragment library ",
-                  "(bottom) for each metabolite MS2-confirmed against the uploaded ",
-                  "MS data (single-file mode) -- matched ions colored and labeled, ",
-                  "unmatched ions gray. Click a row to plot it."),
-                DT::dataTableOutput("ms2_mirror_table"),
-                tags$hr(),
-                plotOutput("ms2_mirror_plot", height = "420px")
+                condition = "output.batch_ready == 'true'",
+                tags$div(style = "padding-top: 12px;",
+                  tags$p(style = "font-size: 12px; color: #6c757d;",
+                    "One row per metabolite (kind/z), one column per sample -- ",
+                    "max-intensity match per metabolite per sample, matching how the ",
+                    "batch pipeline already collapses charge states before matching. ",
+                    "A genuinely separate \"raw, one row per charge state\" matrix and a ",
+                    "true charge_group.py-style post-hoc re-aggregation are not implemented ",
+                    "yet -- see the Charge Grouping panel note."),
+                  fluidRow(
+                    column(6, downloadButton("dl_data_matrix_wide", "Data Matrix -- wide (.csv)", class = "btn-outline-primary w-100")),
+                    column(6, downloadButton("dl_data_matrix_long", "Data Matrix -- long (.csv)", class = "btn-outline-primary w-100"))
+                  )
+                )
               ),
               conditionalPanel(
-                condition = "output.ms2_mirror_ready != 'true'",
-                tags$p(style = "color: #6c757d;",
-                  "Enable MS matching, upload an MS2-containing mzML/mzXML file, ",
-                  "and run the pipeline to see acquired-vs-theoretical mirror ",
-                  "plots for MS2-confirmed metabolites here.")
+                condition = "output.batch_ready != 'true'",
+                tags$p(style = "padding-top: 12px; color: #6c757d;",
+                       "Run Batch Processing to see the data matrix here.")
               )
-            )
-          ),
-          tabPanel("Batch Results",
-            conditionalPanel(
-              condition = "output.batch_ready == 'true'",
-              tags$div(style = "padding-top: 12px;",
-                tags$p(style = "font-size: 12px; color: #6c757d;",
-                  "One row per matched (sample, metabolite, charge, adduct) hit. ",
-                  "Confirmation columns are populated only when MS2 confirmation ",
-                  "was enabled and a spectrum was found near that precursor."),
-                DT::DTOutput("batch_matches_table"),
-                tags$div(style = "height: 8px;"),
-                downloadButton("dl_batch_tsv", "Download combined features (.tsv)",
-                               class = "btn-outline-primary"),
-                tags$hr(),
-                tags$h6("MS2 Mirror Plot"),
-                tags$p(style = "font-size: 12px; color: #6c757d;",
-                  "Select a row above with MS2 confirmation data (n_ms2_peaks > 0) ",
-                  "to plot its acquired-vs-theoretical mirror spectrum."),
-                plotOutput("batch_mirror_plot", height = "420px"),
-                tags$div(style = "height: 8px;"),
-                fluidRow(
-                  column(6, downloadButton("dl_batch_mirror_pdf",
-                           "Download all mirror plots (.pdf)",
-                           class = "btn-outline-primary w-100")),
-                  column(6, downloadButton("dl_batch_annotated_msp",
-                           "Download annotated MS2 spectra (.msp)",
-                           class = "btn-outline-primary w-100"))
-                ),
-                tags$p(style = "font-size: 11px; color: #6c757d; margin-top: 6px;",
-                  "One mirror plot / MSP spectrum per confirmed batch hit -- ",
-                  "acquired peaks (real instrument data), with matched-fragment ",
-                  "annotations from the same in-memory confirmation shown in the ",
-                  "table above.")
+            ),
+            tabPanel("Univariate Statistics",
+              conditionalPanel(
+                condition = "output.stats_ready == 'true'",
+                tags$div(style = "padding-top: 12px;",
+                  uiOutput("stats_met_selector"),
+                  plotOutput("plot_stats_main", height = "340px"),
+                  DT::DTOutput("stats_table"),
+                  tags$div(style = "height: 8px;"),
+                  downloadButton("dl_stats_csv", "Download statistics table (.csv)", class = "btn-outline-primary")
+                )
               ),
-              tags$hr(),
-              tags$h6("Empirical MS2 Library"),
-              tags$p(style = "font-size: 12px; color: #6c757d;",
-                "One consensus spectrum per (metabolite, oxidation, charge, ",
-                "adduct), pooled across every sample/replicate that confirmed ",
-                "it -- REAL measured fragment intensities, denoised by peak ",
-                "recurrence across replicates, not the rule-based heuristic ",
-                "used by the predicted MS2 library above."),
-              fluidRow(
-                column(6, downloadButton("dl_empirical_ms2_msp",
-                         "Download empirical MS2 library (.msp)",
-                         class = "btn-outline-primary w-100")),
-                column(6, downloadButton("dl_empirical_ms2_summary",
-                         "Download build summary (.csv)",
-                         class = "btn-outline-primary w-100"))
+              conditionalPanel(
+                condition = "output.stats_ready != 'true'",
+                tags$p(style = "padding-top: 12px; color: #6c757d;",
+                       "Fill in Group or Timepoint in the batch sample table to see comparisons here. ",
+                       "Time-course vs. group comparison is auto-detected from that column.")
               )
             ),
-            conditionalPanel(
-              condition = "output.batch_ready != 'true'",
-              tags$p(style = "padding-top: 12px; color: #6c757d;",
-                     "Enable batch processing, upload files, and run the pipeline to see results here.")
-            )
-          ),
-          tabPanel("Unidentified Peaks",
-            conditionalPanel(
-              condition = "output.batch_ready == 'true'",
+            tabPanel("Class Comparison",
+              conditionalPanel(
+                condition = "output.kind_stats_ready == 'true'",
+                tags$div(style = "padding-top: 12px;",
+                  tags$p(style = "font-size: 12px; color: #6c757d;",
+                    "Same comparison, rolled up by metabolite class (parent / 5' exonuclease / ",
+                    "3' exonuclease / endonuclease) instead of per-metabolite."),
+                  DT::DTOutput("kind_stats_table"),
+                  tags$div(style = "height: 8px;"),
+                  downloadButton("dl_kind_stats_csv", "Download class comparison table (.csv)", class = "btn-outline-primary")
+                )
+              )
+            ),
+            tabPanel("Time Course",
               tags$div(style = "padding-top: 12px;",
-                tags$p(style = "font-size: 12px; color: #6c757d;",
-                  "Deconvolved features that matched no theoretical metabolite ",
-                  "within the MS1 tolerance -- retained for QC and follow-up, ",
-                  "not discarded."),
-                DT::DTOutput("unmatched_table"),
-                tags$div(style = "height: 8px;"),
-                downloadButton("dl_unmatched_csv", "Download unidentified peaks (.csv)",
-                               class = "btn-outline-primary")
+                tags$p(class = "placeholder-note",
+                  "Time-course comparison already runs automatically under Univariate ",
+                  "Statistics when Timepoint is filled in on the Batch Processing tab. A ",
+                  "dedicated multi-metabolite trend view here is not implemented yet.")
               )
-            )
-          ),
-          tabPanel("Degradation",
-            conditionalPanel(
-              condition = "output.batch_ready == 'true'",
+            ),
+            tabPanel("Multivariate",
               tags$div(style = "padding-top: 12px;",
-                tags$p(style = "font-size: 12px; color: #6c757d;",
-                  "% degradation = 1 - (parent peak area / total peak area of ",
-                  "parent + all identified degradants), per sample -- falls ",
-                  "back to max intensity if peak area isn't available. Uses ",
-                  "the metabolite classification already computed above ",
-                  "(5' exonuclease / 3' exonuclease / endonuclease truncations)."),
-                tags$h6("% Degradation per sample"),
-                DT::DTOutput("degradation_per_sample_table"),
-                tags$div(style = "height: 8px;"),
-                tags$h6("Composition by class"),
-                plotOutput("plot_degradation_composition", height = "320px"),
-                DT::DTOutput("degradation_composition_table"),
-                tags$div(style = "height: 8px;"),
-                tags$h6("Top degradant species"),
-                DT::DTOutput("degradation_top_table"),
-                tags$div(style = "height: 8px;"),
-                downloadButton("dl_degradation_csv", "Download degradation summary (.csv)",
-                               class = "btn-outline-primary")
+                tags$p(class = "placeholder-note",
+                  "PCA / clustering across metabolites is not implemented yet -- placeholder ",
+                  "tab reflecting the reconciled mockup, flagged rather than faked.")
               )
-            ),
-            conditionalPanel(
-              condition = "output.batch_ready != 'true'",
-              tags$p(style = "padding-top: 12px; color: #6c757d;",
-                     "Enable batch processing, upload files, and run the pipeline to see results here.")
-            )
-          ),
-          tabPanel("Statistics",
-            conditionalPanel(
-              condition = "output.stats_ready == 'true'",
-              tags$div(style = "padding-top: 12px;",
-                tags$h6("Per-metabolite comparison"),
-                uiOutput("stats_met_selector"),
-                plotOutput("plot_stats_main", height = "360px"),
-                DT::DTOutput("stats_table"),
-                tags$div(style = "height: 8px;"),
-                downloadButton("dl_stats_csv", "Download statistics table (.csv)",
-                               class = "btn-outline-primary")
-              )
-            ),
-            conditionalPanel(
-              condition = "output.stats_ready != 'true'",
-              tags$p(style = "padding-top: 12px; color: #6c757d;",
-                     "Fill in Group or Timepoint in the batch sample table to see comparisons here.")
-            ),
-            conditionalPanel(
-              condition = "output.kind_stats_ready == 'true'",
-              tags$hr(),
-              tags$h6("Composition-class comparison"),
-              tags$p(style = "font-size: 12px; color: #6c757d;",
-                "Same comparison, rolled up by metabolite class (parent / ",
-                "5' exonuclease / 3' exonuclease / endonuclease) instead of ",
-                "per-metabolite -- the same signal (peak area if available, ",
-                "else max intensity) the Degradation tab uses."),
-              DT::DTOutput("kind_stats_table"),
-              tags$div(style = "height: 8px;"),
-              downloadButton("dl_kind_stats_csv", "Download class comparison table (.csv)",
-                             class = "btn-outline-primary")
-            )
-          ),
-          tabPanel("Quantification",
-            conditionalPanel(
-              condition = "output.quant_ready == 'true'",
-              tags$div(style = "padding-top: 12px;",
-                tags$h6("Absolute quantification (calibration curve)"),
-                tags$p(style = "font-size: 12px; color: #6c757d;",
-                  "One row per (metabolite, sample) for every metabolite selected ",
-                  "under Batch MS Processing → Quantification. concentration_calc ",
-                  "is back-calculated from that metabolite's own calibration curve ",
-                  "(Sample Type = standard rows with a Concentration value); ",
-                  "percent_re compares standard/QC rows against their own nominal ",
-                  "Concentration; extrapolated flags a result outside the curve's ",
-                  "observed standard range, which is not a reliable value."),
-                DT::DTOutput("quant_absolute_table"),
-                tags$div(style = "height: 8px;"),
-                downloadButton("dl_quant_absolute_csv", "Download absolute quantification (.csv)",
-                               class = "btn-outline-primary"),
-                tags$hr(),
-                tags$h6("Relative quantification (fold-change)"),
-                tags$p(style = "font-size: 12px; color: #6c757d;",
-                  "Every metabolite NOT selected for absolute quantification. ",
-                  "relative_signal is that sample's signal divided by the ",
-                  "baseline: the pre-dose/time-0 mean for a time-course design, ",
-                  "or the Control group's mean for a group-comparison design."),
-                DT::DTOutput("quant_relative_table"),
-                tags$div(style = "height: 8px;"),
-                downloadButton("dl_quant_relative_csv", "Download relative quantification (.csv)",
-                               class = "btn-outline-primary")
-              )
-            ),
-            conditionalPanel(
-              condition = "output.quant_ready != 'true'",
-              tags$p(style = "padding-top: 12px; color: #6c757d;",
-                     "Run batch MS processing with Group or Timepoint filled in ",
-                     "to see absolute/relative quantification here.")
-            )
-          ),
-          tabPanel("Ask OligoMet",
-            tags$div(style = "padding-top: 12px;",
-              tags$p(style = "font-size: 12px; color: #6c757d;",
-                "Chat with an LLM agent that calls this app's own analysis functions -- ",
-                "parsing a sequence, building the metabolite library, matching MS1 ",
-                "features, confirming MS2, summarizing degradation, comparing groups -- ",
-                "and must cite the real evidence (ppm error, ambiguity, coverage, ",
-                "confirmation score) behind every claim rather than guess. It can see ",
-                "whatever sequence/library/batch results are already loaded in this ",
-                "session, but does not write back into the main tabs -- run ",
-                "\"1. Generate Library\" / \"2. Import & Process MS Data\" yourself if ",
-                "you want a suggestion it made reflected in the main view."),
-              fluidRow(
-                column(6, radioButtons("agent_backend", "LLM backend",
-                         choices = c("Anthropic Claude" = "anthropic", "OpenAI" = "openai"),
-                         inline = TRUE)),
-                column(6, tags$div(style = "padding-top: 26px; font-size: 11px; color: #6c757d;",
-                         textOutput("agent_key_status", inline = TRUE)))
-              ),
-              tags$p(style = "font-size: 11px; color: #6c757d;",
-                "API keys are read from the ANTHROPIC_API_KEY / OPENAI_API_KEY ",
-                "environment variables wherever this app is running -- never typed ",
-                "into this page."),
-              tags$div(style = paste("border:1px solid #ddd; border-radius:8px;",
-                                     "padding:10px; min-height:240px; max-height:480px;",
-                                     "overflow-y:auto; background:#fafafa;"),
-                uiOutput("agent_chat_html")
-              ),
-              tags$div(style = "height: 8px;"),
-              fluidRow(
-                column(9, textAreaInput("agent_input", NULL, width = "100%", rows = 2,
-                         placeholder = "Ask about your sequence, a match, or what's degrading...")),
-                column(3,
-                  actionButton("agent_send", "Send", class = "btn-primary w-100"),
-                  tags$div(style = "height: 4px;"),
-                  actionButton("agent_clear", "Clear", class = "btn-outline-secondary btn-sm w-100"))
-              ),
-              conditionalPanel(condition = "output.agent_busy_flag == 'true'",
-                tags$p(style = "color: #6c757d; font-size: 12px;", "Thinking..."))
             )
           )
-        ),
+        )
+      )
+    ),
 
-        tags$hr(),
+    ## =========================================================================
+    ## TAB: Ask OligoMet
+    ## =========================================================================
+    tabPanel("Ask OligoMet",
+      tags$div(style = "height: 14px; padding: 0 15px;"),
+      fluidRow(
+        column(4,
+          tags$div(class = "sidebar-section",
+            tags$h5("LLM Backend"),
+            radioButtons("agent_backend", NULL,
+                         choices = c("Anthropic Claude" = "anthropic", "OpenAI" = "openai"),
+                         inline = TRUE),
+            textOutput("agent_key_status"),
+            tags$p(style = "font-size: 11px; color: #6c757d; margin-top: 6px;",
+                   "API keys are read from the ANTHROPIC_API_KEY / OPENAI_API_KEY ",
+                   "environment variables -- never typed into this page.")
+          ),
+          tags$div(class = "sidebar-section",
+            tags$h5("What it can see"),
+            tags$p(style = "font-size: 12px; color: #6c757d;",
+                   "Whatever sequence / library / batch results are already loaded in ",
+                   "this session, across all tabs. It does not write back into the main ",
+                   "tabs -- re-run the relevant tab yourself if you want a suggestion ",
+                   "it made reflected in the main view.")
+          )
+        ),
+        column(8,
+          tags$div(style = paste("border:1px solid #ddd; border-radius:8px;",
+                                 "padding:10px; min-height:340px; max-height:480px;",
+                                 "overflow-y:auto; background:#fafafa;"),
+            uiOutput("agent_chat_html")
+          ),
+          tags$div(style = "height: 8px;"),
+          fluidRow(
+            column(9, textAreaInput("agent_input", NULL, width = "100%", rows = 2,
+                     placeholder = "Ask about your sequence, a match, or what's degrading...")),
+            column(3,
+              actionButton("agent_send", "Send", class = "btn-primary w-100"),
+              tags$div(style = "height: 4px;"),
+              actionButton("agent_clear", "Clear", class = "btn-outline-secondary btn-sm w-100"))
+          ),
+          conditionalPanel(condition = "output.agent_busy_flag == 'true'",
+            tags$p(style = "color: #6c757d; font-size: 12px;", "Thinking..."))
+        )
+      )
+    ),
 
-        ## Download buttons
-        tags$h5("Download"),
-        fluidRow(
-          column(12, downloadButton("dl_all", "Download All Outputs (.zip)",
-                                    class = "btn-dark w-100"))
-        ),
-        tags$p(style = "font-size: 11px; color: #6c757d; margin: 4px 0 10px;",
-               "Bundles every file below -- workbook, report, PRM list, ",
-               "acquisition method lists, and spectral libraries -- into a ",
-               "single .zip for local download. Individual files are also ",
-               "available one at a time below."),
-        fluidRow(
-          column(4, downloadButton("dl_workbook", "Excel Workbook (.xlsx)",
-                                   class = "btn-success w-100")),
-          column(4, downloadButton("dl_report", "HTML Report (.html)",
-                                   class = "btn-info w-100")),
-          column(4, downloadButton("dl_prm", "PRM Inclusion List (.csv)",
-                                   class = "btn-warning w-100"))
-        ),
-        tags$div(style = "height: 10px;"),
-        tags$h5("Orbitrap Exploris Acquisition Method"),
-        fluidRow(
-          column(4, downloadButton("dl_ms1_inclusion", "MS1 Inclusion List (.csv)",
-                                   class = "btn-outline-secondary w-100")),
-          column(4, downloadButton("dl_ms2_prm", "MS2 PRM Target List (.csv)",
-                                   class = "btn-outline-secondary w-100")),
-          column(4, downloadButton("dl_frag_ref", "MS2 Fragment Reference (.csv)",
-                                   class = "btn-outline-secondary w-100"))
-        ),
-        tags$p(style = "font-size: 11px; color: #6c757d; margin-top: 6px;",
-               "The first two import directly into the Method Editor's Targeted ",
-               "Mass filter. The fragment reference is for interpreting spectra ",
-               "after acquisition (e.g. Skyline transitions) -- it isn't an ",
-               "acquisition input and won't import into the Method Editor."),
-
-        tags$div(style = "height: 10px;"),
-        tags$h5("Spectral Libraries"),
-        fluidRow(
-          column(3, downloadButton("dl_ms1_mgf", "MS1 (.mgf)",
-                                   class = "btn-outline-primary w-100")),
-          column(3, downloadButton("dl_ms1_msp", "MS1 (.msp)",
-                                   class = "btn-outline-primary w-100")),
-          column(3, tagAppendAttributes(
-            downloadButton("dl_ms2_mgf", "MS2 (.mgf) ⚠",
-                          class = "btn-outline-primary w-100"),
-            title = "MS2 intensities are placeholders (rule-based heuristic) -- match on m/z only, not for intensity-weighted scoring.")),
-          column(3, tagAppendAttributes(
-            downloadButton("dl_ms2_msp", "MS2 (.msp) ⚠",
-                          class = "btn-outline-primary w-100"),
-            title = "MS2 intensities are placeholders (rule-based heuristic) -- match on m/z only, not for intensity-weighted scoring."))
-        ),
-        tags$p(style = "font-size: 11px; color: #a3231b; font-weight: 600; margin-top: 6px; margin-bottom: 2px;",
-               "⚠ MS2 intensities are placeholders, not measured or fitted values -- ",
-               "match on m/z only. Intensity-weighted dot-product scoring (e.g. ",
-               "MS-DIAL) against the MS2 library will produce meaningless confidence ",
-               "values."),
-        tags$p(style = "font-size: 11px; color: #6c757d; margin-top: 6px;",
-               "Theoretical libraries for MS-DIAL, mzVault/Compound Discoverer, ",
-               "MZmine, matchms and similar. MS1 spectra hold the isotope ",
-               "cluster of each metabolite at each charge state, with real ",
-               "relative abundances. MS2 spectra hold the McLuckey fragment ",
-               "ions for each precursor charge state, with a rule-based ",
-               "relative-intensity heuristic (PS-linkage lability, MOE-PS vs ",
-               "DNA-PS dominant ion series, purine base-loss lability -- see ",
-               "fragment_intensity_weight() in R/fragments.R) -- it is not ",
-               "fit to any measured spectra, so match on m/z and treat it as ",
-               "a coarse ranking, not a predicted abundance for quantitative ",
-               "dot-product scoring."),
-        tags$div(style = "height: 20px;")
-      ),
-
-      ## ---- About and full disclaimer --------------------------------------
-      ## Always visible, not gated behind the run: the disclaimer has to be
-      ## readable before anyone downloads anything.
-      tags$div(id = "about-section", class = "about-block",
-        tags$h6("About"),
-        ## htmltools joins sibling arguments with a space, so anything that
-        ## must sit flush against its neighbour (a colon, a bracket) is
-        ## pasted into one string rather than passed as its own argument.
-        tags$p(
-          tags$strong("OligoMet Profiler"), HTML("&mdash;"),
-          textOutput("about_version", inline = TRUE), tags$br(),
-          paste0(OLIGOMET_AUTHOR_ROLE, ": ", OLIGOMET_AUTHOR),
-          HTML(paste0("(<a href=\"mailto:", OLIGOMET_AUTHOR_EMAIL, "\">",
-                      OLIGOMET_AUTHOR_EMAIL, "</a>)")), tags$br(),
-          paste0(OLIGOMET_AUTHOR_TITLE, ", ", OLIGOMET_AUTHOR_AFFILIATION,
-                 " -- an independent personal project, not a ",
-                 OLIGOMET_AUTHOR_AFFILIATION, " product."), tags$br(),
-          tags$a(href = OLIGOMET_URL, target = "_blank", rel = "noopener",
-                 OLIGOMET_URL),
-          HTML("&mdash; released under the MIT licence.")),
-        tags$h6("Disclaimer"),
-        lapply(OLIGOMET_DISCLAIMER, tags$p)
+    ## =========================================================================
+    ## TAB: Help & Quick Start
+    ## =========================================================================
+    tabPanel("Help & Quick Start",
+      tags$div(style = "height: 14px;"),
+      tabsetPanel(
+        id = "help_tabs",
+        tabPanel("Quick Start", tags$div(style = "padding-top: 12px;", uiOutput("help_quickstart"))),
+        tabPanel("Sequence Guide", tags$div(style = "padding-top: 12px;", uiOutput("help_sequence"))),
+        tabPanel("Modifications", tags$div(style = "padding-top: 12px;", uiOutput("help_modifications"))),
+        tabPanel("No-Shiny (CLI)", tags$div(style = "padding-top: 12px;", uiOutput("help_quickstart_cli"))),
+        tabPanel("About",
+          tags$div(class = "about-block", style = "padding-top: 16px;",
+            tags$h6("About"),
+            tags$p(
+              tags$strong("OligoMet Profiler"), HTML("&mdash;"),
+              textOutput("about_version", inline = TRUE), tags$br(),
+              paste0(OLIGOMET_AUTHOR_ROLE, ": ", OLIGOMET_AUTHOR),
+              HTML(paste0("(<a href=\"mailto:", OLIGOMET_AUTHOR_EMAIL, "\">",
+                          OLIGOMET_AUTHOR_EMAIL, "</a>)")), tags$br(),
+              paste0(OLIGOMET_AUTHOR_TITLE, ", ", OLIGOMET_AUTHOR_AFFILIATION,
+                     " -- an independent personal project, not a ",
+                     OLIGOMET_AUTHOR_AFFILIATION, " product."), tags$br(),
+              tags$a(href = OLIGOMET_URL, target = "_blank", rel = "noopener", OLIGOMET_URL),
+              HTML("&mdash; released under the MIT licence.")),
+            tags$h6("Disclaimer"),
+            lapply(OLIGOMET_DISCLAIMER, tags$p)
+          )
+        )
       )
     )
   )
@@ -1324,13 +1226,66 @@ server <- function(input, output, session) {
     spec = NULL, mets = NULL, dict = NULL, prm = NULL,
     ms_results = NULL, wb_path = NULL, report_path = NULL,
     plots = list(), ready = FALSE,
-    status_text = "Enter a sequence and click \"1. Generate Library\".\n",
+    status_text = "Enter a sequence and click \"Generate Library\" on the Library Generation tab.\n",
     batch_features = NULL, batch_ms_results = NULL,
     sample_meta = NULL, stats_results = NULL, kind_stats_results = NULL,
     quant_results = NULL,
     library_ready = FALSE,
     agent_messages = list(), agent_ctx = list(), agent_busy = FALSE
   )
+
+  ## ---- Dashboard tab ---------------------------------------------------------
+  # Pure display, computed off rv$* state that's already set elsewhere --
+  # this tab adds no new pipeline logic, just an at-a-glance view of it.
+  output$dashboard_workflow_status <- renderUI({
+    step2_done <- !is.null(rv$batch_ms_results) &&
+      (length(rv$batch_ms_results$ms2_confirmations) > 0 && nrow(rv$batch_ms_results$ms2_confirmations) > 0)
+    step3_done <- !is.null(rv$batch_ms_results) && !is.null(rv$batch_ms_results$ms1_matches) &&
+      nrow(rv$batch_ms_results$ms1_matches) > 0
+    step4_done <- !is.null(rv$stats_results) || !is.null(rv$quant_results)
+    steps <- list(
+      list("1. Library Generation", isTRUE(rv$library_ready)),
+      list("2. Empirical MS2 Library", step2_done),
+      list("3. Batch Processing", step3_done),
+      list("4. Statistical Analysis", step4_done),
+      list("5. Complete", isTRUE(rv$library_ready) && step3_done && step4_done)
+    )
+    tagList(lapply(steps, function(s) {
+      tags$div(class = "workflow-status-row",
+        tags$div(class = paste("status-dot", if (s[[2]]) "done" else "pending"),
+                 if (s[[2]]) "✓" else ""),
+        s[[1]])
+    }))
+  })
+
+  output$dashboard_active_oligo <- renderUI({
+    if (is.null(rv$spec)) {
+      return(tags$div(class = "oligo-box", "No sequence loaded yet."))
+    }
+    tags$div(class = "oligo-box",
+      sprintf("%s (%d-mer)", input$oligo_name %||% "my_oligo", rv$spec$n %||% 0))
+  })
+
+  output$dashboard_stepper <- renderUI({
+    step2_done <- !is.null(rv$batch_ms_results) &&
+      (length(rv$batch_ms_results$ms2_confirmations) > 0 && nrow(rv$batch_ms_results$ms2_confirmations) > 0)
+    step3_done <- !is.null(rv$batch_ms_results) && !is.null(rv$batch_ms_results$ms1_matches) &&
+      nrow(rv$batch_ms_results$ms1_matches) > 0
+    step4_done <- !is.null(rv$stats_results) || !is.null(rv$quant_results)
+    active_idx <- if (!isTRUE(rv$library_ready)) 1L
+      else if (!step2_done) 2L else if (!step3_done) 3L else if (!step4_done) 4L else 5L
+    labels <- c("1. Library", "2. MS2 Library", "3. Batch Processing", "4. Statistics", "5. Complete")
+    tags$div(class = "stepper",
+      tagList(lapply(seq_along(labels), function(i) {
+        tagList(
+          tags$div(class = paste("wf-step", if (i == active_idx) "wf-active" else ""),
+            tags$div(class = "wf-circ", if (i < active_idx) "✓" else as.character(i)),
+            tags$div(class = "wf-lbl", labels[i])),
+          if (i < length(labels)) tags$span(class = "wf-arrow", "→")
+        )
+      }))
+    )
+  })
 
   ## ---- Batch sample metadata table (group/timepoint/sample_type/concentration)
   # Seeded from the uploaded batch_files' original filenames; edited in place
@@ -2201,11 +2156,167 @@ server <- function(input, output, session) {
     })
   })  # end observeEvent(input$run_phase1)
 
+  ## ---- Comparison stats + quantification (Statistical Analysis tab) --------
+  # Reads whatever's already in rv$batch_ms_results/rv$sample_meta (set by a
+  # batch run) and (re)computes rv$stats_results/rv$kind_stats_results/
+  # rv$quant_results from the CURRENT Statistical Analysis tab settings --
+  # called automatically right after a batch run finishes, and again from
+  # "Run Statistical Analysis" when the user only wants to change the
+  # P-adjustment method / Group A-B override / calibration settings without
+  # re-running the whole batch pipeline.
+  .recompute_stats_and_quant <- function() {
+    meta <- rv$sample_meta
+    bres <- rv$batch_ms_results
+    if (is.null(meta) || is.null(bres) || nrow(bres$ms1_matches) == 0) return(invisible(NULL))
+
+    has_group <- !is.null(meta$group) && any(nzchar(meta$group))
+    has_time <- !is.null(meta$timepoint) && any(nzchar(meta$timepoint))
+    if (!(has_group || has_time)) return(invisible(NULL))
+
+    p_adjust_method <- input$stats_padjust %||% "BH"
+    # An explicit Group A/B override (Statistical Analysis tab) takes
+    # priority over the first two Group values found -- lets a 3+-group
+    # design still get a specific pairwise 2-group test without retyping
+    # the sample metadata.
+    .pick_pair <- function(groups) {
+      ga <- input$stats_group_a; gb <- input$stats_group_b
+      if (!is.null(ga) && !is.null(gb) && nzchar(ga) && nzchar(gb) &&
+          ga %in% groups && gb %in% groups && ga != gb) c(ga, gb) else groups[1:2]
+    }
+
+    abund <- build_abundance_matrix(bres$ms1_matches)
+    stats_res <- tryCatch({
+      if (has_time) {
+        sm <- meta[, c("sample", "timepoint")]
+        sm$timepoint <- suppressWarnings(as.numeric(sm$timepoint))
+        long <- abundance_long(abund, sm[!is.na(sm$timepoint), ])
+        list(mode = "time_series", result = compare_time_series(long, p_adjust_method = p_adjust_method))
+      } else {
+        sm <- meta[nzchar(meta$group), c("sample", "group")]
+        groups <- unique(sm$group)
+        long <- abundance_long(abund, sm)
+        if (length(groups) == 2) {
+          pair <- .pick_pair(groups)
+          list(mode = "two_group", result = compare_two_groups(long, pair[1], pair[2], p_adjust_method = p_adjust_method))
+        } else if (length(groups) > 2) {
+          list(mode = "multi_group", result = compare_multi_groups(long, groups, p_adjust_method = p_adjust_method))
+        } else NULL
+      }
+    }, error = function(e) {
+      rv$status_text <- paste0(rv$status_text,
+        "WARNING: statistical comparison failed: ", conditionMessage(e), "\n")
+      NULL
+    })
+    rv$stats_results <- stats_res
+
+    # Same comparison, but on kind-level (composition-class) totals instead
+    # of per-metabolite abundance -- reuses the same compare_*() functions
+    # unmodified (see build_kind_abundance_matrix() in R/statistics.R).
+    signal_col <- if ("area" %in% names(bres$ms1_matches) &&
+                       any(!is.na(bres$ms1_matches$area))) "area" else "intensity"
+    kind_abund <- build_kind_abundance_matrix(bres$ms1_matches, signal_col = signal_col)
+    kind_stats_res <- tryCatch({
+      if (has_time) {
+        sm <- meta[, c("sample", "timepoint")]
+        sm$timepoint <- suppressWarnings(as.numeric(sm$timepoint))
+        long <- kind_abundance_long(kind_abund, sm[!is.na(sm$timepoint), ])
+        list(mode = "time_series", result = compare_time_series(long, p_adjust_method = p_adjust_method))
+      } else {
+        sm <- meta[nzchar(meta$group), c("sample", "group")]
+        groups <- unique(sm$group)
+        long <- kind_abundance_long(kind_abund, sm)
+        if (length(groups) == 2) {
+          pair <- .pick_pair(groups)
+          list(mode = "two_group", result = compare_two_groups(long, pair[1], pair[2], p_adjust_method = p_adjust_method))
+        } else if (length(groups) > 2) {
+          list(mode = "multi_group", result = compare_multi_groups(long, groups, p_adjust_method = p_adjust_method))
+        } else NULL
+      }
+    }, error = function(e) {
+      rv$status_text <- paste0(rv$status_text,
+        "WARNING: kind-level statistical comparison failed: ", conditionMessage(e), "\n")
+      NULL
+    })
+    rv$kind_stats_results <- kind_stats_res
+
+    # Absolute quantification (calibration curve) for the user-selected
+    # metabolites, relative quantification (fold-change vs pre-dose/time-0,
+    # or vs the Control group) for every other metabolite -- see
+    # quantify_metabolites() in R/statistics.R. Uses the FULL sample_meta
+    # (not the sample+group/timepoint slice above), since it also needs
+    # sample_type/concentration for the calibration curve half.
+    quant_res <- tryCatch({
+      quantify_metabolites(
+        bres$ms1_matches, meta,
+        absolute_met_ids = input$absolute_quant_mets,
+        mode = if (has_time) "time_series" else "group",
+        control_group = if (has_time) NULL else input$control_group,
+        weighting = input$calibration_weighting)
+    }, error = function(e) {
+      rv$status_text <- paste0(rv$status_text,
+        "WARNING: quantification failed: ", conditionMessage(e), "\n")
+      NULL
+    })
+    rv$quant_results <- quant_res
+    invisible(NULL)
+  }
+
+  observeEvent(input$run_stats, { .recompute_stats_and_quant() })
+
+  # Group A/B override choices (Statistical Analysis tab) -- same source and
+  # update pattern as control_group above, kept in sync live as the sample
+  # metadata table is edited or a CSV is merged in.
+  observeEvent(batch_meta_data(), {
+    meta <- batch_meta_data()
+    groups <- if ("group" %in% names(meta)) unique(meta$group[nzchar(meta$group)]) else character(0)
+    ch <- c("Auto (first two found)" = "", groups)
+    keep_a <- if (isolate(input$stats_group_a) %in% groups) isolate(input$stats_group_a) else NULL
+    keep_b <- if (isolate(input$stats_group_b) %in% groups) isolate(input$stats_group_b) else NULL
+    updateSelectInput(session, "stats_group_a", choices = ch, selected = keep_a)
+    updateSelectInput(session, "stats_group_b", choices = ch, selected = keep_b)
+  }, ignoreNULL = FALSE)
+
+  output$stats_design_summary <- renderUI({
+    meta <- rv$sample_meta
+    if (is.null(meta)) {
+      return(tags$p(style = "font-size: 10.5px; color: #6c757d;",
+                    "Run Batch Processing with Group or Timepoint filled in to see the detected design here."))
+    }
+    has_time <- !is.null(meta$timepoint) && any(nzchar(meta$timepoint))
+    mode_txt <- if (has_time) "Time-course (Timepoint filled)" else "Group comparison (Group filled)"
+    tags$p(style = "font-size: 10.5px; color: #1f2430;",
+           "Auto-detected: ", tags$b(mode_txt))
+  })
+
+  # Post-hoc, R-side charge-state re-aggregation (mirroring charge_group.py's
+  # neutral-mass-consensus grouping) is NOT implemented yet -- this handler
+  # says so plainly rather than leaving the button silently do nothing.
+  cg_rerun_msg <- reactiveVal(NULL)
+  observeEvent(input$cg_rerun, {
+    cg_rerun_msg(paste0(
+      "Post-hoc R-side charge-grouping (a charge_group.py port applied to ",
+      "the already-matched batch features) is not implemented yet -- this ",
+      "panel is a placeholder for that future work. RT tol=", input$cg_rt_tol,
+      " min, mass tol=", input$cg_mass_tol_ppm, " ppm, min charge states=",
+      input$cg_min_charge_states, " were noted but not applied."))
+  })
+  output$cg_rerun_status <- renderUI({
+    msg <- cg_rerun_msg()
+    if (is.null(msg)) return(NULL)
+    tags$p(class = "placeholder-note", msg)
+  })
+
   ## ---- Phase 2: import & process MS data ------------------------------------
   # Steps 7/7b (single-file and/or batch MS matching) against the library
   # Phase 1 built, then rebuilds the workbook/report with those results
   # included. Requires rv$library_ready (Phase 1 having run this session).
-  observeEvent(input$run_phase2, {
+  # Extracted to a plain function so it can be triggered from either of two
+  # buttons now that the UI is split across tabs: "Run Batch Processing"
+  # (Batch Processing tab) and "Generate Empirical MS2 Library" (Empirical
+  # MS2 Library tab) -- both run the exact same pipeline; which downstream
+  # results end up populated just depends on which checkboxes/files are set
+  # (enable_ms/enable_batch), same as before this tab split.
+  .run_phase2_now <- function() {
     if (!isTRUE(rv$library_ready)) {
       rv$status_text <- "ERROR: generate the library first (\"1. Generate Library\").\n"
       return()
@@ -2403,87 +2514,7 @@ server <- function(input, output, session) {
           rv$batch_ms_results <- batch_out$results
           rv$sample_meta <- batch_out$meta
 
-          meta <- batch_out$meta
-          has_group <- !is.null(meta$group) && any(nzchar(meta$group))
-          has_time <- !is.null(meta$timepoint) && any(nzchar(meta$timepoint))
-          if (nrow(batch_out$results$ms1_matches) > 0 && (has_group || has_time)) {
-            abund <- build_abundance_matrix(batch_out$results$ms1_matches)
-            stats_res <- tryCatch({
-              if (has_time) {
-                sm <- meta[, c("sample", "timepoint")]
-                sm$timepoint <- suppressWarnings(as.numeric(sm$timepoint))
-                long <- abundance_long(abund, sm[!is.na(sm$timepoint), ])
-                list(mode = "time_series", result = compare_time_series(long))
-              } else {
-                sm <- meta[nzchar(meta$group), c("sample", "group")]
-                groups <- unique(sm$group)
-                long <- abundance_long(abund, sm)
-                if (length(groups) == 2) {
-                  list(mode = "two_group", result = compare_two_groups(long, groups[1], groups[2]))
-                } else if (length(groups) > 2) {
-                  list(mode = "multi_group", result = compare_multi_groups(long, groups))
-                } else NULL
-              }
-            }, error = function(e) {
-              rv$status_text <- paste0(rv$status_text,
-                "WARNING: statistical comparison failed: ", conditionMessage(e), "\n")
-              NULL
-            })
-            rv$stats_results <- stats_res
-
-            # Same comparison, but on kind-level (composition-class) totals
-            # instead of per-metabolite abundance -- reuses the same
-            # compare_*() functions unmodified (see build_kind_abundance_matrix()
-            # in R/statistics.R for why that works), so this mirrors the
-            # per-metabolite block above almost exactly.
-            signal_col <- if ("area" %in% names(batch_out$results$ms1_matches) &&
-                               any(!is.na(batch_out$results$ms1_matches$area))) "area" else "intensity"
-            kind_abund <- build_kind_abundance_matrix(batch_out$results$ms1_matches,
-                                                       signal_col = signal_col)
-            kind_stats_res <- tryCatch({
-              if (has_time) {
-                sm <- meta[, c("sample", "timepoint")]
-                sm$timepoint <- suppressWarnings(as.numeric(sm$timepoint))
-                long <- kind_abundance_long(kind_abund, sm[!is.na(sm$timepoint), ])
-                list(mode = "time_series", result = compare_time_series(long))
-              } else {
-                sm <- meta[nzchar(meta$group), c("sample", "group")]
-                groups <- unique(sm$group)
-                long <- kind_abundance_long(kind_abund, sm)
-                if (length(groups) == 2) {
-                  list(mode = "two_group", result = compare_two_groups(long, groups[1], groups[2]))
-                } else if (length(groups) > 2) {
-                  list(mode = "multi_group", result = compare_multi_groups(long, groups))
-                } else NULL
-              }
-            }, error = function(e) {
-              rv$status_text <- paste0(rv$status_text,
-                "WARNING: kind-level statistical comparison failed: ", conditionMessage(e), "\n")
-              NULL
-            })
-            rv$kind_stats_results <- kind_stats_res
-
-            # Absolute quantification (calibration curve) for the
-            # user-selected metabolites, relative quantification
-            # (fold-change vs pre-dose/time-0, or vs the Control group) for
-            # every other metabolite -- see quantify_metabolites() in
-            # R/statistics.R. Uses the FULL sample_meta (not the
-            # sample+group/timepoint slice above), since it also needs
-            # sample_type/concentration for the calibration curve half.
-            quant_res <- tryCatch({
-              quantify_metabolites(
-                batch_out$results$ms1_matches, meta,
-                absolute_met_ids = input$absolute_quant_mets,
-                mode = if (has_time) "time_series" else "group",
-                control_group = if (has_time) NULL else input$control_group,
-                weighting = input$calibration_weighting)
-            }, error = function(e) {
-              rv$status_text <- paste0(rv$status_text,
-                "WARNING: quantification failed: ", conditionMessage(e), "\n")
-              NULL
-            })
-            rv$quant_results <- quant_res
-          }
+          .recompute_stats_and_quant()
         }
       }
 
@@ -2581,7 +2612,9 @@ server <- function(input, output, session) {
         "Check the R console for a full traceback.\n")
       rv$ready <- FALSE
     })
-  })  # end observeEvent(input$run_phase2)
+  }  # end .run_phase2_now()
+  observeEvent(input$run_phase2, { .run_phase2_now() })
+  observeEvent(input$run_ms2_library, { .run_phase2_now() })
 
   ## ---- Summary metrics outputs ---------------------------------------------
   output$m_formula <- renderText({
@@ -2617,6 +2650,20 @@ server <- function(input, output, session) {
   output$m_confident <- renderText({
     if (rv$ready && !is.null(rv$ms_results) && !is.null(rv$ms_results$summary))
       as.character(sum(rv$ms_results$summary$confident, na.rm = TRUE)) else "0"
+  })
+
+  ## ---- Empirical MS2 Library tab metrics ------------------------------------
+  output$ms2lib_n_matched <- renderText({
+    ms2c <- rv$batch_ms_results$ms2_confirmations
+    if (!is.null(ms2c)) as.character(nrow(ms2c)) else "0"
+  })
+  output$ms2lib_n_spectra <- renderText({
+    sp <- rv$batch_ms_results$ms2_spectra
+    if (!is.null(sp)) as.character(length(sp)) else "0"
+  })
+  output$ms2lib_n_consensus <- renderText({
+    tryCatch(as.character(nrow(.empirical_ms2_library()$summary)),
+             error = function(e) "0")
   })
 
   ## ---- Plot outputs --------------------------------------------------------
@@ -2875,6 +2922,36 @@ server <- function(input, output, session) {
   })
   outputOptions(output, "quant_ready", suspendWhenHidden = FALSE)
 
+  # Flattens rv$quant_results$calibration_curves (a named list of
+  # fit_calibration_curve() results, one per absolute-quant metabolite) into
+  # one row per metabolite -- surfaces the "note" field that explains WHY a
+  # curve is missing/unreliable (too few standard points, no standard rows
+  # at all, ...) instead of that metabolite just silently having no rows in
+  # quant_absolute_table below.
+  .calibration_curves_display <- reactive({
+    req(rv$quant_results)
+    cc <- rv$quant_results$calibration_curves
+    req(length(cc) > 0)
+    do.call(rbind, lapply(cc, function(c) {
+      mean_abs_re <- if (!is.null(c$points) && nrow(c$points) > 0 && "percent_re" %in% names(c$points))
+        mean(abs(c$points$percent_re), na.rm = TRUE) else NA_real_
+      data.frame(met_id = c$met_id, weighting = c$weighting,
+                 r_squared = c$r_squared, n_points = c$n_points,
+                 mean_abs_percent_re = mean_abs_re,
+                 note = if (nzchar(c$note)) c$note else "ok",
+                 stringsAsFactors = FALSE)
+    }))
+  })
+  output$calibration_curves_table <- DT::renderDT({
+    DT::datatable(.calibration_curves_display(), rownames = FALSE,
+                  options = list(pageLength = 15, scrollX = TRUE)) |>
+      DT::formatRound(c("r_squared", "mean_abs_percent_re"), digits = 3)
+  })
+  output$dl_calibration_curves_csv <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_calibration_curves.csv"),
+    content = function(file) utils::write.csv(.calibration_curves_display(), file, row.names = FALSE)
+  )
+
   output$quant_absolute_table <- DT::renderDT({
     req(rv$quant_results)
     DT::datatable(rv$quant_results$absolute, rownames = FALSE,
@@ -3091,6 +3168,14 @@ server <- function(input, output, session) {
     filename = function() paste0(input$output_prefix, "_empirical_MS2_library_summary.csv"),
     content = function(file) write.csv(.empirical_ms2_library()$summary, file, row.names = FALSE)
   )
+  output$empirical_ms2_summary_table <- DT::renderDT({
+    tryCatch({
+      s <- .empirical_ms2_library()$summary
+      req(nrow(s) > 0)
+      DT::datatable(s, filter = "top", rownames = FALSE,
+                    options = list(pageLength = 10, scrollX = TRUE))
+    }, error = function(e) DT::datatable(data.frame(), rownames = FALSE))
+  })
 
   output$unmatched_table <- DT::renderDT({
     req(rv$batch_ms_results)
@@ -3161,8 +3246,19 @@ server <- function(input, output, session) {
   })
 
   output$stats_table <- DT::renderDT({
-    DT::datatable(.stats_display_table(), rownames = FALSE,
+    df <- .stats_display_table()
+    dt <- DT::datatable(df, rownames = FALSE,
                   options = list(pageLength = 10, scrollX = TRUE))
+    # Bold+color any row whose |log2fc| clears the sidebar threshold --
+    # two_group mode only, since multi_group/time_series results don't have
+    # a log2fc column at all.
+    thr <- input$stats_log2fc_threshold %||% 1
+    if ("log2fc" %in% names(df) && is.finite(thr) && thr > 0) {
+      dt <- DT::formatStyle(dt, "log2fc",
+        fontWeight = DT::styleInterval(c(-thr, thr), c("bold", "normal", "bold")),
+        color = DT::styleInterval(c(-thr, thr), c("#a3231b", "inherit", "#18632f")))
+    }
+    dt
   })
 
   # Same flatten as .stats_display_table(), for the kind-level (composition-
@@ -3197,6 +3293,30 @@ server <- function(input, output, session) {
     content = function(file) {
       req(rv$batch_features)
       utils::write.table(rv$batch_features, file, sep = "\t", row.names = FALSE, quote = FALSE)
+    }
+  )
+
+  ## ---- Statistical Analysis: data matrix downloads --------------------------
+  # build_abundance_matrix()/abundance_long() already collapse to the
+  # max-intensity match per (metabolite, sample) across charge states --
+  # that's the SAME collapsing the batch pipeline's charge_group.py step
+  # already does before matching, so this is one real matrix, not two
+  # genuinely distinct raw-vs-grouped ones (see the Data Matrix tab's own
+  # note; the Charge Grouping panel's "Re-run Aggregation" is a placeholder
+  # for building a real second, post-hoc-grouped matrix).
+  output$dl_data_matrix_wide <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_data_matrix_wide.csv"),
+    content = function(file) {
+      req(rv$batch_ms_results)
+      utils::write.csv(build_abundance_matrix(rv$batch_ms_results$ms1_matches), file, row.names = FALSE)
+    }
+  )
+  output$dl_data_matrix_long <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_data_matrix_long.csv"),
+    content = function(file) {
+      req(rv$batch_ms_results, rv$sample_meta)
+      abund <- build_abundance_matrix(rv$batch_ms_results$ms1_matches)
+      utils::write.csv(abundance_long(abund, rv$sample_meta), file, row.names = FALSE)
     }
   )
   output$dl_unmatched_csv <- downloadHandler(
