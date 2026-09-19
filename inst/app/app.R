@@ -648,6 +648,7 @@ ui <- fluidPage(
                    "onto."),
             uiOutput("batch_meta_upload_status"),
             DT::DTOutput("sample_meta_table"),
+            uiOutput("sample_meta_timepoint_warn"),
             tags$p(style = "font-size: 11px; color: #6c757d; margin-top: 4px;",
                    "One row per uploaded file. Fill in Group (2+ groups) or ",
                    "Timepoint (time series) before running -- leave both blank ",
@@ -1435,15 +1436,47 @@ server <- function(input, output, session) {
     tags$p(style = "font-size: 11px; color: #a3231b; font-weight: 600; margin: 2px 0 6px;", msg)
   })
 
+  # A timepoint value must be numeric-coercible or it's silently dropped
+  # several steps downstream (compare_time_series()/quantify_relative() in
+  # R/statistics.R both do as.numeric(timepoint) and filter out the NAs with
+  # no error) -- flagging it right here, at entry, is the only place a typo
+  # like "Day 1" is cheap to catch. .tp_invalid is appended as a hidden
+  # extra column purely for DT's formatStyle to key off of; it sits AFTER
+  # the 5 real columns, so it never shifts sample_meta_table_cell_edit's
+  # $col indices for the columns a user can actually click into.
+  .invalid_timepoints <- function(meta) {
+    nzchar(meta$timepoint) & is.na(suppressWarnings(as.numeric(meta$timepoint)))
+  }
+
   output$sample_meta_table <- DT::renderDT({
-    DT::datatable(batch_meta_data(), editable = TRUE, rownames = FALSE,
-                   options = list(dom = "t", paging = FALSE, scrollY = "180px"))
+    df <- batch_meta_data()
+    df$.tp_invalid <- .invalid_timepoints(df)
+    dt <- DT::datatable(df, editable = TRUE, rownames = FALSE,
+                   options = list(dom = "t", paging = FALSE, scrollY = "180px",
+                     columnDefs = list(list(visible = FALSE, targets = which(names(df) == ".tp_invalid") - 1))))
+    DT::formatStyle(dt, "timepoint", valueColumns = ".tp_invalid",
+                     backgroundColor = DT::styleEqual(c(TRUE, FALSE), c("#fdecea", "white")),
+                     color = DT::styleEqual(c(TRUE, FALSE), c("#a3231b", "inherit")),
+                     fontWeight = DT::styleEqual(c(TRUE, FALSE), c("600", "normal")))
   })
   observeEvent(input$sample_meta_table_cell_edit, {
     df <- batch_meta_data()
     edit <- input$sample_meta_table_cell_edit
     df[edit$row, edit$col + 1] <- edit$value
     batch_meta_data(df)
+  })
+
+  # Live, human-readable companion to the red cell highlighting above --
+  # updates on every cell edit and every CSV merge, same as the table does,
+  # since both write through batch_meta_data().
+  output$sample_meta_timepoint_warn <- renderUI({
+    meta <- batch_meta_data()
+    if (nrow(meta) == 0) return(NULL)
+    bad <- .invalid_timepoints(meta)
+    if (!any(bad)) return(NULL)
+    tags$p(style = "font-size: 11px; color: #a3231b; font-weight: 600; margin: 4px 0;",
+      sprintf("Timepoint must be numeric (e.g. 0, 4, 24) in one consistent unit -- not text. Fix: %s.",
+              paste0(meta$sample[bad], " (\"", meta$timepoint[bad], "\")", collapse = ", ")))
   })
 
   ## ---- Sample info CSV: template download + bulk upload ---------------------
@@ -1525,6 +1558,16 @@ server <- function(input, output, session) {
       invalid_conc <- unique(csv$concentration[non_numeric])
     }
 
+    # Same treatment as concentration above -- kept as typed (so the CSV
+    # merge doesn't silently drop the value), flagged here in the summary,
+    # and flagged again live via .invalid_timepoints()/the red cell
+    # highlighting once it lands on the table.
+    invalid_time <- character(0)
+    if ("timepoint" %in% names(csv)) {
+      non_numeric <- nzchar(csv$timepoint) & is.na(suppressWarnings(as.numeric(csv$timepoint)))
+      invalid_time <- unique(csv$timepoint[non_numeric])
+    }
+
     matched <- intersect(current$sample, csv$sample)
     unmatched_csv <- setdiff(csv$sample, current$sample)
     for (col in intersect(c("group", "timepoint", "sample_type", "concentration"), names(csv))) {
@@ -1550,6 +1593,10 @@ server <- function(input, output, session) {
     if (length(invalid_conc) > 0) {
       msg <- paste0(msg, " Concentration value(s) not numeric, kept as typed: ",
                     paste(invalid_conc, collapse = ", "), ".")
+    }
+    if (length(invalid_time) > 0) {
+      msg <- paste0(msg, " Timepoint value(s) not numeric, kept as typed: ",
+                    paste(invalid_time, collapse = ", "), ".")
     }
     batch_meta_upload_status(msg)
   })
