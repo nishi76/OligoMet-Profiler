@@ -169,12 +169,15 @@ kind_abundance_long <- function(kind_abundance_matrix, sample_meta) {
 #'   (clamped to at least 2, since a t-test needs to estimate variance).
 #'   A metabolite with fewer replicates gets `note = "insufficient
 #'   replicates"` and `NA` statistics instead of being dropped.
+#' @param p_adjust_method Method passed to [stats::p.adjust()] for the
+#'   across-metabolite correction (`"BH"` by default).
 #' @return A data.frame with one row per metabolite: `met_id`, `met_name`,
-#'   `mean_a`, `mean_b`, `log2fc`, `t_stat`, `p_value`, `p_adj` (BH-adjusted),
-#'   `n_a`, `n_b`, `note`.
+#'   `mean_a`, `mean_b`, `log2fc`, `t_stat`, `p_value`, `p_adj` (adjusted per
+#'   `p_adjust_method`), `n_a`, `n_b`, `note`.
 #' @seealso [plot_volcano()] to visualize this result.
 #' @export
-compare_two_groups <- function(abundance_long, group_a, group_b, min_n = 2) {
+compare_two_groups <- function(abundance_long, group_a, group_b, min_n = 2,
+                                p_adjust_method = "BH") {
   if (is.null(abundance_long) || nrow(abundance_long) == 0) return(data.frame())
   min_n <- max(min_n, 2)  # stats::t.test() cannot estimate variance from a single observation
   mets <- unique(abundance_long[, c("met_id", "met_name")])
@@ -199,7 +202,7 @@ compare_two_groups <- function(abundance_long, group_a, group_b, min_n = 2) {
                n_a = length(a), n_b = length(b), note = "", stringsAsFactors = FALSE)
   })
   out <- do.call(rbind, rows)
-  out$p_adj <- stats::p.adjust(out$p_value, method = "BH")
+  out$p_adj <- stats::p.adjust(out$p_value, method = p_adjust_method)
   out
 }
 
@@ -219,12 +222,17 @@ compare_two_groups <- function(abundance_long, group_a, group_b, min_n = 2) {
 #'   test for a metabolite (clamped to at least 2). Below that, the
 #'   metabolite gets `note = "insufficient replicates"` and `NA`
 #'   statistics instead of being dropped.
+#' @param p_adjust_method Method passed to [stats::p.adjust()] for the
+#'   across-metabolite correction on the omnibus p-values (`"BH"` by
+#'   default). The Tukey HSD post-hoc `p_adj` is unaffected -- that's
+#'   already family-wise adjusted by [stats::TukeyHSD()] itself.
 #' @return `list(omnibus, posthoc)`: `omnibus` has one row per metabolite
 #'   (`met_id`, `met_name`, `f_stat`, `p_value`, `p_adj`, `note`);
 #'   `posthoc` has one row per (metabolite, pairwise contrast) with the
 #'   Tukey HSD `diff`/`lwr`/`upr`/`p_adj`.
 #' @export
-compare_multi_groups <- function(abundance_long, groups = NULL, min_n = 2) {
+compare_multi_groups <- function(abundance_long, groups = NULL, min_n = 2,
+                                  p_adjust_method = "BH") {
   empty <- list(omnibus = data.frame(), posthoc = data.frame())
   if (is.null(abundance_long) || nrow(abundance_long) == 0) return(empty)
   if (is.null(groups)) groups <- unique(abundance_long$group)
@@ -261,7 +269,7 @@ compare_multi_groups <- function(abundance_long, groups = NULL, min_n = 2) {
   }
 
   omnibus <- do.call(rbind, omnibus_rows)
-  omnibus$p_adj <- stats::p.adjust(omnibus$p_value, method = "BH")
+  omnibus$p_adj <- stats::p.adjust(omnibus$p_value, method = p_adjust_method)
   posthoc <- if (length(posthoc_rows) > 0) do.call(rbind, posthoc_rows) else data.frame()
   list(omnibus = omnibus, posthoc = posthoc)
 }
@@ -292,12 +300,15 @@ compare_multi_groups <- function(abundance_long, groups = NULL, min_n = 2) {
 #'   timepoints, required to fit the regression for a metabolite. Below
 #'   that, the metabolite gets `note = "insufficient data"` and `NA`
 #'   statistics instead of being dropped.
+#' @param p_adjust_method Method passed to [stats::p.adjust()] for the
+#'   across-metabolite correction (`"BH"` by default).
 #' @return A data.frame with one row per metabolite: `met_id`, `met_name`,
-#'   `slope`, `slope_se`, `p_value`, `p_adj` (BH-adjusted), `r_squared`,
-#'   `n_timepoints`, `n_total`, `note`.
+#'   `slope`, `slope_se`, `p_value`, `p_adj` (adjusted per
+#'   `p_adjust_method`), `r_squared`, `n_timepoints`, `n_total`, `note`.
 #' @seealso [plot_trend()] to visualize this result for one metabolite.
 #' @export
-compare_time_series <- function(abundance_long, time_var = "timepoint", min_n = 2) {
+compare_time_series <- function(abundance_long, time_var = "timepoint", min_n = 2,
+                                 p_adjust_method = "BH") {
   if (is.null(abundance_long) || nrow(abundance_long) == 0) return(data.frame())
   if (!time_var %in% names(abundance_long)) {
     stop("abundance_long has no '", time_var, "' column")
@@ -326,7 +337,7 @@ compare_time_series <- function(abundance_long, time_var = "timepoint", min_n = 
                note = "", stringsAsFactors = FALSE)
   })
   out <- do.call(rbind, rows)
-  out$p_adj <- stats::p.adjust(out$p_value, method = "BH")
+  out$p_adj <- stats::p.adjust(out$p_value, method = p_adjust_method)
   out
 }
 

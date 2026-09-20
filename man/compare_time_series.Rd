@@ -4,7 +4,12 @@
 \alias{compare_time_series}
 \title{Test for a linear trend across timepoints}
 \usage{
-compare_time_series(abundance_long, time_var = "timepoint", min_n = 2)
+compare_time_series(
+  abundance_long,
+  time_var = "timepoint",
+  min_n = 2,
+  p_adjust_method = "BH"
+)
 }
 \arguments{
 \item{abundance_long}{Long-format abundance data.frame from
@@ -17,11 +22,14 @@ compare_time_series(abundance_long, time_var = "timepoint", min_n = 2)
 timepoints, required to fit the regression for a metabolite. Below
 that, the metabolite gets `note = "insufficient data"` and `NA`
 statistics instead of being dropped.}
+
+\item{p_adjust_method}{Method passed to [stats::p.adjust()] for the
+across-metabolite correction (`"BH"` by default).}
 }
 \value{
 A data.frame with one row per metabolite: `met_id`, `met_name`,
-  `slope`, `slope_se`, `p_value`, `p_adj` (BH-adjusted), `r_squared`,
-  `n_timepoints`, `n_total`, `note`.
+  `slope`, `slope_se`, `p_value`, `p_adj` (adjusted per
+  `p_adjust_method`), `r_squared`, `n_timepoints`, `n_total`, `note`.
 }
 \description{
 Per metabolite, an independent-samples linear regression of abundance

@@ -36,8 +36,17 @@
 # =============================================================================
 
 ## ---- Vendor raw bridge ----------------------------------------------------
-# Check if msconvert (ProteoWizard) is available for vendor raw conversion.
-# Returns the path to msconvert if found, or NA with instructions.
+#' Locate ProteoWizard's msconvert on this machine
+#'
+#' Checks `PATH` first, then a few common Windows/macOS/Linux install
+#' locations. Used by [convert_vendor_raw()]/[resolve_ms_input_file()] to
+#' decide whether vendor raw files (Thermo `.raw`, Sciex `.wiff`,
+#' Bruker `.baf`/`.yep`) can be converted automatically.
+#'
+#' @return The path to `msconvert`, or `NA` if it isn't found anywhere
+#'   checked (install from proteowizard.org).
+#' @seealso [convert_vendor_raw()]
+#' @export
 find_msconvert <- function() {
   path <- Sys.which("msconvert")
   if (nzchar(path)) return(path)
@@ -51,8 +60,25 @@ find_msconvert <- function() {
   NA
 }
 
-# Convert vendor raw to mzML (if msconvert is available).
-# Returns path to the output mzML file, or NA with a message.
+#' Convert a vendor raw file to mzML via ProteoWizard msconvert
+#'
+#' Shells out to `msconvert` (found via [find_msconvert()]) to convert a
+#' vendor raw file to `.mzML`, optionally centroiding it. If `msconvert`
+#' isn't found, prints the equivalent command to run externally and
+#' returns `NA` rather than erroring, so a caller (e.g.
+#' [resolve_ms_input_file()]) can decide how to handle it.
+#'
+#' @param raw_file Path to the vendor raw file.
+#' @param output_dir Directory to write the converted `.mzML` into.
+#' @param centroid Whether to pass `--centroid` to msconvert. ROI/
+#'   charge-envelope detection ([extract_ms1_features()],
+#'   the Python batch pipeline) is designed for centroided peaks.
+#' @param peak_picking Currently unused (reserved).
+#' @return The path to the converted `.mzML` file, or `NA` if msconvert
+#'   isn't available or the conversion didn't produce the expected
+#'   output file.
+#' @seealso [find_msconvert()], [resolve_ms_input_file()]
+#' @export
 convert_vendor_raw <- function(raw_file, output_dir = tempdir(),
                                 centroid = TRUE, peak_picking = TRUE) {
   msconvert <- find_msconvert()
@@ -70,11 +96,26 @@ convert_vendor_raw <- function(raw_file, output_dir = tempdir(),
 }
 
 ## ---- mzML parser (lightweight, xml2-based) --------------------------------
-# Parse an mzML file and extract MS1 and MS2 spectra.
-# Returns list with:
-#   $ms1: data.frame(rt, mz, intensity) — all MS1 peaks (or extracted features)
-#   $ms2: list of data.frame(rt, precursor_mz, precursor_z, mz, intensity)
-#   $info: list with file metadata (instrument, n_spectra, etc.)
+#' Parse an mzML/mzXML file with a hand-rolled xml2 parser
+#'
+#' Reads every spectrum's m/z/intensity binary data arrays (base64 +
+#' zlib, decoded natively -- no mzR/compiled dependency) and separates
+#' MS1 peaks from MS2 spectra. This is the automatic fallback
+#' [read_ms_file()] uses when the (much faster, indexed) Spectra/mzR
+#' backend isn't available or fails -- loads the whole file into memory
+#' as an xml2 DOM, so it doesn't scale to very large files the way
+#' [read_ms_file()]'s primary path or the Python batch pipeline's
+#' streaming reader do.
+#'
+#' @param file Path to the mzML or mzXML file.
+#' @return A list: `ms1` (data.frame of `rt`, `mz`, `intensity`, one row
+#'   per peak across every MS1 spectrum), `ms2` (data.frame of `rt`,
+#'   `precursor_mz`, `precursor_z`, `mz`, `intensity`), and `info` (list:
+#'   `file`, `n_spectra`, `n_ms1`, `n_ms2`, `instrument`, and
+#'   `profile_mode` -- `TRUE`/`FALSE` once the first MS1 spectrum's
+#'   profile/centroid cvParam settles it, else `NA`).
+#' @seealso [read_ms_file()], [extract_ms1_features()]
+#' @export
 parse_mzml <- function(file) {
   if (!file.exists(file)) stop("mzML file not found: ", file)
   doc <- xml2::read_xml(file)
@@ -231,9 +272,23 @@ parse_mzml <- function(file) {
 }
 
 ## ---- Peak list import (text/CSV) ------------------------------------------
-# Import a simple peak list (mz, intensity) from CSV/text.
-# For MS1: data.frame(rt, mz, intensity)
-# For MS2: data.frame(rt, precursor_mz, precursor_z, mz, intensity)
+#' Import a simple peak-list file (mz, intensity columns)
+#'
+#' For a caller with a plain text/CSV export instead of raw mzML/mzXML
+#' data -- e.g. a peak-picked table from vendor software. Column names
+#' are normalized (lowercased, spaces/dots to underscores) and missing
+#' optional columns are filled with `NA`/`1` as appropriate, so the
+#' minimum required input is just an `mz` column.
+#'
+#' @param file Path to the peak-list file.
+#' @param type `"ms1"` or `"ms2"`; `"ms2"` additionally ensures
+#'   `precursor_mz`/`precursor_z` columns exist.
+#' @param sep Field separator passed to `utils::read.table()`.
+#' @return A data.frame: `rt`, `mz`, `intensity` for `type = "ms1"`
+#'   (`rt` is `NA` if not present in the file); adds `precursor_mz`,
+#'   `precursor_z` for `type = "ms2"`.
+#' @seealso [extract_ms1_features()], [annotate_metabolites()]
+#' @export
 import_peak_list <- function(file, type = c("ms1", "ms2"), sep = ",") {
   type <- match.arg(type)
   df <- utils::read.table(file, header = TRUE, sep = sep,
@@ -389,16 +444,45 @@ extract_ms1_features <- function(ms1_peaks, ppm = 10, min_intensity = 100,
 }
 
 ## ---- Targeted MS1 matching ------------------------------------------------
-# Match metabolite library against MS1 features.
-# For each metabolite, check each charge state and adduct.
-# Returns data.frame with matches and scores.
-#
-# Parameters (Standard mode):
-#   ppm_tol:    mass tolerance (default 10)
-#   z_range:    charge state range (default 3:12)
-#   adducts:    adduct types to check (default H, Na, K, NH4)
-#   max_oxid:   max PS->PO oxidation events (default 6)
-#   h_offset:   envelope offset (0 = standard, 3.0046 = legacy workbook)
+#' Match a metabolite library against observed MS1 features
+#'
+#' For each metabolite, enumerates every (oxidation level x charge state
+#' x adduct) theoretical target and reports the nearest observed feature
+#' within `ppm_tol`, along with an isotope-pattern fit score. Nearest-
+#' feature matching reports the single closest target as if it were
+#' unambiguous; `n_candidates`/`ambiguous` flag when more than one
+#' DISTINCT metabolite's theoretical m/z falls within tolerance of the
+#' same observed feature, which is common at the tolerances this package
+#' targets and otherwise invisible in the results table.
+#'
+#' @param mets A list of metabolite objects (see [generate_metabolites()]).
+#' @param ms1_features Observed MS1 features (see
+#'   [extract_ms1_features()]): a data.frame with `mz`, `rt`,
+#'   `max_intensity`, and optionally `area`.
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @param ppm_tol Mass tolerance for a match.
+#' @param z_range Charge states to consider.
+#' @param adducts Adducts to consider (`"H"` is the unmodified `[M-zH]^z-`
+#'   envelope; others add `adduct_shift()`).
+#' @param max_oxid Max PS -> PO oxidation events to model per metabolite
+#'   (capped at that metabolite's own phosphorothioate count).
+#' @param h_offset Charge-envelope offset: `0` for the standard
+#'   `[M-zH]^z-` convention, non-zero (e.g. `3.0046`) only to match a
+#'   legacy workbook's convention.
+#' @param n_iso Number of isotope peaks to check for the fit score; `0`
+#'   skips isotope fitting entirely (`iso_fit` stays `NA`).
+#' @param use_envipat Whether to use enviPat for isotope patterns
+#'   (`FALSE` uses a built-in convolution instead).
+#' @return A data.frame, one row per (metabolite, oxidation, charge,
+#'   adduct) combination that matched within `ppm_tol`: `met_id`,
+#'   `met_name`, `kind`, `n`, `k_oxid`, `z`, `adduct`, `theo_mz`,
+#'   `obs_mz`, `ppm_error`, `rt`, `intensity`, `area` (`NA` unless
+#'   `ms1_features` carries it), `iso_fit`, `formula`, `n_candidates`,
+#'   `ambiguous`. Empty data.frame if nothing matches.
+#' @seealso [match_ms1_fast()] for a faster path when the caller already
+#'   has a pre-expanded target list, [match_ms1_batch()] for multi-sample
+#'   matching, [annotate_metabolites()]
+#' @export
 match_ms1 <- function(mets, ms1_features, dict = STANDARD_DICT,
                        ppm_tol = 10, z_range = 3:12,
                        adducts = c("H", "Na", "K", "NH4"),
@@ -497,11 +581,31 @@ match_ms1 <- function(mets, ms1_features, dict = STANDARD_DICT,
 # (the caller's `targets` frame already carries kind/k_oxid/z/adduct) --
 # match_ms1() remains the entry point when those are needed.
 #
-# targets:  data.frame(met_id, met_name, kind, k_oxid, z, adduct, theo_mz)
-# features: data.frame(mz, rt, max_intensity, ...)
-# Returns targets with obs_mz/rt/intensity/ppm_error appended, plus the same
-# n_candidates/ambiguous ambiguity flag as match_ms1() -- computed here by
-# distinct met_id, not distinct target row, for the same reason.
+#' Match a pre-expanded target list against MS1 features (fast path)
+#'
+#' A faster alternative to [match_ms1()] for a caller that already has
+#' (or can cheaply build) the expanded theoretical target list as a flat
+#' data.frame: sorts `features` once and uses `findInterval()` to locate
+#' each target's tolerance window, so cost scales with
+#' `n_targets * log(n_features)` instead of `match_ms1()`'s
+#' `n_targets * n_features`. Does NOT compute isotope fit or adduct/
+#' oxidation bookkeeping itself -- the caller's `targets` frame is
+#' assumed to already carry `kind`/`k_oxid`/`z`/`adduct`; use
+#' [match_ms1()] when those need to be derived.
+#'
+#' @param targets A data.frame with (at least) `met_id`, `met_name`,
+#'   `kind`, `k_oxid`, `z`, `adduct`, `theo_mz` -- one row per
+#'   theoretical target.
+#' @param features Observed MS1 features (see [extract_ms1_features()]):
+#'   a data.frame with `mz`, `rt`, `max_intensity`.
+#' @param ppm_tol Mass tolerance for a match.
+#' @return `targets`, filtered to rows with a match within `ppm_tol`,
+#'   with `obs_mz`, `rt`, `intensity`, `ppm_error` appended, plus the
+#'   same `n_candidates`/`ambiguous` ambiguity flag as [match_ms1()]
+#'   (computed by distinct `met_id` competing for the same observed
+#'   feature).
+#' @seealso [match_ms1()]
+#' @export
 match_ms1_fast <- function(targets, features, ppm_tol = 10) {
   stopifnot("theo_mz" %in% names(targets), "mz" %in% names(features))
   if (nrow(targets) == 0 || nrow(features) == 0) return(targets[0, ])
@@ -567,6 +671,29 @@ match_ms1_fast <- function(targets, features, ppm_tol = 10) {
 # back-calculated mass was off by z * h_offset (a different amount per
 # charge state), which corrupts the cross-charge-state agreement this
 # function exists to measure.
+#' Check whether matched charge states agree on one neutral mass
+#'
+#' Groups [match_ms1()]'s output by (metabolite, oxidation, adduct) and
+#' back-calculates the neutral mass implied by each matched charge
+#' state's observed m/z. A real multiply-charged species should
+#' back-calculate to the SAME neutral mass at every charge state it was
+#' observed at; this reports how tightly they agree.
+#'
+#' @param matches Output of [match_ms1()]/[match_ms1_batch()] (must have
+#'   `met_id`, `k_oxid`, `adduct`, `z`, `obs_mz`).
+#' @param h_offset Must match whatever `h_offset` [match_ms1()] used to
+#'   generate the theoretical m/z these matches were scored against --
+#'   see [match_ms1()]. A mismatch here silently corrupts the agreement
+#'   this function measures, since each charge state's back-calculated
+#'   mass would be off by a DIFFERENT amount (`z * h_offset`).
+#' @return A data.frame, one row per (metabolite, oxidation, adduct)
+#'   group: `group` (the grouping key), `n_z` (number of charge states
+#'   observed), `consistency` (0-1 scale, `NA` when `n_z < 2` since a
+#'   single charge state can't confirm consistency), `mass_cv_ppm`
+#'   (coefficient of variation of the back-calculated masses, in ppm),
+#'   `mean_mass`.
+#' @seealso [match_ms1()]
+#' @export
 envelope_consistency <- function(matches, h_offset = 0) {
   if (nrow(matches) == 0) return(data.frame())
   # Group by metabolite (met_id + k_oxid + adduct)
@@ -601,8 +728,24 @@ envelope_consistency <- function(matches, h_offset = 0) {
 }
 
 ## ---- MS2 spectrum lookup --------------------------------------------------
-# Find MS2 spectra that match a given precursor m/z and charge.
-# Returns a list of MS2 peak data.frames.
+#' Find MS2 spectra matching a given precursor m/z and charge
+#'
+#' Groups `ms2_data` into scans (by unique `rt`/`precursor_mz`) and
+#' returns the peaks from every scan whose precursor matches within
+#' tolerance.
+#'
+#' @param ms2_data A data.frame of MS2 peaks with `rt`, `precursor_mz`,
+#'   `precursor_z`, `mz`, `intensity` (see [read_ms_file()]/
+#'   [import_peak_list()]/[read_batch_ms2()]).
+#' @param precursor_mz Target precursor m/z to match against.
+#' @param precursor_z Target precursor charge; `NA` (the default) skips
+#'   the charge check (matches on m/z alone). When both the target and a
+#'   scan's own recorded charge are non-`NA`, they must agree exactly.
+#' @param ppm_tol Precursor m/z matching tolerance.
+#' @return A list of data.frames (`mz`, `intensity`), one per matching
+#'   MS2 scan. Empty list if `ms2_data` is empty or nothing matches.
+#' @seealso [confirm_metabolite()], [annotate_metabolites()]
+#' @export
 find_ms2_spectra <- function(ms2_data, precursor_mz, precursor_z = NA,
                               ppm_tol = 20) {
   if (nrow(ms2_data) == 0) return(list())
@@ -626,8 +769,35 @@ find_ms2_spectra <- function(ms2_data, precursor_mz, precursor_z = NA,
 }
 
 ## ---- Combined metabolite annotation ----------------------------------------
-# Full annotation pipeline: MS1 matching + MS2 fragment confirmation.
-# Returns a comprehensive results table.
+#' Run the single-file annotation pipeline: MS1 match + MS2 confirmation
+#'
+#' The single-file counterpart to [annotate_metabolites_batch()]: MS1
+#' matching ([match_ms1()]), charge-envelope consistency
+#' ([envelope_consistency()]), and -- when `ms2_data` is supplied -- MS2
+#' fragment confirmation ([find_ms2_spectra()], [match_fragments()],
+#' [confirmation_score()]) for every matched metabolite, rolled up into
+#' one summary table.
+#'
+#' @param mets A list of metabolite objects (see [generate_metabolites()]).
+#' @param ms1_features Observed MS1 features (see
+#'   [extract_ms1_features()]/[import_peak_list()]).
+#' @param ms2_data Optional MS2 peaks (see [read_ms_file()]/
+#'   [import_peak_list()]); `NULL` skips MS2 confirmation entirely.
+#' @param dict A chemistry dictionary (see [build_dictionary()]).
+#' @param ppm_tol,z_range,adducts,max_oxid,h_offset,n_iso,use_envipat
+#'   MS1 matching parameters -- see [match_ms1()].
+#' @param frag_tol_ppm,frag_z_range MS2 fragment matching tolerance/
+#'   charge range -- see [match_fragments()].
+#' @param include_internal Whether to also generate and match internal
+#'   fragments (see [generate_internal_fragments()]).
+#' @return A list: `ms1_matches` (see [match_ms1()]), `ms2_results`
+#'   (named list by `met_id`, each with `met_name`, `n_peaks`,
+#'   `best_spec`, `matched_frags`, `diagnostics`, `score`), and
+#'   `summary` (one row per matched metabolite: best ppm error, best
+#'   isotope fit, charge states/adducts found, and -- when MS2 was run
+#'   -- confirmation score/coverage/fragment count).
+#' @seealso [annotate_metabolites_batch()] for the multi-sample version
+#' @export
 annotate_metabolites <- function(mets, ms1_features, ms2_data = NULL,
                                   dict = STANDARD_DICT,
                                   ppm_tol = 10, z_range = 3:12,

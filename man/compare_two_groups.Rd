@@ -4,7 +4,13 @@
 \alias{compare_two_groups}
 \title{Compare metabolite abundance between two groups}
 \usage{
-compare_two_groups(abundance_long, group_a, group_b, min_n = 2)
+compare_two_groups(
+  abundance_long,
+  group_a,
+  group_b,
+  min_n = 2,
+  p_adjust_method = "BH"
+)
 }
 \arguments{
 \item{abundance_long}{Long-format abundance data.frame from
@@ -17,11 +23,14 @@ compare_two_groups(abundance_long, group_a, group_b, min_n = 2)
 (clamped to at least 2, since a t-test needs to estimate variance).
 A metabolite with fewer replicates gets `note = "insufficient
 replicates"` and `NA` statistics instead of being dropped.}
+
+\item{p_adjust_method}{Method passed to [stats::p.adjust()] for the
+across-metabolite correction (`"BH"` by default).}
 }
 \value{
 A data.frame with one row per metabolite: `met_id`, `met_name`,
-  `mean_a`, `mean_b`, `log2fc`, `t_stat`, `p_value`, `p_adj` (BH-adjusted),
-  `n_a`, `n_b`, `note`.
+  `mean_a`, `mean_b`, `log2fc`, `t_stat`, `p_value`, `p_adj` (adjusted per
+  `p_adjust_method`), `n_a`, `n_b`, `note`.
 }
 \description{
 Independent-samples Welch's t-test per metabolite, with
