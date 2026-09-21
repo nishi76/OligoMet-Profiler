@@ -502,7 +502,7 @@
     row <- write_pair("Validation: Mass Delta (ppm)", round(validation$ppm, 4), row)
   }
 
-  if (!is.null(ms_info) && !is.na(ms_info$file)) {
+  if (!is.null(ms_info) && !is.null(ms_info$file) && !is.na(ms_info$file)) {
     row <- row + 1
     row <- write_pair("MS Data File", ms_info$file, row)
     row <- write_pair("MS1 Spectra", ms_info$n_ms1, row)
