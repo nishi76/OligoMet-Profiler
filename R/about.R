@@ -51,7 +51,7 @@ OLIGOMET_DISCLAIMER <- c(
     "regulatory submission use. Every value it reports is a computed ",
     "prediction, not a measurement: a match is a hypothesis, and every ",
     "assignment must be confirmed experimentally. Dictionary entries ",
-    "flagged verify = TRUE are best estimates not yet checked against a ",
+    " are best estimates not yet checked against a ",
     "measured mass."),
   paste0(
     "No warranty, no liability. Provided \"as is\" under the MIT licence, ",
@@ -61,7 +61,7 @@ OLIGOMET_DISCLAIMER <- c(
   paste0(
     "Disclosure. The author is a ", OLIGOMET_AUTHOR_TITLE, " at ",
     OLIGOMET_AUTHOR_AFFILIATION, ". OligoMetProfiler is an independent ",
-    "personal project -- not a ", OLIGOMET_AUTHOR_AFFILIATION, " product, ",
+    "personal project not a ", OLIGOMET_AUTHOR_AFFILIATION, " product, ",
     "and not supplied, reviewed, endorsed or approved by ",
     OLIGOMET_AUTHOR_AFFILIATION, " or any other company. Interoperability ",
     "with third-party software and instruments uses publicly documented ",
