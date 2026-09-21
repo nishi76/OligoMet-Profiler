@@ -1,6 +1,6 @@
 # Disclosure and Disclaimer
 
-**Nishikant Wase, PhD** — author and developer
+**Nishikant Wase, PhD** author and developer
 <nishikant.wase@gmail.com> · <https://github.com/nishi76/OligoMet-Profiler>
 Distributed under the [MIT licence](LICENSE.md).
 
