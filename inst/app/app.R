@@ -2872,6 +2872,18 @@ server <- function(input, output, session) {
     s[s$has_ms2, , drop = FALSE]
   })
 
+  # .find_met() also exists in R/mirror_plot.R, but as an internal
+  # (non-exported) package function -- app.R runs OUTSIDE the package
+  # namespace once installed normally (OligoMetProfiler::run_app()), so it
+  # can only ever see EXPORTED names there. A local copy is the same fix
+  # pattern as every other in-app .xxx helper already defined directly in
+  # this file, rather than the first `:::` reference in app.R.
+  .find_met <- function(mets, met_id) {
+    idx <- which(vapply(mets, function(m) identical(m$id, met_id), logical(1)))
+    if (length(idx) == 0) return(NULL)
+    mets[[idx[1]]]
+  }
+
   output$ms2_mirror_table <- DT::renderDataTable({
     hits <- .ms2_mirror_hits()
     req(nrow(hits) > 0)
