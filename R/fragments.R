@@ -288,17 +288,27 @@ generate_internal_fragments <- function(met, dict = STANDARD_DICT,
 #
 #   - PS (phosphorothioate) linkages are markedly more labile than PO under
 #     CID/HCD (this is also why PS_DIAGNOSTIC_MZ exists below), so a
-#     cleavage site sitting on a PS linkage is weighted up.
+#     cleavage site sitting on a PS linkage is weighted up. Gawlig et al.
+#     2026 (RCM e70093) rank precursor gas-phase stability across 2'-ribose
+#     and backbone chemistries as LNA > 2'-OMe > 2'-F > ribose >
+#     PS-ribose > deoxyribose > PS-deoxyribose (least stable of all seven
+#     tested) -- PS backbones are the most fragmentation-prone chemistry in
+#     both DNA and RNA context, confirming the direction of this boost.
 #   - Ye et al. 2025 (FMVS) report y/b ions predominant for MOE-PS
 #     chemistry and a-B/w ions predominant for DNA-PS chemistry -- the
 #     sugar immediately adjacent to the cleavage site selects which ion
 #     type gets the boost.
-#   - Purine glycosidic bonds (A/G-type bases) are more labile than
-#     pyrimidine ones under CID, so a-B/b-B/w-d base-loss ions are weighted
-#     up when the lost base is a purine. Purine-ness is read off the base's
-#     formula (>= 4 ring nitrogens) rather than hardcoded letter codes, so
-#     it still works for custom/modified purine bases entered via the
-#     Custom Chemistry table.
+#   - Base-loss lability is NOT a clean purine/pyrimidine split. Gawlig
+#     et al. 2026 measured base-loss CID-voltage onset for 15-mer DNA
+#     homopolymers of each standard base and found (least to most stable):
+#     A (~12V) < T (~13V) < U (~14V) < G (~15V) < C (~16V) -- guanine, a
+#     purine, is actually MORE stable than both pyrimidines T and U; only
+#     adenine is the outlier. .base_loss_lability() below uses this real
+#     A/T/U/G/C ordering for the five standard bases, and falls back to
+#     the coarser purine/pyrimidine ring-nitrogen-count split (still
+#     needed for any custom/modified base entered via the Custom
+#     Chemistry table, e.g. 2,6-diaminopurine or hypoxanthine, which this
+#     literature ordering doesn't cover) for everything else.
 #   - Internal (double-cleavage) ions are consistently minor relative to
 #     terminal ions in reported oligo MS2 spectra, so they carry a fixed
 #     down-weight rather than the ion-type/sugar logic above.
@@ -308,7 +318,7 @@ generate_internal_fragments <- function(met, dict = STANDARD_DICT,
 # against acquired data (see ../DISCLAIMER.md).
 .PS_LINKAGE_BOOST     <- 1.5  # PS vs PO cleavage-site lability
 .CHEMISTRY_ION_BOOST  <- 1.6  # dominant ion type for the local sugar chemistry
-.PURINE_LOSS_BOOST    <- 1.3  # purine vs pyrimidine base-loss lability
+.PURINE_LOSS_BOOST    <- 1.3  # purine vs pyrimidine fallback for non-standard bases
 .INTERNAL_ION_WEIGHT  <- 0.35 # internal ions are minor vs. terminal ions
 .MINOR_ION_WEIGHT     <- 0.7  # ion types with no specific literature boost
 
@@ -318,10 +328,27 @@ generate_internal_fragments <- function(met, dict = STANDARD_DICT,
 # including 5-methyl/5-hydroxymethyl variants) have at most 3. Reading this
 # off the formula -- rather than matching specific base codes -- keeps the
 # heuristic working for any base the user adds via the Custom Chemistry
-# table.
+# table. Used as the fallback in .base_loss_lability() below for any base
+# code not in the literature-derived standard-base table.
 .is_purine_base <- function(base_code, dict) {
   entry <- dict[[base_code]]
   !is.null(entry) && isTRUE(unname(entry$formula[["N"]]) >= 4)
+}
+
+# Base-loss lability for the five standard bases, from Gawlig et al. 2026
+# (RCM e70093, Figure 3B): CID-voltage onset of base-loss cleavage for
+# 15-mer DNA homopolymers, least to most stable A < T < U < G < C. These
+# multipliers are our own monotonic mapping onto the same scale
+# .PURINE_LOSS_BOOST used (a ~1.3 spread) -- the paper reports onset
+# voltage, not fragment-ion intensity, so treat the ORDERING as literature-
+# backed and the exact magnitudes as a coarse translation of it, same as
+# every other weight in this file.
+.BASE_LOSS_LABILITY <- c(A = 1.30, T = 1.15, U = 1.10, G = 1.00, C = 0.85)
+
+.base_loss_lability <- function(base_code, dict) {
+  known <- unname(.BASE_LOSS_LABILITY[base_code])
+  if (!is.na(known)) return(known)
+  if (.is_purine_base(base_code, dict)) .PURINE_LOSS_BOOST else 1.0
 }
 
 # PS (phosphorothioate) linkages replace one non-bridging phosphate oxygen
@@ -358,12 +385,18 @@ generate_internal_fragments <- function(met, dict = STANDARD_DICT,
 #' equivalent of the large annotated spectral libraries peptide tools
 #' train on. Encodes only fragmentation propensities already established
 #' in the literature: phosphorothioate cleavage sites are more labile
-#' than phosphodiester; y/b ions predominate for MOE/2'-OMe chemistry and
-#' a-B/w for DNA chemistry; purine base-loss is more labile than
-#' pyrimidine; internal (double-cleavage) ions are consistently minor
-#' relative to terminal ions. Treat the result as a coarse "expect this
-#' peak relatively taller" ranking, not a predicted abundance -- confirm
-#' every real assignment against acquired data.
+#' than phosphodiester (Gawlig et al. 2026, RCM e70093: PS-deoxyribose is
+#' the least gas-phase-stable of seven tested backbone/2'-chemistries);
+#' y/b ions predominate for MOE/2'-OMe chemistry and a-B/w for DNA
+#' chemistry; base-loss lability follows Gawlig et al. 2026's measured
+#' A < T < U < G < C ordering for the five standard bases (guanine is
+#' more stable than the pyrimidines T/U, so this is not a plain
+#' purine/pyrimidine split), falling back to purine/pyrimidine
+#' ring-nitrogen-count for any custom/modified base; internal
+#' (double-cleavage) ions are consistently minor relative to terminal
+#' ions. Treat the result as a coarse "expect this peak relatively
+#' taller" ranking, not a predicted abundance -- confirm every real
+#' assignment against acquired data.
 #'
 #' @param f A fragment object (see [generate_fragments()]).
 #' @param met A metabolite object (see [generate_metabolites()]).
@@ -389,8 +422,8 @@ fragment_intensity_weight <- function(f, met, dict = STANDARD_DICT) {
 
   if (.is_ps_linkage(met$linkages[site], dict)) w <- w * .PS_LINKAGE_BOOST
 
-  if (!is.na(f$base_loss) && .is_purine_base(f$base_loss, dict)) {
-    w <- w * .PURINE_LOSS_BOOST
+  if (!is.na(f$base_loss)) {
+    w <- w * .base_loss_lability(f$base_loss, dict)
   }
 
   w
