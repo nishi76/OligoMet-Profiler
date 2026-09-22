@@ -131,5 +131,46 @@ chk("openai->canonical: tool_use block present with parsed input", {
   identical(tb$name, "get_metabolite_mass") && identical(tb$input$met_id, "M01")
 })
 
+cat("\n=== 7. .cfg_quote() round-trips through curl's -K config-value escaping ===\n")
+# Mirrors curl's OWN documented -K config-value unescaping rules (only
+# \\, \", \t, \n, \r, \v are recognized escapes; a backslash before any
+# other character is dropped, keeping the character) -- confirmed
+# against a real curl binary while diagnosing a real user-reported crash:
+# a Windows tempfile() path (backslash-separated) reached curl's -K
+# config unescaped, and curl silently dropped every backslash, turning
+# "C:\Users\wasenv\file.json" into "C:Userswasenv file.json" and failing
+# to open it. .cfg_quote() must escape every backslash so this unescape
+# step recovers the ORIGINAL string, not a mangled one.
+.curl_cfg_unescape <- function(quoted) {
+  inner <- sub('^"(.*)"$', "\\1", quoted)
+  chars <- strsplit(inner, "", fixed = TRUE)[[1]]
+  out <- character(0)
+  i <- 1
+  while (i <= length(chars)) {
+    if (identical(chars[i], "\\") && i < length(chars)) {
+      nxt <- chars[i + 1]
+      out <- c(out, switch(nxt, `\\` = "\\", `"` = "\"", t = "\t",
+                            n = "\n", r = "\r", v = "\v", nxt))
+      i <- i + 2
+    } else {
+      out <- c(out, chars[i])
+      i <- i + 1
+    }
+  }
+  paste(out, collapse = "")
+}
+windows_path <- "C:\\Users\\wasenv\\AppData\\Local\\Temp\\RtmpXXX\\file.json"
+chk("Windows backslash path round-trips through cfg_quote -> curl-unescape",
+    identical(.curl_cfg_unescape(.cfg_quote(windows_path)), windows_path))
+quoted_value <- 'has "quotes" inside'
+chk("double-quote value round-trips",
+    identical(.curl_cfg_unescape(.cfg_quote(quoted_value)), quoted_value))
+mixed <- 'C:\\Program Files\\has "quotes"\\end'
+chk("mixed backslash + quote value round-trips",
+    identical(.curl_cfg_unescape(.cfg_quote(mixed)), mixed))
+unix_path <- "/tmp/Rtmp1234/file.json"
+chk("a plain Unix path (no special chars) is unaffected",
+    identical(.curl_cfg_unescape(.cfg_quote(unix_path)), unix_path))
+
 if (fail > 0) stop(fail, " agent core check(s) failed")
 cat("\n==== All agent core tests passed ====\n")
