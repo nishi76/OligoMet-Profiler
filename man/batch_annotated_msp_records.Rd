@@ -15,21 +15,21 @@ batch_annotated_msp_records(
 )
 }
 \arguments{
-\item{mets}{A list of metabolite objects (see [generate_metabolites()]).}
+\item{mets}{A list of metabolite objects (see \code{\link[=generate_metabolites]{generate_metabolites()}}).}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 
-\item{ms2_confirmations}{Output of [confirm_ms2_batch()]/
-[annotate_metabolites_batch()].}
+\item{ms2_confirmations}{Output of \code{\link[=confirm_ms2_batch]{confirm_ms2_batch()}}/
+\code{\link[=annotate_metabolites_batch]{annotate_metabolites_batch()}}.}
 
-\item{ms2_spectra}{The `"spectra"` attribute from the same call.}
+\item{ms2_spectra}{The \code{"spectra"} attribute from the same call.}
 
 \item{tol_ppm, z_range, h_offset}{Fragment matching parameters -- see
-[confirm_metabolite()]/[match_ms1()].}
+\code{\link[=confirm_metabolite]{confirm_metabolite()}}/\code{\link[=match_ms1]{match_ms1()}}.}
 }
 \value{
-A list of spectrum records (see `.spectrum_record()`/
-  [write_msp()]), one per confirmed hit.
+A list of spectrum records (see \code{.spectrum_record()}/
+\code{\link[=write_msp]{write_msp()}}), one per confirmed hit.
 }
 \description{
 Exports the ACQUIRED spectrum (real instrument data) for every
@@ -41,5 +41,5 @@ confirmation already computed for that (sample, metabolite, charge,
 adduct) rather than the nearest library candidate.
 }
 \seealso{
-[batch_mirror_plots_pdf()], [write_msp()]
+\code{\link[=batch_mirror_plots_pdf]{batch_mirror_plots_pdf()}}, \code{\link[=write_msp]{write_msp()}}
 }

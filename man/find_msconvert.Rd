@@ -7,15 +7,15 @@
 find_msconvert()
 }
 \value{
-The path to `msconvert`, or `NA` if it isn't found anywhere
-  checked (install from proteowizard.org).
+The path to \code{msconvert}, or \code{NA} if it isn't found anywhere
+checked (install from proteowizard.org).
 }
 \description{
-Checks `PATH` first, then a few common Windows/macOS/Linux install
-locations. Used by [convert_vendor_raw()]/[resolve_ms_input_file()] to
-decide whether vendor raw files (Thermo `.raw`, Sciex `.wiff`,
-Bruker `.baf`/`.yep`) can be converted automatically.
+Checks \code{PATH} first, then a few common Windows/macOS/Linux install
+locations. Used by \code{\link[=convert_vendor_raw]{convert_vendor_raw()}}/\code{\link[=resolve_ms_input_file]{resolve_ms_input_file()}} to
+decide whether vendor raw files (Thermo \code{.raw}, Sciex \code{.wiff},
+Bruker \code{.baf}/\code{.yep}) can be converted automatically.
 }
 \seealso{
-[convert_vendor_raw()]
+\code{\link[=convert_vendor_raw]{convert_vendor_raw()}}
 }

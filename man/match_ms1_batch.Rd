@@ -18,28 +18,28 @@ match_ms1_batch(
 )
 }
 \arguments{
-\item{mets}{A list of metabolite objects (see [generate_metabolites()]).}
+\item{mets}{A list of metabolite objects (see \code{\link[=generate_metabolites]{generate_metabolites()}}).}
 
 \item{features}{A multi-sample feature table (see
-[read_batch_features()]) with `sample`, `mz`, `rt`, `max_intensity`,
-`n_scans`, and optionally `area` columns.}
+\code{\link[=read_batch_features]{read_batch_features()}}) with \code{sample}, \code{mz}, \code{rt}, \code{max_intensity},
+\code{n_scans}, and optionally \code{area} columns.}
 
-\item{dict, ppm_tol, z_range, adducts, max_oxid, h_offset, n_iso, use_envipat}{Passed straight through to [match_ms1()] for each sample.}
+\item{dict, ppm_tol, z_range, adducts, max_oxid, h_offset, n_iso, use_envipat}{Passed straight through to \code{\link[=match_ms1]{match_ms1()}} for each sample.}
 }
 \value{
 A data.frame, one row per (sample, metabolite, oxidation,
-  charge, adduct) match within tolerance, with the same columns
-  [match_ms1()] produces plus `sample`. Empty data.frame if `features`
-  is empty or nothing matches.
+charge, adduct) match within tolerance, with the same columns
+\code{\link[=match_ms1]{match_ms1()}} produces plus \code{sample}. Empty data.frame if \code{features}
+is empty or nothing matches.
 }
 \description{
-Thin per-sample loop over [match_ms1()]: splits a multi-sample feature
-table by `sample`, runs the same single-sample matching logic on each
+Thin per-sample loop over \code{\link[=match_ms1]{match_ms1()}}: splits a multi-sample feature
+table by \code{sample}, runs the same single-sample matching logic on each
 (theoretical metabolite x oxidation x charge x adduct enumeration
 against that sample's features), and stacks the results back together
-with a `sample` column. No new matching math of its own.
+with a \code{sample} column. No new matching math of its own.
 }
 \seealso{
-[match_ms1()], [annotate_metabolites_batch()],
-  [unmatched_features_batch()]
+\code{\link[=match_ms1]{match_ms1()}}, \code{\link[=annotate_metabolites_batch]{annotate_metabolites_batch()}},
+\code{\link[=unmatched_features_batch]{unmatched_features_batch()}}
 }

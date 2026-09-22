@@ -7,17 +7,17 @@
 validate_reference(dict = STANDARD_DICT, verbose = TRUE)
 }
 \arguments{
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 
-\item{verbose}{Whether to `cat()` a human-readable report as it runs.}
+\item{verbose}{Whether to \code{cat()} a human-readable report as it runs.}
 }
 \value{
 Invisibly, a list: the primary anchor's own fields
-  (`name`, `formula`, `formula_vec`, `mass`, `avg_mass`, `ppm`,
-  `parsed`) at the top level for callers expecting a single result,
-  plus `ok` (`TRUE` only if BOTH anchors reproduce their published
-  formula within 1 ppm) and `all` (both anchors' full results, named
-  by drug).
+(\code{name}, \code{formula}, \code{formula_vec}, \code{mass}, \code{avg_mass}, \code{ppm},
+\code{parsed}) at the top level for callers expecting a single result,
+plus \code{ok} (\code{TRUE} only if BOTH anchors reproduce their published
+formula within 1 ppm) and \code{all} (both anchors' full results, named
+by drug).
 }
 \description{
 Re-derives nusinersen's and inotersen's molecular formulas from their
@@ -27,6 +27,6 @@ formula engine itself -- run it after editing the dictionary -- not a
 statement about whatever sequence you're actually analyzing.
 }
 \seealso{
-[build_dictionary()], [parse_triplet()],
-  [assemble_oligo_formula()]
+\code{\link[=build_dictionary]{build_dictionary()}}, \code{\link[=parse_triplet]{parse_triplet()}},
+\code{\link[=assemble_oligo_formula]{assemble_oligo_formula()}}
 }

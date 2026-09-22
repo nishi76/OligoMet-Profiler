@@ -13,23 +13,23 @@ compare_time_series(
 }
 \arguments{
 \item{abundance_long}{Long-format abundance data.frame from
-[abundance_long()], with a `timepoint` (or `time_var`) column.}
+\code{\link[=abundance_long]{abundance_long()}}, with a \code{timepoint} (or \code{time_var}) column.}
 
 \item{time_var}{Name of the timepoint column; coerced to numeric via
-`as.numeric()` (non-numeric/`NA` values are dropped).}
+\code{as.numeric()} (non-numeric/\code{NA} values are dropped).}
 
 \item{min_n}{Minimum total observations, across at least 2 distinct
 timepoints, required to fit the regression for a metabolite. Below
-that, the metabolite gets `note = "insufficient data"` and `NA`
+that, the metabolite gets \code{note = "insufficient data"} and \code{NA}
 statistics instead of being dropped.}
 
-\item{p_adjust_method}{Method passed to [stats::p.adjust()] for the
-across-metabolite correction (`"BH"` by default).}
+\item{p_adjust_method}{Method passed to \code{\link[stats:p.adjust]{stats::p.adjust()}} for the
+across-metabolite correction (\code{"BH"} by default).}
 }
 \value{
-A data.frame with one row per metabolite: `met_id`, `met_name`,
-  `slope`, `slope_se`, `p_value`, `p_adj` (adjusted per
-  `p_adjust_method`), `r_squared`, `n_timepoints`, `n_total`, `note`.
+A data.frame with one row per metabolite: \code{met_id}, \code{met_name},
+\code{slope}, \code{slope_se}, \code{p_value}, \code{p_adj} (adjusted per
+\code{p_adjust_method}), \code{r_squared}, \code{n_timepoints}, \code{n_total}, \code{note}.
 }
 \description{
 Per metabolite, an independent-samples linear regression of abundance
@@ -41,5 +41,5 @@ simplification, since mixed-effects modeling (nlme/lme4) isn't
 otherwise a dependency of this package.
 }
 \seealso{
-[plot_trend()] to visualize this result for one metabolite.
+\code{\link[=plot_trend]{plot_trend()}} to visualize this result for one metabolite.
 }

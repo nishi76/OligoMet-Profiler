@@ -13,27 +13,27 @@ compare_multi_groups(
 }
 \arguments{
 \item{abundance_long}{Long-format abundance data.frame from
-[abundance_long()], with a `group` column.}
+\code{\link[=abundance_long]{abundance_long()}}, with a \code{group} column.}
 
-\item{groups}{Which `group` values to include, and in what order for
+\item{groups}{Which \code{group} values to include, and in what order for
 the ANOVA factor levels. Defaults to every distinct value in
-`abundance_long$group`.}
+\code{abundance_long$group}.}
 
 \item{min_n}{Minimum replicates required in EVERY group to run the
 test for a metabolite (clamped to at least 2). Below that, the
-metabolite gets `note = "insufficient replicates"` and `NA`
+metabolite gets \code{note = "insufficient replicates"} and \code{NA}
 statistics instead of being dropped.}
 
-\item{p_adjust_method}{Method passed to [stats::p.adjust()] for the
-across-metabolite correction on the omnibus p-values (`"BH"` by
-default). The Tukey HSD post-hoc `p_adj` is unaffected -- that's
-already family-wise adjusted by [stats::TukeyHSD()] itself.}
+\item{p_adjust_method}{Method passed to \code{\link[stats:p.adjust]{stats::p.adjust()}} for the
+across-metabolite correction on the omnibus p-values (\code{"BH"} by
+default). The Tukey HSD post-hoc \code{p_adj} is unaffected -- that's
+already family-wise adjusted by \code{\link[stats:TukeyHSD]{stats::TukeyHSD()}} itself.}
 }
 \value{
-`list(omnibus, posthoc)`: `omnibus` has one row per metabolite
-  (`met_id`, `met_name`, `f_stat`, `p_value`, `p_adj`, `note`);
-  `posthoc` has one row per (metabolite, pairwise contrast) with the
-  Tukey HSD `diff`/`lwr`/`upr`/`p_adj`.
+\code{list(omnibus, posthoc)}: \code{omnibus} has one row per metabolite
+(\code{met_id}, \code{met_name}, \code{f_stat}, \code{p_value}, \code{p_adj}, \code{note});
+\code{posthoc} has one row per (metabolite, pairwise contrast) with the
+Tukey HSD \code{diff}/\code{lwr}/\code{upr}/\code{p_adj}.
 }
 \description{
 One-way ANOVA per metabolite (omnibus test across all groups), with

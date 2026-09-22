@@ -11,17 +11,17 @@ charge_envelope(mono_mass, z_range = 3:12, h_offset = 0)
 
 \item{z_range}{Charge states to compute.}
 
-\item{h_offset}{`0` for the standard `[M-zH]^z-` convention
-(matches the eluforsen/FMVS papers); non-zero (e.g. `3.0046`) only
+\item{h_offset}{\code{0} for the standard \verb{[M-zH]^z-} convention
+(matches the eluforsen/FMVS papers); non-zero (e.g. \code{3.0046}) only
 to reproduce a legacy workbook's own neutral-mass convention.}
 }
 \value{
-A data.frame(`z`, `mz`): the monoisotopic peak's m/z at each
-  charge state.
+A data.frame(\code{z}, \code{mz}): the monoisotopic peak's m/z at each
+charge state.
 }
 \description{
-`[M - zH]^z-` convention: `m/z = (M + h_offset - z*proton) / z`.
+\verb{[M - zH]^z-} convention: \code{m/z = (M + h_offset - z*proton) / z}.
 }
 \seealso{
-[isotope_mz_cluster()], [match_ms1()]
+\code{\link[=isotope_mz_cluster]{isotope_mz_cluster()}}, \code{\link[=match_ms1]{match_ms1()}}
 }

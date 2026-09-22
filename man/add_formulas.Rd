@@ -10,7 +10,7 @@ add_formulas(a, b)
 \item{a, b}{Formula vectors (compact or full).}
 }
 \value{
-`a + b` as a full element vector.
+\code{a + b} as a full element vector.
 }
 \description{
 Add two molecular formulas

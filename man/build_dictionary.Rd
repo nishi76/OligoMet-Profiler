@@ -8,27 +8,27 @@ build_dictionary(overrides = list())
 }
 \arguments{
 \item{overrides}{A named list of custom entries. Each value can be:
-a formula string (`"C7H12O4"`), a compact named vector
-(`c(C=7,H=12,O=4)`), or a list with `formula` (string or vector)
-plus optional `name`, `kind` (`"base"`/`"sugar"`/`"linkage"`/
-`"conjugate"`; defaults to `"custom"` for a brand-new code, or the
-existing entry's kind when overriding one), `attach`
-(`"add"`/`"replace_H"`/`"replace_OH"`, conjugates only), and
-`verify` (flag it as a best-estimate formula).}
+a formula string (\code{"C7H12O4"}), a compact named vector
+(\code{c(C=7,H=12,O=4)}), or a list with \code{formula} (string or vector)
+plus optional \code{name}, \code{kind} (\code{"base"}/\code{"sugar"}/\code{"linkage"}/
+\code{"conjugate"}; defaults to \code{"custom"} for a brand-new code, or the
+existing entry's kind when overriding one), \code{attach}
+(\code{"add"}/\code{"replace_H"}/\code{"replace_OH"}, conjugates only), and
+\code{verify} (flag it as a best-estimate formula).}
 }
 \value{
 A named list, one entry per code: each value is
-  `list(formula, name, verify, kind, attach)`.
+\code{list(formula, name, verify, kind, attach)}.
 }
 \description{
 Combines the built-in base/sugar/linkage/conjugate tables
-(`BASE_FORMULAS`, `SUGAR_FORMULAS`, `LINKAGE_FORMULAS`,
-`CONJUGATE_FORMULAS`) into one lookup list, optionally extended or
-overridden with project-specific chemistry. [STANDARD_DICT] is this
+(\code{BASE_FORMULAS}, \code{SUGAR_FORMULAS}, \code{LINKAGE_FORMULAS},
+\code{CONJUGATE_FORMULAS}) into one lookup list, optionally extended or
+overridden with project-specific chemistry. \link{STANDARD_DICT} is this
 function's result with no overrides -- the default every module in
 this package falls back to.
 }
 \seealso{
-[STANDARD_DICT], [is_valid_formula_string()],
-  [assemble_oligo_formula()]
+\link{STANDARD_DICT}, \code{\link[=is_valid_formula_string]{is_valid_formula_string()}},
+\code{\link[=assemble_oligo_formula]{assemble_oligo_formula()}}
 }

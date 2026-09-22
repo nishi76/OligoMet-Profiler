@@ -15,53 +15,53 @@ run_pca(
 )
 }
 \arguments{
-\item{batch_matches}{The `ms1_matches` data.frame from
-[annotate_metabolites_batch()]/[match_ms1_batch()].}
+\item{batch_matches}{The \code{ms1_matches} data.frame from
+\code{\link[=annotate_metabolites_batch]{annotate_metabolites_batch()}}/\code{\link[=match_ms1_batch]{match_ms1_batch()}}.}
 
-\item{sample_meta}{Optional data.frame with `sample` plus `sample_type`
-(to exclude standards/QC/blanks) and/or `group`/`timepoint` (joined
-onto `scores` for coloring a plot). `NULL` keeps every sample.}
+\item{sample_meta}{Optional data.frame with \code{sample} plus \code{sample_type}
+(to exclude standards/QC/blanks) and/or \code{group}/\code{timepoint} (joined
+onto \code{scores} for coloring a plot). \code{NULL} keeps every sample.}
 
-\item{met_ids}{Optional subset of metabolite IDs to include; `NULL`
-uses every metabolite present in `batch_matches`.}
+\item{met_ids}{Optional subset of metabolite IDs to include; \code{NULL}
+uses every metabolite present in \code{batch_matches}.}
 
-\item{signal_col}{Which column to use as signal; `NULL` auto-detects
-(`"area"` if present and not all-`NA`, else `"intensity"`).}
+\item{signal_col}{Which column to use as signal; \code{NULL} auto-detects
+(\code{"area"} if present and not all-\code{NA}, else \code{"intensity"}).}
 
 \item{log_transform}{Log2-transform (with a +1 pseudo-count) before
-fitting -- MS intensity/area is heavy right-skewed, so this is `TRUE`
+fitting -- MS intensity/area is heavy right-skewed, so this is \code{TRUE}
 by default.}
 
 \item{scale}{Unit-variance-scale each metabolite before fitting
-(`stats::prcomp(scale. = )`) -- `TRUE` by default, the usual choice
+(\code{stats::prcomp(scale. = )}) -- \code{TRUE} by default, the usual choice
 when variables (metabolites here) differ in scale.}
 
 \item{min_samples}{Minimum study samples (after excluding calibration/
 QC/blanks) required to run PCA at all. Below this, an empty result
-with a `note` explaining why is returned instead of erroring.}
+with a \code{note} explaining why is returned instead of erroring.}
 }
 \value{
-A list: `scores` (`sample`, `PC1`, `PC2`, ..., plus `group`/
-  `timepoint` if `sample_meta` supplied them), `loadings` (`met_id`,
-  `met_name`, `PC1`, `PC2`, ...), `var_explained` (named numeric
-  vector, proportion of variance per PC), `dropped_zero_variance`
-  (metabolite IDs excluded for having no variance across the kept
-  samples), and `note` (empty string on success, else why the result
-  is empty).
+A list: \code{scores} (\code{sample}, \code{PC1}, \code{PC2}, ..., plus \code{group}/
+\code{timepoint} if \code{sample_meta} supplied them), \code{loadings} (\code{met_id},
+\code{met_name}, \code{PC1}, \code{PC2}, ...), \code{var_explained} (named numeric
+vector, proportion of variance per PC), \code{dropped_zero_variance}
+(metabolite IDs excluded for having no variance across the kept
+samples), and \code{note} (empty string on success, else why the result
+is empty).
 }
 \description{
 Runs PCA on the samples x metabolites abundance matrix (samples as
 observations, metabolites as variables) -- do study samples separate by
 group/timepoint in metabolite-profile space? Calibration standards,
 quality-control, and reagent/matrix-blank samples are excluded via
-`sample_meta$sample_type` (see [degradation_summary()] for the same
+\code{sample_meta$sample_type} (see \code{\link[=degradation_summary]{degradation_summary()}} for the same
 rule); a missing (metabolite, sample) match is treated as zero signal
 (a real absence), not dropped. Metabolites with zero variance across
 the kept samples (after any log transform) are dropped before fitting,
-since [stats::prcomp()] with `scale. = TRUE` divides by standard
+since \code{\link[stats:prcomp]{stats::prcomp()}} with \code{scale. = TRUE} divides by standard
 deviation.
 }
 \seealso{
-[plot_pca_scores()], [run_hclust()] for the same matrix's
-  dendrogram.
+\code{\link[=plot_pca_scores]{plot_pca_scores()}}, \code{\link[=run_hclust]{run_hclust()}} for the same matrix's
+dendrogram.
 }

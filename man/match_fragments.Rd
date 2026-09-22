@@ -14,10 +14,10 @@ match_fragments(
 )
 }
 \arguments{
-\item{frags}{A list of fragment objects (see [generate_fragments()]/
-[generate_internal_fragments()]).}
+\item{frags}{A list of fragment objects (see \code{\link[=generate_fragments]{generate_fragments()}}/
+\code{\link[=generate_internal_fragments]{generate_internal_fragments()}}).}
 
-\item{ms2_peaks}{A data.frame with `mz`, `intensity` columns.}
+\item{ms2_peaks}{A data.frame with \code{mz}, \code{intensity} columns.}
 
 \item{tol_ppm}{Mass tolerance for a match.}
 
@@ -26,24 +26,24 @@ match_fragments(
 \item{h_offset}{Currently unused by this function (reserved for
 signature compatibility with the rest of the matching suite).}
 
-\item{adducts}{Adducts to try (`"H"` is unmodified).}
+\item{adducts}{Adducts to try (\code{"H"} is unmodified).}
 }
 \value{
 A data.frame, one row per matched (fragment, charge, adduct):
-  `met_id`, `ion_type`, `direction`, `cleavage_site`, `frag_length`,
-  `z`, `adduct`, `theo_mz`, `obs_mz` (copied verbatim from
-  `ms2_peaks$mz`, never rounded -- [mirror_spectrum_data()] relies on
-  exact-value lookup against it), `ppm_error`, `intensity`, `formula`,
-  `base_loss`. Empty data.frame if nothing matches.
+\code{met_id}, \code{ion_type}, \code{direction}, \code{cleavage_site}, \code{frag_length},
+\code{z}, \code{adduct}, \code{theo_mz}, \code{obs_mz} (copied verbatim from
+\code{ms2_peaks$mz}, never rounded -- \code{\link[=mirror_spectrum_data]{mirror_spectrum_data()}} relies on
+exact-value lookup against it), \code{ppm_error}, \code{intensity}, \code{formula},
+\code{base_loss}. Empty data.frame if nothing matches.
 }
 \description{
 For each theoretical fragment, charge state, and adduct, finds the
-nearest observed peak within `tol_ppm`. When two different fragments
+nearest observed peak within \code{tol_ppm}. When two different fragments
 (or the same fragment at two charge states) both claim the same
 observed peak, keeps only the best (lowest ppm error) claim -- without
 this, dense spectral regions would inflate
-[confirmation_score()]'s match count and coverage.
+\code{\link[=confirmation_score]{confirmation_score()}}'s match count and coverage.
 }
 \seealso{
-[confirmation_score()], [confirm_metabolite()]
+\code{\link[=confirmation_score]{confirmation_score()}}, \code{\link[=confirm_metabolite]{confirm_metabolite()}}
 }

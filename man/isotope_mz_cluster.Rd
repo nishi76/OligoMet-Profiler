@@ -7,28 +7,28 @@
 isotope_mz_cluster(formula, z, n_top = 8, h_offset = 0, use_envipat = TRUE)
 }
 \arguments{
-\item{formula}{A formula string or vector (see [parse_formula()]).}
+\item{formula}{A formula string or vector (see \code{\link[=parse_formula]{parse_formula()}}).}
 
 \item{z}{Charge state.}
 
 \item{n_top}{Number of isotope peaks to include (monoisotopic +
-`n_top - 1` most abundant others).}
+\code{n_top - 1} most abundant others).}
 
-\item{h_offset}{Charge-envelope offset -- see [charge_envelope()].}
+\item{h_offset}{Charge-envelope offset -- see \code{\link[=charge_envelope]{charge_envelope()}}.}
 
 \item{use_envipat}{Whether to use enviPat for the underlying pattern
--- see [isotope_pattern()].}
+-- see \code{\link[=isotope_pattern]{isotope_pattern()}}.}
 }
 \value{
-A data.frame(`iso`, `mz`, `abundance`, `mass`), ordered by
-  mass (`iso = 0` is monoisotopic, increasing thereafter). `NULL` if
-  no isotope pattern could be computed.
+A data.frame(\code{iso}, \code{mz}, \code{abundance}, \code{mass}), ordered by
+mass (\code{iso = 0} is monoisotopic, increasing thereafter). \code{NULL} if
+no isotope pattern could be computed.
 }
 \description{
 Selects the monoisotopic peak (always kept, even when it is not the
-most abundant) plus the top `n_top - 1` remaining peaks by abundance,
-then converts each to m/z at charge `z`.
+most abundant) plus the top \code{n_top - 1} remaining peaks by abundance,
+then converts each to m/z at charge \code{z}.
 }
 \seealso{
-[isotope_pattern()], [match_ms1()] (its `iso_fit` score)
+\code{\link[=isotope_pattern]{isotope_pattern()}}, \code{\link[=match_ms1]{match_ms1()}} (its \code{iso_fit} score)
 }

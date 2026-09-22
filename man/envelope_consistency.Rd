@@ -7,30 +7,30 @@
 envelope_consistency(matches, h_offset = 0)
 }
 \arguments{
-\item{matches}{Output of [match_ms1()]/[match_ms1_batch()] (must have
-`met_id`, `k_oxid`, `adduct`, `z`, `obs_mz`).}
+\item{matches}{Output of \code{\link[=match_ms1]{match_ms1()}}/\code{\link[=match_ms1_batch]{match_ms1_batch()}} (must have
+\code{met_id}, \code{k_oxid}, \code{adduct}, \code{z}, \code{obs_mz}).}
 
-\item{h_offset}{Must match whatever `h_offset` [match_ms1()] used to
+\item{h_offset}{Must match whatever \code{h_offset} \code{\link[=match_ms1]{match_ms1()}} used to
 generate the theoretical m/z these matches were scored against --
-see [match_ms1()]. A mismatch here silently corrupts the agreement
+see \code{\link[=match_ms1]{match_ms1()}}. A mismatch here silently corrupts the agreement
 this function measures, since each charge state's back-calculated
-mass would be off by a DIFFERENT amount (`z * h_offset`).}
+mass would be off by a DIFFERENT amount (\code{z * h_offset}).}
 }
 \value{
 A data.frame, one row per (metabolite, oxidation, adduct)
-  group: `group` (the grouping key), `n_z` (number of charge states
-  observed), `consistency` (0-1 scale, `NA` when `n_z < 2` since a
-  single charge state can't confirm consistency), `mass_cv_ppm`
-  (coefficient of variation of the back-calculated masses, in ppm),
-  `mean_mass`.
+group: \code{group} (the grouping key), \code{n_z} (number of charge states
+observed), \code{consistency} (0-1 scale, \code{NA} when \code{n_z < 2} since a
+single charge state can't confirm consistency), \code{mass_cv_ppm}
+(coefficient of variation of the back-calculated masses, in ppm),
+\code{mean_mass}.
 }
 \description{
-Groups [match_ms1()]'s output by (metabolite, oxidation, adduct) and
+Groups \code{\link[=match_ms1]{match_ms1()}}'s output by (metabolite, oxidation, adduct) and
 back-calculates the neutral mass implied by each matched charge
 state's observed m/z. A real multiply-charged species should
 back-calculate to the SAME neutral mass at every charge state it was
 observed at; this reports how tightly they agree.
 }
 \seealso{
-[match_ms1()]
+\code{\link[=match_ms1]{match_ms1()}}
 }

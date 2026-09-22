@@ -14,44 +14,44 @@ quantify_relative(
 )
 }
 \arguments{
-\item{batch_matches}{The `ms1_matches` data.frame (see
-[match_ms1_batch()]/[annotate_metabolites_batch()]).}
+\item{batch_matches}{The \code{ms1_matches} data.frame (see
+\code{\link[=match_ms1_batch]{match_ms1_batch()}}/\code{\link[=annotate_metabolites_batch]{annotate_metabolites_batch()}}).}
 
 \item{met_ids}{Metabolite IDs to relative-quantify.}
 
-\item{sample_meta}{A data.frame with `sample` plus `group` and/or
-`timepoint` (and optionally `sample_type`, used to exclude
+\item{sample_meta}{A data.frame with \code{sample} plus \code{group} and/or
+\code{timepoint} (and optionally \code{sample_type}, used to exclude
 standards/QC/blanks).}
 
-\item{mode}{`"time_series"`: baseline is the mean signal at the
+\item{mode}{\code{"time_series"}: baseline is the mean signal at the
 earliest timepoint (pre-dose/time 0), computed per group/arm if a
-`group` column is also present, so e.g. a "treated" arm normalizes
+\code{group} column is also present, so e.g. a "treated" arm normalizes
 to ITS OWN time-0 mean rather than pooling with control's.
-`"group"`: baseline is the mean signal in `control_group` -- every
-sample's `relative_signal` is its own signal over that one number.}
+\code{"group"}: baseline is the mean signal in \code{control_group} -- every
+sample's \code{relative_signal} is its own signal over that one number.}
 
-\item{control_group}{Required when `mode = "group"`: the `group` value
+\item{control_group}{Required when \code{mode = "group"}: the \code{group} value
 to treat as baseline.}
 
-\item{signal_col}{Which column to use as signal; `NULL` auto-detects
-(`"area"` if present and not all-`NA`, else `"intensity"`).}
+\item{signal_col}{Which column to use as signal; \code{NULL} auto-detects
+(\code{"area"} if present and not all-\code{NA}, else \code{"intensity"}).}
 }
 \value{
 A data.frame with one row per (metabolite, sample):
-  `met_id`, `met_name`, the `sample_meta` columns, `signal`,
-  `baseline_signal`, and `relative_signal` (`signal / baseline_signal`).
+\code{met_id}, \code{met_name}, the \code{sample_meta} columns, \code{signal},
+\code{baseline_signal}, and \code{relative_signal} (\code{signal / baseline_signal}).
 }
 \description{
 For metabolites NOT selected for absolute quantification: every
 sample's signal divided by a baseline. Baseline is a COHORT mean, not
-a paired per-subject baseline -- `sample_meta` has no subject/animal-ID
-column, consistent with how [compare_time_series()]/
-[compare_multi_groups()] already treat replicates as independent
+a paired per-subject baseline -- \code{sample_meta} has no subject/animal-ID
+column, consistent with how \code{\link[=compare_time_series]{compare_time_series()}}/
+\code{\link[=compare_multi_groups]{compare_multi_groups()}} already treat replicates as independent
 samples rather than repeated measures on the same individual.
 Calibration standards/QC/blanks are excluded up front (identified via
-`sample_type`), even if a group/timepoint value was left on them.
+\code{sample_type}), even if a group/timepoint value was left on them.
 }
 \seealso{
-[quantify_absolute()] for the calibration-curve half,
-  [quantify_metabolites()] to dispatch both in one call.
+\code{\link[=quantify_absolute]{quantify_absolute()}} for the calibration-curve half,
+\code{\link[=quantify_metabolites]{quantify_metabolites()}} to dispatch both in one call.
 }

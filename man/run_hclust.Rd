@@ -18,55 +18,55 @@ run_hclust(
 )
 }
 \arguments{
-\item{batch_matches}{The `ms1_matches` data.frame from
-[annotate_metabolites_batch()]/[match_ms1_batch()].}
+\item{batch_matches}{The \code{ms1_matches} data.frame from
+\code{\link[=annotate_metabolites_batch]{annotate_metabolites_batch()}}/\code{\link[=match_ms1_batch]{match_ms1_batch()}}.}
 
-\item{sample_meta}{Optional data.frame with `sample` plus `sample_type`
-(to exclude standards/QC/blanks) and/or `group`/`timepoint` (joined
-onto `scores` for coloring a plot). `NULL` keeps every sample.}
+\item{sample_meta}{Optional data.frame with \code{sample} plus \code{sample_type}
+(to exclude standards/QC/blanks) and/or \code{group}/\code{timepoint} (joined
+onto \code{scores} for coloring a plot). \code{NULL} keeps every sample.}
 
-\item{met_ids}{Optional subset of metabolite IDs to include; `NULL`
-uses every metabolite present in `batch_matches`.}
+\item{met_ids}{Optional subset of metabolite IDs to include; \code{NULL}
+uses every metabolite present in \code{batch_matches}.}
 
-\item{signal_col}{Which column to use as signal; `NULL` auto-detects
-(`"area"` if present and not all-`NA`, else `"intensity"`).}
+\item{signal_col}{Which column to use as signal; \code{NULL} auto-detects
+(\code{"area"} if present and not all-\code{NA}, else \code{"intensity"}).}
 
 \item{log_transform}{Log2-transform (with a +1 pseudo-count) before
-fitting -- MS intensity/area is heavy right-skewed, so this is `TRUE`
+fitting -- MS intensity/area is heavy right-skewed, so this is \code{TRUE}
 by default.}
 
 \item{scale}{Unit-variance-scale each metabolite before fitting
-(`stats::prcomp(scale. = )`) -- `TRUE` by default, the usual choice
+(\code{stats::prcomp(scale. = )}) -- \code{TRUE} by default, the usual choice
 when variables (metabolites here) differ in scale.}
 
-\item{dist_method}{Distance metric, passed to [stats::dist()].}
+\item{dist_method}{Distance metric, passed to \code{\link[stats:dist]{stats::dist()}}.}
 
-\item{clust_method}{Agglomeration method, passed to [stats::hclust()];
-`"ward.D2"` (the default) minimizes within-cluster variance, a
+\item{clust_method}{Agglomeration method, passed to \code{\link[stats:hclust]{stats::hclust()}};
+\code{"ward.D2"} (the default) minimizes within-cluster variance, a
 common default for this kind of profiling data.}
 
-\item{k}{Number of clusters to cut the tree into (`stats::cutree()`).
-`NULL` (the default) picks `min(4, floor(n_samples / 2))`, clamped to
+\item{k}{Number of clusters to cut the tree into (\code{stats::cutree()}).
+\code{NULL} (the default) picks \code{min(4, floor(n_samples / 2))}, clamped to
 at least 2.}
 
 \item{min_samples}{Minimum study samples (after excluding calibration/
 QC/blanks) required to run PCA at all. Below this, an empty result
-with a `note` explaining why is returned instead of erroring.}
+with a \code{note} explaining why is returned instead of erroring.}
 }
 \value{
-A list: `hclust` (the fitted `hclust` object, or `NULL` if
-  there wasn't enough data), `clusters` (`sample`, `cluster`, plus
-  `group`/`timepoint` if `sample_meta` supplied them -- for comparing
-  the cut against the known study design), `k` (clusters actually
-  used), `dropped_zero_variance`, and `note` (empty on success).
+A list: \code{hclust} (the fitted \code{hclust} object, or \code{NULL} if
+there wasn't enough data), \code{clusters} (\code{sample}, \code{cluster}, plus
+\code{group}/\code{timepoint} if \code{sample_meta} supplied them -- for comparing
+the cut against the known study design), \code{k} (clusters actually
+used), \code{dropped_zero_variance}, and \code{note} (empty on success).
 }
 \description{
 Clusters samples on the same (optionally log-transformed, unit-variance
-scaled) samples x metabolites matrix [run_pca()] uses -- distance
+scaled) samples x metabolites matrix \code{\link[=run_pca]{run_pca()}} uses -- distance
 between samples' metabolite profiles, then agglomerative clustering.
 Calibration standards/QC/blanks are excluded the same way (see
-[run_pca()]/[degradation_summary()]).
+\code{\link[=run_pca]{run_pca()}}/\code{\link[=degradation_summary]{degradation_summary()}}).
 }
 \seealso{
-[plot_dendrogram()], [run_pca()] for the same matrix's PCA.
+\code{\link[=plot_dendrogram]{plot_dendrogram()}}, \code{\link[=run_pca]{run_pca()}} for the same matrix's PCA.
 }

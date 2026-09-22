@@ -14,13 +14,13 @@ prm_inclusion_list(
 )
 }
 \arguments{
-\item{mets}{A list of metabolite objects (see [generate_metabolites()]).}
+\item{mets}{A list of metabolite objects (see \code{\link[=generate_metabolites]{generate_metabolites()}}).}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 
 \item{z_range}{Charge states to include.}
 
-\item{h_offset}{Charge-envelope offset -- see [charge_envelope()].}
+\item{h_offset}{Charge-envelope offset -- see \code{\link[=charge_envelope]{charge_envelope()}}.}
 
 \item{max_oxid}{Maximum PS -> PO oxidation events to model per
 metabolite (capped at each metabolite's own phosphorothioate count).}
@@ -30,8 +30,8 @@ metabolite (capped at each metabolite's own phosphorothioate count).}
 }
 \value{
 A data.frame, one row per (metabolite, oxidation level,
-  charge state) within the Q1 range: `met_id`, `met_name`, `kind`,
-  `n`, `k_oxid`, `z`, `precursor_mz`, `isolation_ppm`.
+charge state) within the Q1 range: \code{met_id}, \code{met_name}, \code{kind},
+\code{n}, \code{k_oxid}, \code{z}, \code{precursor_mz}, \code{isolation_ppm}.
 }
 \description{
 Enumerates theoretical precursor m/z (per metabolite, PS-oxidation
@@ -41,5 +41,5 @@ first-class output of the library generator, not just a matching
 intermediate.
 }
 \seealso{
-[write_precursor_watchlist()]
+\code{\link[=write_precursor_watchlist]{write_precursor_watchlist()}}
 }

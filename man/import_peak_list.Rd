@@ -9,23 +9,23 @@ import_peak_list(file, type = c("ms1", "ms2"), sep = ",")
 \arguments{
 \item{file}{Path to the peak-list file.}
 
-\item{type}{`"ms1"` or `"ms2"`; `"ms2"` additionally ensures
-`precursor_mz`/`precursor_z` columns exist.}
+\item{type}{\code{"ms1"} or \code{"ms2"}; \code{"ms2"} additionally ensures
+\code{precursor_mz}/\code{precursor_z} columns exist.}
 
-\item{sep}{Field separator passed to `utils::read.table()`.}
+\item{sep}{Field separator passed to \code{utils::read.table()}.}
 }
 \value{
-A data.frame: `rt`, `mz`, `intensity` for `type = "ms1"`
-  (`rt` is `NA` if not present in the file); adds `precursor_mz`,
-  `precursor_z` for `type = "ms2"`.
+A data.frame: \code{rt}, \code{mz}, \code{intensity} for \code{type = "ms1"}
+(\code{rt} is \code{NA} if not present in the file); adds \code{precursor_mz},
+\code{precursor_z} for \code{type = "ms2"}.
 }
 \description{
 For a caller with a plain text/CSV export instead of raw mzML/mzXML
 data -- e.g. a peak-picked table from vendor software. Column names
 are normalized (lowercased, spaces/dots to underscores) and missing
-optional columns are filled with `NA`/`1` as appropriate, so the
-minimum required input is just an `mz` column.
+optional columns are filled with \code{NA}/\code{1} as appropriate, so the
+minimum required input is just an \code{mz} column.
 }
 \seealso{
-[extract_ms1_features()], [annotate_metabolites()]
+\code{\link[=extract_ms1_features]{extract_ms1_features()}}, \code{\link[=annotate_metabolites]{annotate_metabolites()}}
 }

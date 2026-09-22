@@ -7,17 +7,17 @@
 oxidation_variant(met, dict = STANDARD_DICT)
 }
 \arguments{
-\item{met}{A metabolite object (see [generate_metabolites()]).}
+\item{met}{A metabolite object (see \code{\link[=generate_metabolites]{generate_metabolites()}}).}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 }
 \value{
-A list: `mono_mass`, `formula_str`, `mass_shift` (the mass of
-  one oxygen atom).
+A list: \code{mono_mass}, \code{formula_str}, \code{mass_shift} (the mass of
+one oxygen atom).
 }
 \description{
 One additional oxygen (e.g. on a base or sugar).
 }
 \seealso{
-[depurination_variants()]
+\code{\link[=depurination_variants]{depurination_variants()}}
 }

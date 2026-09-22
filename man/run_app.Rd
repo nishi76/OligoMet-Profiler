@@ -7,18 +7,18 @@
 run_app(...)
 }
 \arguments{
-\item{...}{Passed straight through to `shiny::runApp()` (e.g.
-`launch.browser`, `port`, `host`).}
+\item{...}{Passed straight through to \code{shiny::runApp()} (e.g.
+\code{launch.browser}, \code{port}, \code{host}).}
 }
 \value{
-Does not return under normal use -- `shiny::runApp()` blocks
-  until the app is stopped.
+Does not return under normal use -- \code{shiny::runApp()} blocks
+until the app is stopped.
 }
 \description{
 Starts the bundled Shiny app for interactive sequence entry, library
 generation, MS matching, and batch processing. For headless/scripted
-use with no Shiny dependency at all, see `run_custom_oligo.R`
-(single sequence/file) or `run_batch_ms.R` (multi-file batch) in the
+use with no Shiny dependency at all, see \code{run_custom_oligo.R}
+(single sequence/file) or \code{run_batch_ms.R} (multi-file batch) in the
 package/repository root instead -- copy one, edit its CONFIG block,
-and `Rscript` it.
+and \code{Rscript} it.
 }

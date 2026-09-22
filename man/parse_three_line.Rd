@@ -15,32 +15,32 @@ parse_three_line(
 }
 \arguments{
 \item{bases, sugars, linkages}{Each either a single string (tokenized as
-above) or an already-split character vector. `linkages` of length
-`n` (matching `bases`) is also accepted -- the non-existent
+above) or an already-split character vector. \code{linkages} of length
+\code{n} (matching \code{bases}) is also accepted -- the non-existent
 trailing 3' "bond" is dropped, since sequence tables often carry a
 placeholder there.}
 
-\item{conj5, conj3}{Terminal conjugate codes, default `"none"`.}
+\item{conj5, conj3}{Terminal conjugate codes, default \code{"none"}.}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]), used to
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}), used to
 tell a genuine single-code-for-all-positions field apart from a
 separator-free multi-character code typed without separators.}
 }
 \value{
-A canonical `oligo_spec` list (see [parse_input()]) -- this
-  calls [parse_input()] itself, so the result is already validated.
+A canonical \code{oligo_spec} list (see \code{\link[=parse_input]{parse_input()}}) -- this
+calls \code{\link[=parse_input]{parse_input()}} itself, so the result is already validated.
 }
 \description{
 The layout a chemical analysis file or a BioPharma Finder sequence
-entry form gives you directly: one code per position for `bases` and
-`sugars`, one code per BOND for `linkages` (so `n-1` of them). A field
+entry form gives you directly: one code per position for \code{bases} and
+\code{sugars}, one code per BOND for \code{linkages} (so \code{n-1} of them). A field
 holding a single code is recycled to every position/bond -- e.g.
-`sugars = "e"` for uniform MOE, `linkages = "s"` for fully
+\code{sugars = "e"} for uniform MOE, \code{linkages = "s"} for fully
 phosphorothioate -- the common case for antisense drugs. Each field
-can be written as one character per code (`"TSASTTT..."`) when every
+can be written as one character per code (\code{"TSASTTT..."}) when every
 code is a single character, or separated by space/comma/dash/slash/
-pipe for multi-character codes (`"MOE-MOE-d-d"`).
+pipe for multi-character codes (\code{"MOE-MOE-d-d"}).
 }
 \seealso{
-[parse_input()], [format_three_line()]
+\code{\link[=parse_input]{parse_input()}}, \code{\link[=format_three_line]{format_three_line()}}
 }

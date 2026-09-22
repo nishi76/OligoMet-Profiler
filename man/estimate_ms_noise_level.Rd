@@ -7,12 +7,12 @@
 estimate_ms_noise_level(ms1_peaks)
 }
 \arguments{
-\item{ms1_peaks}{A data.frame with an `intensity` column (e.g.
-`read_ms_file(file)$ms1`).}
+\item{ms1_peaks}{A data.frame with an \code{intensity} column (e.g.
+\code{read_ms_file(file)$ms1}).}
 }
 \value{
 A single numeric noise level (the median of all positive,
-  non-`NA` intensities), or `NA_real_` if there are none.
+non-\code{NA} intensities), or \code{NA_real_} if there are none.
 }
 \description{
 Median of every observed MS1 peak intensity. Most individual
@@ -23,7 +23,7 @@ dedicated vendor software computes it, which needs per-region
 statistics this doesn't attempt.
 }
 \seealso{
-[extract_ms1_features()]'s `sn_threshold` argument, which
-  uses this to compute `noise_level * sn_threshold` as the effective
-  intensity floor.
+\code{\link[=extract_ms1_features]{extract_ms1_features()}}'s \code{sn_threshold} argument, which
+uses this to compute \code{noise_level * sn_threshold} as the effective
+intensity floor.
 }

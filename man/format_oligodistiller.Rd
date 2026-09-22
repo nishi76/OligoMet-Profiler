@@ -7,19 +7,19 @@
 format_oligodistiller(spec, sugar_map = .default_sugar_map)
 }
 \arguments{
-\item{spec}{An `oligo_spec` list (see [parse_input()]).}
+\item{spec}{An \code{oligo_spec} list (see \code{\link[=parse_input]{parse_input()}}).}
 
 \item{sugar_map}{Sugar-suffix map (dictionary code -> suffix is the
-inverse of this) -- see [parse_oligodistiller()]. A sugar code with
+inverse of this) -- see \code{\link[=parse_oligodistiller]{parse_oligodistiller()}}. A sugar code with
 no entry falls back to writing the raw dictionary code.}
 }
 \value{
 A single OligoDistiller-notation string, e.g.
-  `"OH-Am*-Af*-Cm-...-OH"`.
+\code{"OH-Am*-Af*-Cm-...-OH"}.
 }
 \description{
 Render an oligo_spec back to OligoDistiller notation
 }
 \seealso{
-[parse_oligodistiller()]
+\code{\link[=parse_oligodistiller]{parse_oligodistiller()}}
 }

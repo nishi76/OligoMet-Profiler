@@ -7,34 +7,34 @@
 isotope_pattern(formula, threshold = 1e-04, n_top = 15, use_envipat = TRUE)
 }
 \arguments{
-\item{formula}{A formula string or vector (see [parse_formula()]).}
+\item{formula}{A formula string or vector (see \code{\link[=parse_formula]{parse_formula()}}).}
 
 \item{threshold}{Minimum relative abundance to keep during
 enumeration/convolution (not the final per-peak cutoff -- only the
-top `n_top` peaks by abundance are kept regardless). The default
-(`1e-4`, 0.01% relative abundance) is well below any real MS noise
+top \code{n_top} peaks by abundance are kept regardless). The default
+(\code{1e-4}, 0.01\% relative abundance) is well below any real MS noise
 floor and rarely changes which peaks survive truncation, but keeps
 enviPat's enumeration cost from exploding on large, S/P-heavy oligo
 formulas.}
 
 \item{n_top}{Number of isotope peaks to keep, ranked by abundance.}
 
-\item{use_envipat}{Whether to try enviPat first (`FALSE` uses the
+\item{use_envipat}{Whether to try enviPat first (\code{FALSE} uses the
 built-in convolution only).}
 }
 \value{
-A data.frame(`mass`, `abundance`), sorted by mass, at most
-  `n_top` rows. `NULL` if neither path could compute a pattern (e.g.
-  enviPat unavailable and the built-in path also failed).
+A data.frame(\code{mass}, \code{abundance}), sorted by mass, at most
+\code{n_top} rows. \code{NULL} if neither path could compute a pattern (e.g.
+enviPat unavailable and the built-in path also failed).
 }
 \description{
-Uses enviPat if available and `use_envipat = TRUE`, else falls back to
+Uses enviPat if available and \code{use_envipat = TRUE}, else falls back to
 a built-in binary-exponentiation convolution. Both paths are
 memoized by (formula, threshold, n_top), since the pattern depends
 only on the formula, never on charge state or adduct -- without that,
 the same expensive convolution would otherwise be recomputed once per
-charge state per adduct (see [isotope_mz_cluster()]/[compute_envelope()]).
+charge state per adduct (see \code{\link[=isotope_mz_cluster]{isotope_mz_cluster()}}/\code{\link[=compute_envelope]{compute_envelope()}}).
 }
 \seealso{
-[isotope_mz_cluster()], [compute_envelope()]
+\code{\link[=isotope_mz_cluster]{isotope_mz_cluster()}}, \code{\link[=compute_envelope]{compute_envelope()}}
 }

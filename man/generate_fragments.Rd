@@ -14,37 +14,36 @@ generate_fragments(
 )
 }
 \arguments{
-\item{met}{A metabolite object (see [generate_metabolites()]).}
+\item{met}{A metabolite object (see \code{\link[=generate_metabolites]{generate_metabolites()}}).}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 
 \item{ion_types}{Which ion types to generate. The default
-(`c("aB", "w", "y", "b")`) covers what actually dominates negative-
+(\code{c("aB", "w", "y", "b")}) covers what actually dominates negative-
 ion CID spectra of oligonucleotides; pass
-`c("a","aB","b","bB","c","w","x","y")` (optionally adding `include_dz
-= TRUE` for d/z) for full McLuckey coverage.}
+\code{c("a","aB","b","bB","c","w","x","y")} (optionally adding \code{include_dz = TRUE} for d/z) for full McLuckey coverage.}
 
 \item{z_range}{Charge states for m/z calculation.}
 
 \item{h_offset}{Mass offset for non-standard envelope conventions --
-see [charge_envelope()].}
+see \code{\link[=charge_envelope]{charge_envelope()}}.}
 
 \item{include_dz}{Also include d/z ions (an approximate cleavage,
-`FALSE` by default).}
+\code{FALSE} by default).}
 }
 \value{
-A list of fragment objects (each with `met_id`, `ion_type`,
-  `direction`, `cleavage_site`, `frag_length`, `formula`,
-  `formula_vec`, `mono_mass`, `mz_table` (one row per charge state),
-  `base_loss`). Empty list for a metabolite shorter than 3 nt.
+A list of fragment objects (each with \code{met_id}, \code{ion_type},
+\code{direction}, \code{cleavage_site}, \code{frag_length}, \code{formula},
+\code{formula_vec}, \code{mono_mass}, \code{mz_table} (one row per charge state),
+\code{base_loss}). Empty list for a metabolite shorter than 3 nt.
 }
 \description{
 Generates a/a-B/b/b-B/c/d ions (5'-terminal) and w/x/y/z ions
 (3'-terminal) at every backbone cleavage site, in negative ESI mode
-(`[ion - zH]^z-`). Complementary pairs (a/w, b/x, c/y, d/z) sum to
+(\verb{[ion - zH]^z-}). Complementary pairs (a/w, b/x, c/y, d/z) sum to
 exactly the neutral precursor mass by construction.
 }
 \seealso{
-[generate_internal_fragments()], [match_fragments()],
-  [confirm_metabolite()]
+\code{\link[=generate_internal_fragments]{generate_internal_fragments()}}, \code{\link[=match_fragments]{match_fragments()}},
+\code{\link[=confirm_metabolite]{confirm_metabolite()}}
 }

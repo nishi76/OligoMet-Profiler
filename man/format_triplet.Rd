@@ -7,14 +7,14 @@
 format_triplet(spec)
 }
 \arguments{
-\item{spec}{An `oligo_spec` list (see [parse_input()]).}
+\item{spec}{An \code{oligo_spec} list (see \code{\link[=parse_input]{parse_input()}}).}
 }
 \value{
-A single triplet-notation string, e.g. `"Ge-uAn-sGn-..."`.
+A single triplet-notation string, e.g. \code{"Ge-uAn-sGn-..."}.
 }
 \description{
 Render an oligo_spec back to triplet notation
 }
 \seealso{
-[parse_input()] (`notation = "triplet"`), [format_spec()]
+\code{\link[=parse_input]{parse_input()}} (\code{notation = "triplet"}), \code{\link[=format_spec]{format_spec()}}
 }

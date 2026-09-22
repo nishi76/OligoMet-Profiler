@@ -8,27 +8,27 @@ parse_triplet(triplet, dict = STANDARD_DICT)
 }
 \arguments{
 \item{triplet}{The triplet-notation string, e.g.
-`"Te-sSe-sAe-sSe-...-sGe"` (or BioPharma Finder's own triplet
-notation, e.g. `"Ad-pTd-pCd-pAd"`).}
+\code{"Te-sSe-sAe-sSe-...-sGe"} (or BioPharma Finder's own triplet
+notation, e.g. \code{"Ad-pTd-pCd-pAd"}).}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 }
 \value{
-A list with `bases`, `sugars`, `linkages` (parallel vectors,
-  one per position; `linkages[i]` is the bond FROM position i to
-  i+1, `NA` at the 3' end) -- ready for [parse_input()] to finish
-  into a canonical `oligo_spec`.
+A list with \code{bases}, \code{sugars}, \code{linkages} (parallel vectors,
+one per position; \code{linkages[i]} is the bond FROM position i to
+i+1, \code{NA} at the 3' end) -- ready for \code{\link[=parse_input]{parse_input()}} to finish
+into a canonical \code{oligo_spec}.
 }
 \description{
-Parses `"[linkage][base][sugar]"`-per-token, dash-separated notation
+Parses \code{"[linkage][base][sugar]"}-per-token, dash-separated notation
 (the 5' token has no linkage prefix) into canonical per-position
 vectors. Linkage codes are matched against the dictionary's own
-linkage codes, longest-first, so multi-character codes (`mp`, `msp`,
-`pace`, `tpace`, `pgo`, ...) parse correctly and aren't mistaken for a
-shorter code's prefix. Usually called indirectly via [parse_input()],
+linkage codes, longest-first, so multi-character codes (\code{mp}, \code{msp},
+\code{pace}, \code{tpace}, \code{pgo}, ...) parse correctly and aren't mistaken for a
+shorter code's prefix. Usually called indirectly via \code{\link[=parse_input]{parse_input()}},
 which auto-detects this notation as the default for anything not
 recognized as another format.
 }
 \seealso{
-[parse_input()], [format_triplet()], [assemble_oligo_formula()]
+\code{\link[=parse_input]{parse_input()}}, \code{\link[=format_triplet]{format_triplet()}}, \code{\link[=assemble_oligo_formula]{assemble_oligo_formula()}}
 }

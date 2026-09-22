@@ -7,16 +7,16 @@
 metabolite_table(mets)
 }
 \arguments{
-\item{mets}{A list of metabolite objects (see [generate_metabolites()]).}
+\item{mets}{A list of metabolite objects (see \code{\link[=generate_metabolites]{generate_metabolites()}}).}
 }
 \value{
-A data.frame, one row per metabolite: `id`, `name`, `kind`,
-  `n`, `n_ps`, `n_po`, `bases` (collapsed to a single string),
-  `modification`, `site`.
+A data.frame, one row per metabolite: \code{id}, \code{name}, \code{kind},
+\code{n}, \code{n_ps}, \code{n_po}, \code{bases} (collapsed to a single string),
+\code{modification}, \code{site}.
 }
 \description{
 Flatten a metabolite list to a display data.frame
 }
 \seealso{
-[generate_metabolites()]
+\code{\link[=generate_metabolites]{generate_metabolites()}}
 }

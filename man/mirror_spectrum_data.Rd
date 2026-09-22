@@ -16,37 +16,37 @@ mirror_spectrum_data(
 )
 }
 \arguments{
-\item{met}{A metabolite object (see [generate_metabolites()]).}
+\item{met}{A metabolite object (see \code{\link[=generate_metabolites]{generate_metabolites()}}).}
 
-\item{ms2_peaks}{A data.frame with `mz`, `intensity` columns: one
-acquired MS2 spectrum (see [find_ms2_spectra()]).}
+\item{ms2_peaks}{A data.frame with \code{mz}, \code{intensity} columns: one
+acquired MS2 spectrum (see \code{\link[=find_ms2_spectra]{find_ms2_spectra()}}).}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 
 \item{tol_ppm, z_range, ion_types, include_internal, h_offset}{Fragment
-matching parameters -- see [confirm_metabolite()].}
+matching parameters -- see \code{\link[=confirm_metabolite]{confirm_metabolite()}}.}
 }
 \value{
-A list: `acquired` (data.frame: `mz`, `intensity` (rescaled
-  0-100), `matched`, `label` (full match label, or `NA`),
-  `plot_label` (a decluttered subset of `label` for
-  [plot_mirror_spectrum()] -- matched peaks above 10% relative
-  intensity, topped up to at least 10 labels when fewer clear that
-  bar and enough matched peaks exist)); `theoretical` (data.frame:
-  `mz`, `intensity`, `matched`, `label = NA` throughout); `score`
-  (from [confirm_metabolite()]); `met_name`.
+A list: \code{acquired} (data.frame: \code{mz}, \code{intensity} (rescaled
+0-100), \code{matched}, \code{label} (full match label, or \code{NA}),
+\code{plot_label} (a decluttered subset of \code{label} for
+\code{\link[=plot_mirror_spectrum]{plot_mirror_spectrum()}} -- matched peaks above 10\% relative
+intensity, topped up to at least 10 labels when fewer clear that
+bar and enough matched peaks exist)); \code{theoretical} (data.frame:
+\code{mz}, \code{intensity}, \code{matched}, \code{label = NA} throughout); \code{score}
+(from \code{\link[=confirm_metabolite]{confirm_metabolite()}}); \code{met_name}.
 }
 \description{
-Confirms `met` against one acquired MS2 spectrum
-([confirm_metabolite()]) and returns both sides of a mirror plot --
+Confirms \code{met} against one acquired MS2 spectrum
+(\code{\link[=confirm_metabolite]{confirm_metabolite()}}) and returns both sides of a mirror plot --
 acquired peaks and theoretical library fragments -- each independently
 rescaled to 0-100 relative intensity (acquired intensities are real
-instrument counts, theoretical ones are [fragment_intensity_weight()]'s
+instrument counts, theoretical ones are \code{\link[=fragment_intensity_weight]{fragment_intensity_weight()}}'s
 rule-based heuristic, so only the relative shape within each side is
 meaningful, never a shared absolute scale). Matched acquired peaks are
 labeled with their fragment-ion annotation; the theoretical side is an
 unlabeled reference (see the file header for why).
 }
 \seealso{
-[plot_mirror_spectrum()], [confirm_metabolite()]
+\code{\link[=plot_mirror_spectrum]{plot_mirror_spectrum()}}, \code{\link[=confirm_metabolite]{confirm_metabolite()}}
 }

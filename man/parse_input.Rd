@@ -13,33 +13,33 @@ parse_input(
 }
 \arguments{
 \item{x}{The sequence: a character string (triplet/OligoDistiller/
-FASTA) or a structured list (see [parse_structured()]).}
+FASTA) or a structured list (see \code{\link[=parse_structured]{parse_structured()}}).}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 
 \item{sugar_map}{Sugar-suffix map for OligoDistiller notation -- see
-[parse_oligodistiller()].}
+\code{\link[=parse_oligodistiller]{parse_oligodistiller()}}.}
 
 \item{notation}{Force a specific notation instead of auto-detecting.}
 }
 \value{
-A canonical `oligo_spec` list: `bases`, `sugars`, `linkages`
-  (parallel vectors, one per position, `linkages[i]` = the bond FROM
-  position i, `NA` at the 3' end), `conj5`, `conj3`, `n` (length),
-  `notation` (which parser was actually used), and `raw` (the
-  original input, for reference). Already run through
-  [validate_spec()] -- every code is confirmed to exist in `dict` --
-  so a downstream caller can trust the spec without re-checking it.
+A canonical \code{oligo_spec} list: \code{bases}, \code{sugars}, \code{linkages}
+(parallel vectors, one per position, \code{linkages[i]} = the bond FROM
+position i, \code{NA} at the 3' end), \code{conj5}, \code{conj3}, \code{n} (length),
+\code{notation} (which parser was actually used), and \code{raw} (the
+original input, for reference). Already run through
+\code{\link[=validate_spec]{validate_spec()}} -- every code is confirmed to exist in \code{dict} --
+so a downstream caller can trust the spec without re-checking it.
 }
 \description{
 The main entry point for turning a sequence -- in any of triplet,
 OligoDistiller, FASTA, or structured-list notation -- into a
-validated, canonical `oligo_spec`. With `notation = "auto"` (the
-default), the notation is guessed from `x`: a list is structured, a
-string starting `">"` is FASTA, one starting `"OH-"` is
+validated, canonical \code{oligo_spec}. With \code{notation = "auto"} (the
+default), the notation is guessed from \code{x}: a list is structured, a
+string starting \code{">"} is FASTA, one starting \code{"OH-"} is
 OligoDistiller, anything else is triplet.
 }
 \seealso{
-[generate_metabolites()], [format_spec()],
-  [format_triplet()], [validate_spec()]
+\code{\link[=generate_metabolites]{generate_metabolites()}}, \code{\link[=format_spec]{format_spec()}},
+\code{\link[=format_triplet]{format_triplet()}}, \code{\link[=validate_spec]{validate_spec()}}
 }

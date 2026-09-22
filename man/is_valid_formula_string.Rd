@@ -10,19 +10,19 @@ is_valid_formula_string(s)
 \item{s}{A formula string to validate.}
 }
 \value{
-`TRUE` if `s` is entirely valid element(count) tokens from the
-  tracked element set, `FALSE` otherwise.
+\code{TRUE} if \code{s} is entirely valid element(count) tokens from the
+tracked element set, \code{FALSE} otherwise.
 }
 \description{
-Unlike [parse_formula()] (which silently skips anything it doesn't
+Unlike \code{\link[=parse_formula]{parse_formula()}} (which silently skips anything it doesn't
 recognize), this rejects any string not consumed ENTIRELY by valid
 element(count) tokens drawn from the tracked element set -- a typo or
-wrong case (`"c7h12o4"`, `"Q5"`, `"C7 H12"`, `"not a formula"`) is
+wrong case (\code{"c7h12o4"}, \code{"Q5"}, \code{"C7 H12"}, \code{"not a formula"}) is
 caught here. Intended for use before accepting a custom chemistry
 override (see the Custom Chemistry table in the Shiny app), so a bad
-formula string doesn't silently reach [build_dictionary()] and
+formula string doesn't silently reach \code{\link[=build_dictionary]{build_dictionary()}} and
 propagate a wrong mass into every downstream metabolite.
 }
 \seealso{
-[parse_formula()], [build_dictionary()]
+\code{\link[=parse_formula]{parse_formula()}}, \code{\link[=build_dictionary]{build_dictionary()}}
 }

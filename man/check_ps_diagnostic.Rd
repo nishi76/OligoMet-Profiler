@@ -7,19 +7,19 @@
 check_ps_diagnostic(ms2_peaks, tol_ppm = 50)
 }
 \arguments{
-\item{ms2_peaks}{A data.frame with `mz`, `intensity` columns.}
+\item{ms2_peaks}{A data.frame with \code{mz}, \code{intensity} columns.}
 
 \item{tol_ppm}{Mass tolerance for a match.}
 }
 \value{
 A data.frame, one row per diagnostic ion found:
-  `diagnostic_mz`, `obs_mz`, `ppm_error`, `intensity`. Empty
-  data.frame if neither is found.
+\code{diagnostic_mz}, \code{obs_mz}, \code{ppm_error}, \code{intensity}. Empty
+data.frame if neither is found.
 }
 \description{
 Looks for the two PS-specific marker ions (m/z 94.9452, 192.9746;
 Kim et al. 2019 / Ye et al. 2025) in an acquired spectrum.
 }
 \seealso{
-[confirmation_score()], [confirm_metabolite()]
+\code{\link[=confirmation_score]{confirmation_score()}}, \code{\link[=confirm_metabolite]{confirm_metabolite()}}
 }

@@ -8,17 +8,17 @@ read_batch_features(tsv_path)
 }
 \arguments{
 \item{tsv_path}{Path to the feature TSV (see
-[run_batch_deconvolution()]'s `features_path`).}
+\code{\link[=run_batch_deconvolution]{run_batch_deconvolution()}}'s \code{features_path}).}
 }
 \value{
-A data.frame with `sample` forced to character (see the
-  comment above for why -- numeric-looking sample names, e.g. Shiny's
-  renamed uploads, would otherwise silently become a numeric column).
+A data.frame with \code{sample} forced to character (see the
+comment above for why -- numeric-looking sample names, e.g. Shiny's
+renamed uploads, would otherwise silently become a numeric column).
 }
 \description{
 Read the combined feature table from a batch deconvolution run
 }
 \seealso{
-[run_batch_deconvolution()], [read_batch_ms2()],
-  [match_ms1_batch()]
+\code{\link[=run_batch_deconvolution]{run_batch_deconvolution()}}, \code{\link[=read_batch_ms2]{read_batch_ms2()}},
+\code{\link[=match_ms1_batch]{match_ms1_batch()}}
 }

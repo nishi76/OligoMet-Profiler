@@ -14,26 +14,26 @@ assemble_oligo_formula(
 )
 }
 \arguments{
-\item{bases, sugars}{Per-position codes, length `n`, 5' to 3' (see
-[parse_input()] for the canonical `oligo_spec` shape these come
+\item{bases, sugars}{Per-position codes, length \code{n}, 5' to 3' (see
+\code{\link[=parse_input]{parse_input()}} for the canonical \code{oligo_spec} shape these come
 from).}
 
-\item{linkages}{Per-position codes, length `n`: `linkages[i]` is the
-bond between position i and i+1; `NA` at the 3' end (position `n`,
+\item{linkages}{Per-position codes, length \code{n}: \code{linkages[i]} is the
+bond between position i and i+1; \code{NA} at the 3' end (position \code{n},
 which has no outgoing bond).}
 
-\item{conj5, conj3}{Terminal conjugate codes (default `"none"`).}
+\item{conj5, conj3}{Terminal conjugate codes (default \code{"none"}).}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 }
 \value{
 A full element vector (the neutral molecular formula).
 }
 \description{
 Sums every base/sugar/linkage residue's formula, subtracts the water
-lost to condensation (`n` glycosidic bonds + `n-1` phosphodiester
-bonds = `2n-1` waters), and attaches any terminal conjugates.
+lost to condensation (\code{n} glycosidic bonds + \code{n-1} phosphodiester
+bonds = \verb{2n-1} waters), and attaches any terminal conjugates.
 }
 \seealso{
-[metabolite_mass_info()], [attach_conjugate()]
+\code{\link[=metabolite_mass_info]{metabolite_mass_info()}}, \code{\link[=attach_conjugate]{attach_conjugate()}}
 }

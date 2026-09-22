@@ -24,47 +24,47 @@ annotate_metabolites_batch(
 )
 }
 \arguments{
-\item{mets}{A list of metabolite objects (see [generate_metabolites()]).}
+\item{mets}{A list of metabolite objects (see \code{\link[=generate_metabolites]{generate_metabolites()}}).}
 
 \item{features}{A multi-sample feature table (see
-[read_batch_features()]).}
+\code{\link[=read_batch_features]{read_batch_features()}}).}
 
 \item{ms2_by_sample}{Optional multi-sample MS2 table (see
-[read_batch_ms2()]) for MS2 confirmation; `NULL` skips that step.}
+\code{\link[=read_batch_ms2]{read_batch_ms2()}}) for MS2 confirmation; \code{NULL} skips that step.}
 
-\item{dict, ppm_tol, z_range, adducts, max_oxid, h_offset, n_iso, use_envipat}{MS1 matching parameters -- see [match_ms1()].}
+\item{dict, ppm_tol, z_range, adducts, max_oxid, h_offset, n_iso, use_envipat}{MS1 matching parameters -- see \code{\link[=match_ms1]{match_ms1()}}.}
 
 \item{frag_tol_ppm, frag_z_range, include_internal}{MS2 confirmation
-parameters -- see [confirm_metabolite()].}
+parameters -- see \code{\link[=confirm_metabolite]{confirm_metabolite()}}.}
 
 \item{compute_degradation}{Whether to also compute
-[degradation_summary()] from the MS1 matches.}
+\code{\link[=degradation_summary]{degradation_summary()}} from the MS1 matches.}
 
-\item{sample_meta}{Optional sample metadata (`sample`, `sample_type`,
-`group`/`timepoint`) forwarded to [degradation_summary()] so
+\item{sample_meta}{Optional sample metadata (\code{sample}, \code{sample_type},
+\code{group}/\code{timepoint}) forwarded to \code{\link[=degradation_summary]{degradation_summary()}} so
 calibration standards/QC/blanks are excluded from it and its
-per-sample/composition tables carry group/timepoint context. `NULL`
+per-sample/composition tables carry group/timepoint context. \code{NULL}
 (the default) keeps every sample, same as calling
-[degradation_summary()] with no `sample_meta` of its own.}
+\code{\link[=degradation_summary]{degradation_summary()}} with no \code{sample_meta} of its own.}
 }
 \value{
-A list: `ms1_matches`, `envelope` (charge-envelope consistency,
-  per sample), `unmatched` (retained unmatched features),
-  `ms2_confirmations`, `ms2_spectra` (named list keyed
-  `"sample|met_id|k_oxid|z|adduct"`, for mirror-plot rendering), and
-  `degradation` (`NULL` if `compute_degradation = FALSE` or there are
-  no MS1 matches).
+A list: \code{ms1_matches}, \code{envelope} (charge-envelope consistency,
+per sample), \code{unmatched} (retained unmatched features),
+\code{ms2_confirmations}, \code{ms2_spectra} (named list keyed
+\code{"sample|met_id|k_oxid|z|adduct"}, for mirror-plot rendering), and
+\code{degradation} (\code{NULL} if \code{compute_degradation = FALSE} or there are
+no MS1 matches).
 }
 \description{
-The end-to-end batch analysis step: MS1 matching ([match_ms1_batch()]),
+The end-to-end batch analysis step: MS1 matching (\code{\link[=match_ms1_batch]{match_ms1_batch()}}),
 per-sample charge-envelope consistency, unmatched-peak retention
-([unmatched_features_batch()]), optional MS2 confirmation
-([confirm_ms2_batch()]), and an optional degradation summary
-([degradation_summary()]) -- everything [run_batch_deconvolution()]'s
+(\code{\link[=unmatched_features_batch]{unmatched_features_batch()}}), optional MS2 confirmation
+(\code{\link[=confirm_ms2_batch]{confirm_ms2_batch()}}), and an optional degradation summary
+(\code{\link[=degradation_summary]{degradation_summary()}}) -- everything \code{\link[=run_batch_deconvolution]{run_batch_deconvolution()}}'s
 output needs before it's ready for statistics/quantification or
 export.
 }
 \seealso{
-[match_ms1_batch()], [run_batch_deconvolution()],
-  [quantify_metabolites()]
+\code{\link[=match_ms1_batch]{match_ms1_batch()}}, \code{\link[=run_batch_deconvolution]{run_batch_deconvolution()}},
+\code{\link[=quantify_metabolites]{quantify_metabolites()}}
 }

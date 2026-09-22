@@ -7,22 +7,22 @@
 parse_formula(s)
 }
 \arguments{
-\item{s}{A formula string, e.g. `"C7H12O4"`.}
+\item{s}{A formula string, e.g. \code{"C7H12O4"}.}
 }
 \value{
 A named numeric vector over every tracked element (0 for
-  elements not present in `s`).
+elements not present in \code{s}).
 }
 \description{
-Reads a string like `"C5H5N5O"` (element symbol + optional count,
+Reads a string like \code{"C5H5N5O"} (element symbol + optional count,
 repeated) into a named numeric vector over the full element set this
-package tracks (`C H N O P S F Na K I Cl Br`, missing elements = 0).
+package tracks (\verb{C H N O P S F Na K I Cl Br}, missing elements = 0).
 Silently skips anything it doesn't recognize -- by design, so stray
 characters in older data don't hard-fail it; use
-[is_valid_formula_string()] first when you need to reject a malformed
+\code{\link[=is_valid_formula_string]{is_valid_formula_string()}} first when you need to reject a malformed
 string outright (e.g. before accepting a custom chemistry override).
 }
 \seealso{
-[is_valid_formula_string()], [format_formula()],
-  [formula_mass()]
+\code{\link[=is_valid_formula_string]{is_valid_formula_string()}}, \code{\link[=format_formula]{format_formula()}},
+\code{\link[=formula_mass]{formula_mass()}}
 }

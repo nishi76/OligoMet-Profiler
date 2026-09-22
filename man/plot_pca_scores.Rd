@@ -7,11 +7,11 @@
 plot_pca_scores(pca_result, color_by = NULL)
 }
 \arguments{
-\item{pca_result}{A [run_pca()] result.}
+\item{pca_result}{A \code{\link[=run_pca]{run_pca()}} result.}
 
-\item{color_by}{Column of `pca_result$scores` to color points by;
-`NULL` (the default) auto-picks `group` if present and non-blank,
-else `timepoint` if present, else leaves points uncolored.}
+\item{color_by}{Column of \code{pca_result$scores} to color points by;
+\code{NULL} (the default) auto-picks \code{group} if present and non-blank,
+else \code{timepoint} if present, else leaves points uncolored.}
 }
 \value{
 A ggplot object.

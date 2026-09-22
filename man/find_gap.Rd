@@ -7,16 +7,16 @@
 find_gap(spec)
 }
 \arguments{
-\item{spec}{An `oligo_spec` list (see [parse_input()]).}
+\item{spec}{An \code{oligo_spec} list (see \code{\link[=parse_input]{parse_input()}}).}
 }
 \value{
-Integer positions where the sugar is deoxyribose (`"d"`) --
-  the DNA gap. `integer(0)` for a non-gapmer (no deoxyribose
-  positions).
+Integer positions where the sugar is deoxyribose (\code{"d"}) --
+the DNA gap. \code{integer(0)} for a non-gapmer (no deoxyribose
+positions).
 }
 \description{
 Locate a gapmer's DNA gap
 }
 \seealso{
-[generate_metabolites()] (`endo_sites = "gap"`)
+\code{\link[=generate_metabolites]{generate_metabolites()}} (\code{endo_sites = "gap"})
 }

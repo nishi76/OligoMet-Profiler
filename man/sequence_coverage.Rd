@@ -7,18 +7,18 @@
 sequence_coverage(matched, n)
 }
 \arguments{
-\item{matched}{Output of [match_fragments()].}
+\item{matched}{Output of \code{\link[=match_fragments]{match_fragments()}}.}
 
 \item{n}{Oligonucleotide length.}
 }
 \value{
-A list: `coverage` (fraction, 0-1), `covered_sites` (the
-  distinct cleavage sites confirmed), `total_sites` (`n - 1`).
+A list: \code{coverage} (fraction, 0-1), \code{covered_sites} (the
+distinct cleavage sites confirmed), \code{total_sites} (\code{n - 1}).
 }
 \description{
-Fraction of backbone cleavage sites (`1` to `n-1`, between each pair
+Fraction of backbone cleavage sites (\code{1} to \code{n-1}, between each pair
 of adjacent nucleotides) confirmed by at least one matched fragment.
 }
 \seealso{
-[match_fragments()], [confirmation_score()]
+\code{\link[=match_fragments]{match_fragments()}}, \code{\link[=confirmation_score]{confirmation_score()}}
 }

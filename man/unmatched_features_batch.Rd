@@ -8,23 +8,23 @@ unmatched_features_batch(features, ms1_matches)
 }
 \arguments{
 \item{features}{A multi-sample feature table (see
-[read_batch_features()]).}
+\code{\link[=read_batch_features]{read_batch_features()}}).}
 
-\item{ms1_matches}{Output of [match_ms1_batch()]/
-[annotate_metabolites_batch()].}
+\item{ms1_matches}{Output of \code{\link[=match_ms1_batch]{match_ms1_batch()}}/
+\code{\link[=annotate_metabolites_batch]{annotate_metabolites_batch()}}.}
 }
 \value{
-`features`, filtered down to rows with no corresponding row
-  in `ms1_matches` -- retained for QC/follow-up rather than discarded.
+\code{features}, filtered down to rows with no corresponding row
+in \code{ms1_matches} -- retained for QC/follow-up rather than discarded.
 }
 \description{
-[match_ms1()] doesn't expose which feature row it picked as "best"
-for a given theoretical candidate, but it does copy `rt` and
-`intensity` (= `max_intensity`) through UNROUNDED from the original
-features -- so an exact-equality join on (`sample`, `rt`, `intensity`)
+\code{\link[=match_ms1]{match_ms1()}} doesn't expose which feature row it picked as "best"
+for a given theoretical candidate, but it does copy \code{rt} and
+\code{intensity} (= \code{max_intensity}) through UNROUNDED from the original
+features -- so an exact-equality join on (\code{sample}, \code{rt}, \code{intensity})
 reliably identifies which original features were used, without
-needing to touch [match_ms1()] itself.
+needing to touch \code{\link[=match_ms1]{match_ms1()}} itself.
 }
 \seealso{
-[annotate_metabolites_batch()]
+\code{\link[=annotate_metabolites_batch]{annotate_metabolites_batch()}}
 }

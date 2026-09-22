@@ -8,15 +8,15 @@ format_formula(f)
 }
 \arguments{
 \item{f}{A formula vector (compact or full -- coerced via internal
-`.as_formula()`).}
+\code{.as_formula()}).}
 }
 \value{
 A string with only the non-zero elements, in canonical
-  element order, e.g. `"C230H318N69O121P19S19"`.
+element order, e.g. \code{"C230H318N69O121P19S19"}.
 }
 \description{
 Render a formula vector as a string
 }
 \seealso{
-[parse_formula()]
+\code{\link[=parse_formula]{parse_formula()}}
 }

@@ -14,48 +14,48 @@ fit_calibration_curve(
 )
 }
 \arguments{
-\item{batch_matches}{The `ms1_matches` data.frame (see
-[match_ms1_batch()]/[annotate_metabolites_batch()]).}
+\item{batch_matches}{The \code{ms1_matches} data.frame (see
+\code{\link[=match_ms1_batch]{match_ms1_batch()}}/\code{\link[=annotate_metabolites_batch]{annotate_metabolites_batch()}}).}
 
 \item{met_id}{The single metabolite ID to fit a curve for.}
 
-\item{sample_meta}{A data.frame with `sample`, `sample_type`, and
-`concentration` columns (as produced by the Shiny app's batch sample
+\item{sample_meta}{A data.frame with \code{sample}, \code{sample_type}, and
+\code{concentration} columns (as produced by the Shiny app's batch sample
 metadata table, or hand-built to match).}
 
-\item{weighting}{Regression weighting scheme: `"1/x2"` (weight =
-`1/concentration^2`, the common default for LC-MS/MS bioanalytical
-quantification), `"1/x"`, or `"none"` (unweighted OLS). No universally
+\item{weighting}{Regression weighting scheme: \code{"1/x2"} (weight =
+\code{1/concentration^2}, the common default for LC-MS/MS bioanalytical
+quantification), \code{"1/x"}, or \code{"none"} (unweighted OLS). No universally
 correct default exists across labs/instruments/SOPs, so this has no
 default of its own -- callers must pick.}
 
-\item{signal_col}{Which column to use as signal. `NULL` (the default)
-auto-detects: `"area"` if present and not all-`NA`, else
-`"intensity"`.}
+\item{signal_col}{Which column to use as signal. \code{NULL} (the default)
+auto-detects: \code{"area"} if present and not all-\code{NA}, else
+\code{"intensity"}.}
 
 \item{min_points}{Minimum number of standard points (after dropping
 zero/non-positive concentrations, which can't be weighted by 1/x or
 1/x^2 and carry no line-fitting information anyway) required to fit
-the curve. Below this, an empty curve is returned with a `note`
+the curve. Below this, an empty curve is returned with a \code{note}
 explaining why, rather than erroring.}
 }
 \value{
-A list: `met_id`, `signal_col`, `weighting`, `model` (the
-  fitted `lm` object, or `NULL` if the curve couldn't be built),
-  `intercept`, `slope`, `r_squared`, `n_points`, `conc_range` (the
-  observed standard concentration range -- see the `extrapolated` flag
-  in [quantify_absolute()]), `points` (the standards used, with their
-  own back-calculated concentration and `percent_re`), and `note`
-  (empty string on success, else why the curve is empty).
+A list: \code{met_id}, \code{signal_col}, \code{weighting}, \code{model} (the
+fitted \code{lm} object, or \code{NULL} if the curve couldn't be built),
+\code{intercept}, \code{slope}, \code{r_squared}, \code{n_points}, \code{conc_range} (the
+observed standard concentration range -- see the \code{extrapolated} flag
+in \code{\link[=quantify_absolute]{quantify_absolute()}}), \code{points} (the standards used, with their
+own back-calculated concentration and \code{percent_re}), and \code{note}
+(empty string on success, else why the curve is empty).
 }
 \description{
 Builds a (weighted) linear regression of signal vs. concentration from
 calibration standards, for back-calculating unknown concentrations
-(see [quantify_absolute()]). ONLY `sample_meta` rows with
-`sample_type == "standard"` and a positive numeric `concentration`
+(see \code{\link[=quantify_absolute]{quantify_absolute()}}). ONLY \code{sample_meta} rows with
+\code{sample_type == "standard"} and a positive numeric \code{concentration}
 contribute to the fit -- quality control and unknown study samples are
 back-calculated FROM this curve elsewhere, never used to build it.
 }
 \seealso{
-[quantify_absolute()], [quantify_metabolites()]
+\code{\link[=quantify_absolute]{quantify_absolute()}}, \code{\link[=quantify_metabolites]{quantify_metabolites()}}
 }

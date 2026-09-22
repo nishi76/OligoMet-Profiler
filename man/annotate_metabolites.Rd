@@ -22,40 +22,40 @@ annotate_metabolites(
 )
 }
 \arguments{
-\item{mets}{A list of metabolite objects (see [generate_metabolites()]).}
+\item{mets}{A list of metabolite objects (see \code{\link[=generate_metabolites]{generate_metabolites()}}).}
 
 \item{ms1_features}{Observed MS1 features (see
-[extract_ms1_features()]/[import_peak_list()]).}
+\code{\link[=extract_ms1_features]{extract_ms1_features()}}/\code{\link[=import_peak_list]{import_peak_list()}}).}
 
-\item{ms2_data}{Optional MS2 peaks (see [read_ms_file()]/
-[import_peak_list()]); `NULL` skips MS2 confirmation entirely.}
+\item{ms2_data}{Optional MS2 peaks (see \code{\link[=read_ms_file]{read_ms_file()}}/
+\code{\link[=import_peak_list]{import_peak_list()}}); \code{NULL} skips MS2 confirmation entirely.}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 
-\item{ppm_tol, z_range, adducts, max_oxid, h_offset, n_iso, use_envipat}{MS1 matching parameters -- see [match_ms1()].}
+\item{ppm_tol, z_range, adducts, max_oxid, h_offset, n_iso, use_envipat}{MS1 matching parameters -- see \code{\link[=match_ms1]{match_ms1()}}.}
 
 \item{frag_tol_ppm, frag_z_range}{MS2 fragment matching tolerance/
-charge range -- see [match_fragments()].}
+charge range -- see \code{\link[=match_fragments]{match_fragments()}}.}
 
 \item{include_internal}{Whether to also generate and match internal
-fragments (see [generate_internal_fragments()]).}
+fragments (see \code{\link[=generate_internal_fragments]{generate_internal_fragments()}}).}
 }
 \value{
-A list: `ms1_matches` (see [match_ms1()]), `ms2_results`
-  (named list by `met_id`, each with `met_name`, `n_peaks`,
-  `best_spec`, `matched_frags`, `diagnostics`, `score`), and
-  `summary` (one row per matched metabolite: best ppm error, best
-  isotope fit, charge states/adducts found, and -- when MS2 was run
-  -- confirmation score/coverage/fragment count).
+A list: \code{ms1_matches} (see \code{\link[=match_ms1]{match_ms1()}}), \code{ms2_results}
+(named list by \code{met_id}, each with \code{met_name}, \code{n_peaks},
+\code{best_spec}, \code{matched_frags}, \code{diagnostics}, \code{score}), and
+\code{summary} (one row per matched metabolite: best ppm error, best
+isotope fit, charge states/adducts found, and -- when MS2 was run
+-- confirmation score/coverage/fragment count).
 }
 \description{
-The single-file counterpart to [annotate_metabolites_batch()]: MS1
-matching ([match_ms1()]), charge-envelope consistency
-([envelope_consistency()]), and -- when `ms2_data` is supplied -- MS2
-fragment confirmation ([find_ms2_spectra()], [match_fragments()],
-[confirmation_score()]) for every matched metabolite, rolled up into
+The single-file counterpart to \code{\link[=annotate_metabolites_batch]{annotate_metabolites_batch()}}: MS1
+matching (\code{\link[=match_ms1]{match_ms1()}}), charge-envelope consistency
+(\code{\link[=envelope_consistency]{envelope_consistency()}}), and -- when \code{ms2_data} is supplied -- MS2
+fragment confirmation (\code{\link[=find_ms2_spectra]{find_ms2_spectra()}}, \code{\link[=match_fragments]{match_fragments()}},
+\code{\link[=confirmation_score]{confirmation_score()}}) for every matched metabolite, rolled up into
 one summary table.
 }
 \seealso{
-[annotate_metabolites_batch()] for the multi-sample version
+\code{\link[=annotate_metabolites_batch]{annotate_metabolites_batch()}} for the multi-sample version
 }

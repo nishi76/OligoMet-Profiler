@@ -8,17 +8,17 @@ ps_oxid_formula(formula_vec, k)
 }
 \arguments{
 \item{formula_vec}{A full element formula vector (see
-[metabolite_mass_info()]).}
+\code{\link[=metabolite_mass_info]{metabolite_mass_info()}}).}
 
 \item{k}{Number of desulfurization events (subtracted from S, added
 to O).}
 }
 \value{
-The formula vector after `k` oxidations.
+The formula vector after \code{k} oxidations.
 }
 \description{
 Molecular formula after k phosphorothioate-to-phosphodiester oxidations
 }
 \seealso{
-[ps_oxid_mass()], [ps_oxidation_series()]
+\code{\link[=ps_oxid_mass]{ps_oxid_mass()}}, \code{\link[=ps_oxidation_series]{ps_oxidation_series()}}
 }

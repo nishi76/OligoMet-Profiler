@@ -10,23 +10,23 @@ parse_mzml(file)
 \item{file}{Path to the mzML or mzXML file.}
 }
 \value{
-A list: `ms1` (data.frame of `rt`, `mz`, `intensity`, one row
-  per peak across every MS1 spectrum), `ms2` (data.frame of `rt`,
-  `precursor_mz`, `precursor_z`, `mz`, `intensity`), and `info` (list:
-  `file`, `n_spectra`, `n_ms1`, `n_ms2`, `instrument`, and
-  `profile_mode` -- `TRUE`/`FALSE` once the first MS1 spectrum's
-  profile/centroid cvParam settles it, else `NA`).
+A list: \code{ms1} (data.frame of \code{rt}, \code{mz}, \code{intensity}, one row
+per peak across every MS1 spectrum), \code{ms2} (data.frame of \code{rt},
+\code{precursor_mz}, \code{precursor_z}, \code{mz}, \code{intensity}), and \code{info} (list:
+\code{file}, \code{n_spectra}, \code{n_ms1}, \code{n_ms2}, \code{instrument}, and
+\code{profile_mode} -- \code{TRUE}/\code{FALSE} once the first MS1 spectrum's
+profile/centroid cvParam settles it, else \code{NA}).
 }
 \description{
 Reads every spectrum's m/z/intensity binary data arrays (base64 +
 zlib, decoded natively -- no mzR/compiled dependency) and separates
 MS1 peaks from MS2 spectra. This is the automatic fallback
-[read_ms_file()] uses when the (much faster, indexed) Spectra/mzR
+\code{\link[=read_ms_file]{read_ms_file()}} uses when the (much faster, indexed) Spectra/mzR
 backend isn't available or fails -- loads the whole file into memory
 as an xml2 DOM, so it doesn't scale to very large files the way
-[read_ms_file()]'s primary path or the Python batch pipeline's
+\code{\link[=read_ms_file]{read_ms_file()}}'s primary path or the Python batch pipeline's
 streaming reader do.
 }
 \seealso{
-[read_ms_file()], [extract_ms1_features()]
+\code{\link[=read_ms_file]{read_ms_file()}}, \code{\link[=extract_ms1_features]{extract_ms1_features()}}
 }

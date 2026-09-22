@@ -7,40 +7,40 @@
 generate_metabolites(spec, opts = list(), dict = STANDARD_DICT)
 }
 \arguments{
-\item{spec}{An `oligo_spec` list (see [parse_input()]).}
+\item{spec}{An \code{oligo_spec} list (see \code{\link[=parse_input]{parse_input()}}).}
 
 \item{opts}{A list of options:
 \describe{
-  \item{oligo_name}{Prefix for metabolite names, e.g. `"inotersen"`.}
-  \item{max_3p, max_5p}{Max exonuclease truncations from each end
-    (default 10 each; capped at `spec$n - 1`).}
-  \item{endo}{Include endonuclease internal fragments? (default `TRUE`)}
-  \item{endo_sites}{`"all"` (every internal bond), `"gap"` (only
-    within a gapmer's DNA gap -- see [find_gap()]), or an integer
-    vector of specific cleavage positions.}
-  \item{min_frag_len}{Minimum fragment length to keep (default 3).}
-  \item{dedupe}{Collapse structurally identical species across
-    routes? (default `TRUE`; see [dedupe_metabolites()])}
+\item{oligo_name}{Prefix for metabolite names, e.g. \code{"inotersen"}.}
+\item{max_3p, max_5p}{Max exonuclease truncations from each end
+(default 10 each; capped at \code{spec$n - 1}).}
+\item{endo}{Include endonuclease internal fragments? (default \code{TRUE})}
+\item{endo_sites}{\code{"all"} (every internal bond), \code{"gap"} (only
+within a gapmer's DNA gap -- see \code{\link[=find_gap]{find_gap()}}), or an integer
+vector of specific cleavage positions.}
+\item{min_frag_len}{Minimum fragment length to keep (default 3).}
+\item{dedupe}{Collapse structurally identical species across
+routes? (default \code{TRUE}; see \code{\link[=dedupe_metabolites]{dedupe_metabolites()}})}
 }}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 }
 \value{
-A list of metabolite objects, each with `id` (`"M01"`,
-  `"M02"`, ...), `name`, `kind` (`"parent"`/`"exo_3p"`/`"exo_5p"`/
-  `"endo_5frag"`/`"endo_3frag"`/`"endo_5frag_p"`/`"endo_3frag_p"`),
-  `modification`, `site`, `n`, `bases`/`sugars`/`linkages`,
-  `conj5`/`conj3`, `n_ps`/`n_po`/`n_bonds`, `parent_id`, and (after
-  deduplication) `kind_all`/`n_routes`.
+A list of metabolite objects, each with \code{id} (\code{"M01"},
+\code{"M02"}, ...), \code{name}, \code{kind} (\code{"parent"}/\code{"exo_3p"}/\code{"exo_5p"}/
+\code{"endo_5frag"}/\code{"endo_3frag"}/\code{"endo_5frag_p"}/\code{"endo_3frag_p"}),
+\code{modification}, \code{site}, \code{n}, \code{bases}/\code{sugars}/\code{linkages},
+\code{conj5}/\code{conj3}, \code{n_ps}/\code{n_po}/\code{n_bonds}, \code{parent_id}, and (after
+deduplication) \code{kind_all}/\code{n_routes}.
 }
 \description{
 The main library-generation entry point: builds the parent, the 3'
 and 5' exonuclease truncation series, and (optionally) endonuclease
 internal fragments (both mass-balanced termini per cleavage site --
-see [endo_cleave()]), then collapses structurally identical species
-produced by more than one route (see [dedupe_metabolites()]).
+see \code{\link[=endo_cleave]{endo_cleave()}}), then collapses structurally identical species
+produced by more than one route (see \code{\link[=dedupe_metabolites]{dedupe_metabolites()}}).
 }
 \seealso{
-[metabolite_mass_info()], [metabolite_table()],
-  [match_ms1()]
+\code{\link[=metabolite_mass_info]{metabolite_mass_info()}}, \code{\link[=metabolite_table]{metabolite_table()}},
+\code{\link[=match_ms1]{match_ms1()}}
 }

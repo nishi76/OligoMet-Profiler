@@ -7,18 +7,18 @@
 plot_dendrogram(hclust_result, k = NULL)
 }
 \arguments{
-\item{hclust_result}{A [run_hclust()] result (or a raw `hclust`
+\item{hclust_result}{A \code{\link[=run_hclust]{run_hclust()}} result (or a raw \code{hclust}
 object, for direct use outside the Shiny app).}
 
-\item{k}{Number of clusters to outline with [stats::rect.hclust()];
-`NULL` skips outlining. Defaults to the `k` a [run_hclust()] result
+\item{k}{Number of clusters to outline with \code{\link[stats:rect.hclust]{stats::rect.hclust()}};
+\code{NULL} skips outlining. Defaults to the \code{k} a \code{\link[=run_hclust]{run_hclust()}} result
 carries, if given one of those.}
 }
 \value{
-`NULL`, invisibly -- called for its plotting side effect.
+\code{NULL}, invisibly -- called for its plotting side effect.
 }
 \description{
-Base-graphics dendrogram (not ggplot2 -- `hclust` objects have their
-own `plot` method, and re-deriving that in ggplot2 buys nothing here),
-with the `k`-cluster cut outlined if requested.
+Base-graphics dendrogram (not ggplot2 -- \code{hclust} objects have their
+own \code{plot} method, and re-deriving that in ggplot2 buys nothing here),
+with the \code{k}-cluster cut outlined if requested.
 }
