@@ -426,7 +426,19 @@ ui <- fluidPage(
                       buttonLabel = "Load Session (JSON)...", placeholder = ""),
             tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -8px;",
                    "Saves/restores the sequence, custom chemistry, and all ",
-                   "parameters as a .json file -- not uploaded MS/batch files.")
+                   "parameters as a .json file -- not uploaded MS/batch files, ",
+                   "and not results (see Analysis State below)."),
+            tags$hr(style = "margin: 10px 0;"),
+            downloadButton("dl_analysis_state", "Save Analysis State (.rds)", class = "btn-outline-primary w-100"),
+            tags$div(style = "height: 8px;"),
+            fileInput("load_analysis_state_file", NULL, accept = ".rds",
+                      buttonLabel = "Load Analysis State (.rds)...", placeholder = ""),
+            tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -8px;",
+                   "Saves/restores the library, batch results, statistics, and ",
+                   "quantification tables, so reloading doesn't require re-running ",
+                   "the batch. Raw mzML/raw files and per-hit MS2 spectra (needed only ",
+                   "for redrawing mirror plots) are never included -- re-run with MS2 ",
+                   "confirmation on if you need those back.")
           ),
           tags$div(class = "sidebar-section",
             tags$h5("Workflow Status"),
@@ -1831,10 +1843,96 @@ server <- function(input, output, session) {
     rv$library_ready <- FALSE
     rv$status_text <- paste0(
       "Loaded session from '", input$load_session_file$name, "'. Review the ",
-      "restored parameters, then click \"1. Generate Library\" to regenerate ",
-      "the library (fast, deterministic -- reproduces exactly what the saved ",
-      "session would have produced). Re-upload any MS/batch files (not saved ",
-      "in a session), then click \"2. Import & Process MS Data\".\n")
+      "restored parameters, then click \"Generate Library\" (Library Generation ",
+      "tab) to regenerate the library (fast, deterministic -- reproduces exactly ",
+      "what the saved session would have produced). Re-upload any MS/batch files ",
+      "(not saved in a session), then run batch processing again.\n")
+  })
+
+  ## ---- Analysis state save/load ----------------------------------------------
+  # A session .json (above) only ever held UI parameters -- fast/deterministic
+  # to reproduce, so there was never a reason to persist their OUTPUT. Batch
+  # results/stats/quantification are a different story: a real study batch
+  # can take many minutes (deconvolution + matching across every file), and
+  # losing that on a browser refresh means re-running the whole thing. RDS
+  # (not JSON) because this is arbitrary R objects -- data.frames and nested
+  # lists round-trip natively, with binary+xz compression keeping the file
+  # far smaller than an equivalent JSON would be, and because the JSON writer
+  # has no clean way to serialize an lm() fit object at all (see below).
+  #
+  # Deliberately NOT included, both to keep the file small and because
+  # neither round-trips usefully:
+  #   - ms2_spectra / ms_results$ms2_results[[.]]$best_spec: raw per-hit peak
+  #     lists, needed only to redraw a specific mirror plot on demand -- by
+  #     far the largest contributor for a batch with MS2 confirmation on.
+  #   - quant_results$calibration_curves[[.]]$model: the raw lm() fit object.
+  #     Its intercept/slope/r_squared/points/note are already extracted into
+  #     the same list entry (everything quant_absolute_table/
+  #     calibration_curves_table actually display) -- the fit object itself
+  #     carries its own environment and isn't needed to show any of that.
+  .strip_for_analysis_state <- function(ms_results, batch_ms_results, quant_results) {
+    if (!is.null(ms_results) && length(ms_results$ms2_results) > 0) {
+      ms_results$ms2_results <- lapply(ms_results$ms2_results, function(r) {
+        r$best_spec <- NULL
+        r
+      })
+    }
+    if (!is.null(batch_ms_results)) batch_ms_results$ms2_spectra <- NULL
+    if (!is.null(quant_results) && length(quant_results$calibration_curves) > 0) {
+      quant_results$calibration_curves <- lapply(quant_results$calibration_curves, function(c) {
+        c$model <- NULL
+        c
+      })
+    }
+    list(ms_results = ms_results, batch_ms_results = batch_ms_results, quant_results = quant_results)
+  }
+
+  output$dl_analysis_state <- downloadHandler(
+    filename = function() paste0(input$oligo_name %||% "oligomet", "_analysis_state.rds"),
+    content = function(file) {
+      stripped <- .strip_for_analysis_state(rv$ms_results, rv$batch_ms_results, rv$quant_results)
+      state <- list(
+        app = "OligoMetProfiler", format_version = 1L,
+        saved_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
+        spec = rv$spec, mets = rv$mets, dict = rv$dict, prm = rv$prm,
+        batch_features = rv$batch_features, sample_meta = rv$sample_meta,
+        ms_results = stripped$ms_results,
+        batch_ms_results = stripped$batch_ms_results,
+        stats_results = rv$stats_results, kind_stats_results = rv$kind_stats_results,
+        quant_results = stripped$quant_results
+      )
+      saveRDS(state, file, compress = "xz")
+    }
+  )
+
+  observeEvent(input$load_analysis_state_file, {
+    req(input$load_analysis_state_file)
+    state <- tryCatch(readRDS(input$load_analysis_state_file$datapath), error = function(e) NULL)
+    if (is.null(state) || is.null(state$format_version)) {
+      rv$status_text <- paste0(
+        "ERROR: could not read '", input$load_analysis_state_file$name, "' -- not a ",
+        "valid OligoMet Profiler analysis state .rds file.\n")
+      return()
+    }
+    rv$spec <- state$spec; rv$mets <- state$mets; rv$dict <- state$dict; rv$prm <- state$prm
+    rv$batch_features <- state$batch_features
+    rv$sample_meta <- state$sample_meta
+    rv$ms_results <- state$ms_results
+    rv$batch_ms_results <- state$batch_ms_results
+    rv$stats_results <- state$stats_results
+    rv$kind_stats_results <- state$kind_stats_results
+    rv$quant_results <- state$quant_results
+    if (!is.null(state$sample_meta)) batch_meta_data(state$sample_meta)
+    rv$library_ready <- !is.null(rv$mets)
+    rv$ready <- !is.null(rv$mets)
+    rv$status_text <- paste0(
+      "Loaded analysis state from '", input$load_analysis_state_file$name,
+      "' (saved ", state$saved_at %||% "unknown time", "). Library, batch results, ",
+      "statistics, and quantification are restored -- no need to re-run unless ",
+      "you're adding new data. Mirror plots and the empirical MS2 library need ",
+      "MS2 spectra, which this file doesn't carry -- re-run with \"Confirm hits ",
+      "with MS2\" on if you need those back. Raw mzML/raw files are never stored ",
+      "here either way.\n")
   })
 
   ## ---- About ---------------------------------------------------------------
@@ -2157,21 +2255,29 @@ server <- function(input, output, session) {
   })  # end observeEvent(input$run_phase1)
 
   ## ---- Comparison stats + quantification (Statistical Analysis tab) --------
-  # Reads whatever's already in rv$batch_ms_results/rv$sample_meta (set by a
-  # batch run) and (re)computes rv$stats_results/rv$kind_stats_results/
-  # rv$quant_results from the CURRENT Statistical Analysis tab settings --
-  # called automatically right after a batch run finishes, and again from
-  # "Run Statistical Analysis" when the user only wants to change the
+  # Re-reads the LIVE batch sample metadata table (batch_meta_data(), the
+  # thing the user actually edits -- Group/Timepoint/Sample Type/
+  # concentration) rather than rv$sample_meta, which is otherwise only ever
+  # set once, at the end of the (slow, 30+ minute) full batch MS run --
+  # editing Sample Type/concentration afterward to mark a calibration curve
+  # and clicking "Run Statistical Analysis" used to silently do nothing
+  # because this read the stale snapshot instead. Computes
+  # rv$stats_results/rv$kind_stats_results/rv$quant_results/
+  # rv$batch_ms_results$degradation from the CURRENT settings -- called
+  # automatically right after a batch run finishes, and again from "Run
+  # Statistical Analysis" when the user only wants to change metadata / the
   # P-adjustment method / Group A-B override / calibration settings without
   # re-running the whole batch pipeline.
   .recompute_stats_and_quant <- function() {
-    meta <- rv$sample_meta
+    meta <- batch_meta_data()
     bres <- rv$batch_ms_results
-    if (is.null(meta) || is.null(bres) || nrow(bres$ms1_matches) == 0) return(invisible(NULL))
+    if (is.null(meta) || nrow(meta) == 0 || is.null(bres) || nrow(bres$ms1_matches) == 0) {
+      return(invisible(NULL))
+    }
+    rv$sample_meta <- meta
 
     has_group <- !is.null(meta$group) && any(nzchar(meta$group))
     has_time <- !is.null(meta$timepoint) && any(nzchar(meta$timepoint))
-    if (!(has_group || has_time)) return(invisible(NULL))
 
     p_adjust_method <- input$stats_padjust %||% "BH"
     # An explicit Group A/B override (Statistical Analysis tab) takes
@@ -2258,6 +2364,22 @@ server <- function(input, output, session) {
       NULL
     })
     rv$quant_results <- quant_res
+
+    # Degradation summary (per-sample %, composition-by-class) also needs
+    # to reflect the CURRENT Sample Type/Group/Timepoint edits -- it's
+    # computed once inside annotate_metabolites_batch() at batch-run time,
+    # before the user has necessarily finished marking calibration
+    # standards/QC, so it's recomputed here from the live metadata too
+    # (excludes standards/QC/blanks, joins group/timepoint -- see
+    # degradation_summary()'s sample_meta argument).
+    bres$degradation <- tryCatch(
+      degradation_summary(bres$ms1_matches, sample_meta = meta),
+      error = function(e) {
+        rv$status_text <- paste0(rv$status_text,
+          "WARNING: degradation summary failed: ", conditionMessage(e), "\n")
+        NULL
+      })
+    rv$batch_ms_results <- bres
     invisible(NULL)
   }
 
@@ -2492,7 +2614,8 @@ server <- function(input, output, session) {
             mets, feats, ms2, dict = dict, ppm_tol = input$ppm_tol, z_range = z_range,
             adducts = adducts, max_oxid = input$max_oxid, h_offset = input$h_offset,
             n_iso = input$n_iso, use_envipat = input$use_envipat,
-            frag_tol_ppm = input$frag_tol_ppm, frag_z_range = 1:input$frag_z_max)
+            frag_tol_ppm = input$frag_tol_ppm, frag_z_range = 1:input$frag_z_max,
+            sample_meta = batch_meta_data())
 
           list(features = feats, results = batch_results, meta = batch_meta_data())
         }, error = function(e) {
@@ -2930,7 +3053,12 @@ server <- function(input, output, session) {
   ## ---- Quantification tab ----------------------------------------------------
   output$quant_ready <- reactive({
     q <- rv$quant_results
-    !is.null(q) && (nrow(q$absolute) > 0 || nrow(q$relative) > 0)
+    # Also true when a calibration curve was ATTEMPTED but failed to fit --
+    # calibration_curves_table exists specifically to surface WHY (too few
+    # standard points, no standard-type rows, ...) via its own "note"
+    # column, so gating the whole panel on absolute/relative having actual
+    # rows used to hide that explanation right when it was most needed.
+    !is.null(q) && (nrow(q$absolute) > 0 || nrow(q$relative) > 0 || length(q$calibration_curves) > 0)
   })
   outputOptions(output, "quant_ready", suspendWhenHidden = FALSE)
 
@@ -3241,6 +3369,16 @@ server <- function(input, output, session) {
     selectInput("stats_met_select", "Metabolite", choices = stats::setNames(df$met_id, df$met_name))
   })
 
+  # Calibration standards/QC/blanks are for assay performance, not the
+  # study design -- excluded here (same rule as quantify_relative()/
+  # degradation_summary()) so they don't show up as extra points with no
+  # real x-axis value (blank Group/Timepoint) on the trend/boxplot below.
+  .study_sample_meta <- reactive({
+    meta <- rv$sample_meta
+    req(meta)
+    if ("sample_type" %in% names(meta)) meta[.is_study_sample(meta$sample_type), ] else meta
+  })
+
   output$plot_stats_main <- renderPlot({
     sr <- rv$stats_results
     req(sr, input$stats_met_select)
@@ -3248,11 +3386,11 @@ server <- function(input, output, session) {
       plot_volcano(sr$result)
     } else if (sr$mode == "time_series") {
       abund <- build_abundance_matrix(rv$batch_ms_results$ms1_matches)
-      long <- abundance_long(abund, rv$sample_meta[, c("sample", "timepoint")])
+      long <- abundance_long(abund, .study_sample_meta()[, c("sample", "timepoint")])
       plot_trend(long, input$stats_met_select)
     } else {
       abund <- build_abundance_matrix(rv$batch_ms_results$ms1_matches)
-      long <- abundance_long(abund, rv$sample_meta[, c("sample", "group")])
+      long <- abundance_long(abund, .study_sample_meta()[, c("sample", "group")])
       plot_group_boxplot(long, input$stats_met_select)
     }
   })

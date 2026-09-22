@@ -111,6 +111,41 @@ stopifnot(treat_pct == 50)
 stopifnot(treat_pct > ctrl_pct)
 cat("ctrl = 10%, treat = 50%, computed independently per sample: PASS\n")
 
+## ---- sample_meta excludes calibration standards/QC, joins group/timepoint --
+cat("\n--- sample_meta excludes standards/QC, joins group/timepoint ---\n")
+m7 <- rbind(
+  .mk_row("std_1", "M01", "parent", "parent", area = 2000),
+  .mk_row("qc_1", "M01", "parent", "parent", area = 400000),
+  .mk_row("qc_1", "M02", "N-1", "exo_3p", area = 10000),
+  .mk_row("t0_r1", "M01", "parent", "parent", area = 400000),
+  .mk_row("t0_r1", "M02", "N-1", "exo_3p", area = 10000),
+  .mk_row("t24_r1", "M01", "parent", "parent", area = 200000),
+  .mk_row("t24_r1", "M02", "N-1", "exo_3p", area = 210000)
+)
+sm7 <- data.frame(
+  sample = c("std_1", "qc_1", "t0_r1", "t24_r1"),
+  sample_type = c("standard", "quality_control", "unknown", "unknown"),
+  group = "", timepoint = c("", "", "0", "24"),
+  stringsAsFactors = FALSE)
+
+d7_nofilter <- degradation_summary(m7)
+stopifnot(setequal(unique(d7_nofilter$per_sample$sample), c("std_1", "qc_1", "t0_r1", "t24_r1")))
+cat("no sample_meta given -> every sample kept (backward compatible): PASS\n")
+
+d7 <- degradation_summary(m7, sample_meta = sm7)
+stopifnot(setequal(unique(d7$per_sample$sample), c("t0_r1", "t24_r1")))
+stopifnot(setequal(unique(d7$composition$sample), c("t0_r1", "t24_r1")))
+cat("sample_meta given -> standard/quality_control samples excluded from",
+    "per_sample and composition: PASS\n")
+
+stopifnot("timepoint" %in% names(d7$per_sample), "timepoint" %in% names(d7$composition))
+stopifnot(d7$per_sample$timepoint[d7$per_sample$sample == "t0_r1"] == "0")
+stopifnot(d7$per_sample$timepoint[d7$per_sample$sample == "t24_r1"] == "24")
+pct_t0 <- d7$per_sample$pct_degradation[d7$per_sample$sample == "t0_r1"]
+pct_t24 <- d7$per_sample$pct_degradation[d7$per_sample$sample == "t24_r1"]
+stopifnot(pct_t24 > pct_t0)
+cat("timepoint joined onto both tables, degradation trend over time preserved: PASS\n")
+
 ## ---- plot_degradation_composition() returns a ggplot ----------------------
 cat("\n--- plot_degradation_composition() ---\n")
 p <- plot_degradation_composition(d6)

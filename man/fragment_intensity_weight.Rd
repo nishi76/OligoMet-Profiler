@@ -23,12 +23,18 @@ NOT a calibrated intensity model -- there's no oligonucleotide
 equivalent of the large annotated spectral libraries peptide tools
 train on. Encodes only fragmentation propensities already established
 in the literature: phosphorothioate cleavage sites are more labile
-than phosphodiester; y/b ions predominate for MOE/2'-OMe chemistry and
-a-B/w for DNA chemistry; purine base-loss is more labile than
-pyrimidine; internal (double-cleavage) ions are consistently minor
-relative to terminal ions. Treat the result as a coarse "expect this
-peak relatively taller" ranking, not a predicted abundance -- confirm
-every real assignment against acquired data.
+than phosphodiester (Gawlig et al. 2026, RCM e70093: PS-deoxyribose is
+the least gas-phase-stable of seven tested backbone/2'-chemistries);
+y/b ions predominate for MOE/2'-OMe chemistry and a-B/w for DNA
+chemistry; base-loss lability follows Gawlig et al. 2026's measured
+A < T < U < G < C ordering for the five standard bases (guanine is
+more stable than the pyrimidines T/U, so this is not a plain
+purine/pyrimidine split), falling back to purine/pyrimidine
+ring-nitrogen-count for any custom/modified base; internal
+(double-cleavage) ions are consistently minor relative to terminal
+ions. Treat the result as a coarse "expect this peak relatively
+taller" ranking, not a predicted abundance -- confirm every real
+assignment against acquired data.
 }
 \seealso{
 [mirror_spectrum_data()]
