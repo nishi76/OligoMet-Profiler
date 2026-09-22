@@ -69,10 +69,25 @@
   exit_code <- attr(status_lines, "status")
   http_code <- suppressWarnings(as.integer(status_lines[length(status_lines)]))
   resp_text <- if (file.exists(tmp_out)) paste(readLines(tmp_out, warn = FALSE, encoding = "UTF-8"), collapse = "\n") else ""
-  if (is.na(http_code)) {
-    stop("curl request to ", url, " failed to complete (exit status ",
+  # curl prints "000" for --write-out's %{http_code} whenever no HTTP
+  # response was ever received at all (DNS failure, connection refused,
+  # TLS handshake failure, a corporate proxy/firewall silently dropping the
+  # connection, a timeout before headers arrive, ...) -- as.integer("000")
+  # is 0, NOT NA, so this must be checked separately from the NA/malformed
+  # case below or it silently falls through as if it were a real, empty,
+  # HTTP 0 response (confirmed by reproducing this exact path against an
+  # unreachable host: it previously returned status=0/body="" instead of
+  # raising here, which then surfaced downstream as a confusing
+  # "unparseable JSON (HTTP 0)" error with no hint that the real problem was
+  # never reaching the server in the first place).
+  if (is.na(http_code) || http_code == 0L || (!is.null(exit_code) && exit_code != 0L)) {
+    msg_lines <- if (!is.na(http_code)) status_lines[-length(status_lines)] else status_lines
+    diag <- paste(Filter(nzchar, msg_lines), collapse = " ")
+    stop("Could not reach ", url, " (curl exit status ",
          if (is.null(exit_code)) "unknown" else exit_code, "): ",
-         paste(status_lines, collapse = " "))
+         if (nzchar(diag)) diag else "no response received.",
+         " Check network access, proxy settings, and any corporate firewall ",
+         "that might block outbound HTTPS to this host.")
   }
   list(status = http_code, body = resp_text)
 }
@@ -91,8 +106,14 @@
 }
 
 .default_model <- function(backend) {
-  switch(backend, anthropic = "claude-sonnet-5", openai = "gpt-4o",
-        stop("Unknown backend: ", backend))
+  # Overridable via env var so a stale/inaccessible model name doesn't need
+  # a code change to work around -- e.g. a key on an older plan/org without
+  # access to the current default can set OLIGOMET_ANTHROPIC_MODEL to
+  # whatever model that key does have.
+  switch(backend,
+    anthropic = Sys.getenv("OLIGOMET_ANTHROPIC_MODEL", "claude-sonnet-5"),
+    openai = Sys.getenv("OLIGOMET_OPENAI_MODEL", "gpt-4o"),
+    stop("Unknown backend: ", backend))
 }
 
 ## ---- Anthropic Messages API adapter ------------------------------------------
