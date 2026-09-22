@@ -46,7 +46,8 @@ Imports:
     jsonlite,
     stats,
     utils,
-    grDevices
+    grDevices,
+    graphics
 Suggests:
     shiny,
     DT,
