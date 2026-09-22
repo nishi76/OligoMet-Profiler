@@ -894,6 +894,7 @@ ui <- fluidPage(
             uiOutput("batch_meta_upload_status"),
             DT::DTOutput("sample_meta_table"),
             uiOutput("sample_meta_timepoint_warn"),
+            uiOutput("sample_meta_type_warn"),
             tags$p(style = "font-size: 11px; color: #6c757d; margin-top: 4px;",
                    "One row per uploaded file (see Empirical MS2 Library tab to upload ",
                    "raw files). Fill in Group (2+ groups) or Timepoint (time series) ",
@@ -997,8 +998,7 @@ ui <- fluidPage(
               ),
               conditionalPanel(
                 condition = "output.quant_ready != 'true'",
-                tags$p(style = "padding-top: 12px; color: #6c757d;",
-                       "Run batch processing with Group/Timepoint (and Sample Type = standard for calibration) filled in to see this here.")
+                uiOutput("quant_not_ready_note")
               )
             ),
             tabPanel("Degradation Summary",
@@ -1366,6 +1366,25 @@ server <- function(input, output, session) {
   .SAMPLE_TYPE_LEVELS <- c("unknown", "standard", "quality_control",
                            "reagent_blank", "matrix_blank")
 
+  # Case/spacing/punctuation-insensitive mapping of a typed sample_type
+  # value against the controlled vocabulary above ("Quality Control"/"QC"/
+  # "qc " all map to "quality_control") -- NA for anything that doesn't
+  # map, so a caller can flag it rather than silently keep or drop it.
+  # Shared by every place a sample_type value can reach batch_meta_data():
+  # the CSV merge below AND direct cell-editing in the table (real-user
+  # report: typing "Standard" into the table, instead of the exact lower-
+  # case "standard" fit_calibration_curve()/.is_study_sample() match
+  # against, silently broke calibration-curve fitting with no error --
+  # the CSV path already normalized this, direct cell edits didn't).
+  .map_sample_type <- function(x) {
+    norm <- gsub("^_|_$", "", gsub("[^a-z0-9]+", "_", tolower(trimws(x))))
+    canon <- c(unknown = "unknown", standard = "standard",
+               quality_control = "quality_control", qc = "quality_control",
+               reagent_blank = "reagent_blank", blank = "reagent_blank",
+               matrix_blank = "matrix_blank")
+    unname(canon[norm])
+  }
+
   batch_meta_data <- reactiveVal(data.frame(
     sample = character(0), group = character(0), timepoint = character(0),
     sample_type = character(0), concentration = character(0), stringsAsFactors = FALSE))
@@ -1467,13 +1486,29 @@ server <- function(input, output, session) {
     nzchar(meta$timepoint) & is.na(suppressWarnings(as.numeric(meta$timepoint)))
   }
 
+  # A sample_type value that doesn't map onto the controlled vocabulary
+  # (even after .map_sample_type()'s case/spacing/punctuation-insensitive
+  # matching) breaks every exact sample_type == "standard"/"unknown" check
+  # downstream (fit_calibration_curve(), .is_study_sample(), ...) with no
+  # error -- same "flag it right here, at entry" reasoning as
+  # .invalid_timepoints() above.
+  .invalid_sample_types <- function(meta) {
+    nzchar(meta$sample_type) & is.na(.map_sample_type(meta$sample_type))
+  }
+
   output$sample_meta_table <- DT::renderDT({
     df <- batch_meta_data()
     df$.tp_invalid <- .invalid_timepoints(df)
+    df$.st_invalid <- .invalid_sample_types(df)
     dt <- DT::datatable(df, editable = TRUE, rownames = FALSE,
                    options = list(dom = "t", paging = FALSE, scrollY = "180px",
-                     columnDefs = list(list(visible = FALSE, targets = which(names(df) == ".tp_invalid") - 1))))
-    DT::formatStyle(dt, "timepoint", valueColumns = ".tp_invalid",
+                     columnDefs = list(list(visible = FALSE,
+                       targets = which(names(df) %in% c(".tp_invalid", ".st_invalid")) - 1))))
+    dt <- DT::formatStyle(dt, "timepoint", valueColumns = ".tp_invalid",
+                     backgroundColor = DT::styleEqual(c(TRUE, FALSE), c("#fdecea", "white")),
+                     color = DT::styleEqual(c(TRUE, FALSE), c("#a3231b", "inherit")),
+                     fontWeight = DT::styleEqual(c(TRUE, FALSE), c("600", "normal")))
+    DT::formatStyle(dt, "sample_type", valueColumns = ".st_invalid",
                      backgroundColor = DT::styleEqual(c(TRUE, FALSE), c("#fdecea", "white")),
                      color = DT::styleEqual(c(TRUE, FALSE), c("#a3231b", "inherit")),
                      fontWeight = DT::styleEqual(c(TRUE, FALSE), c("600", "normal")))
@@ -1481,8 +1516,36 @@ server <- function(input, output, session) {
   observeEvent(input$sample_meta_table_cell_edit, {
     df <- batch_meta_data()
     edit <- input$sample_meta_table_cell_edit
-    df[edit$row, edit$col + 1] <- edit$value
+    val <- edit$value
+    # sample_type is free-text-editable in this table, same as every other
+    # cell -- canonicalize it the same way the CSV-merge path already does
+    # (.map_sample_type()), so typing "Standard"/"QC"/"Quality Control"
+    # lands on the exact lowercase controlled-vocabulary string
+    # fit_calibration_curve()/.is_study_sample() match against, instead of
+    # silently breaking calibration-curve fitting with no error. Anything
+    # that still doesn't map is kept as typed and flagged red (see
+    # .invalid_sample_types() above), the same "keep as typed, flag it"
+    # policy the CSV path uses -- never silently coerced to "unknown".
+    if (identical(names(df)[edit$col + 1], "sample_type") && nzchar(val)) {
+      mapped <- .map_sample_type(val)
+      if (!is.na(mapped)) val <- mapped
+    }
+    df[edit$row, edit$col + 1] <- val
     batch_meta_data(df)
+  })
+
+  # Live, human-readable companion to the red cell highlighting above --
+  # updates on every cell edit and every CSV merge, since both write
+  # through batch_meta_data().
+  output$sample_meta_type_warn <- renderUI({
+    meta <- batch_meta_data()
+    if (nrow(meta) == 0) return(NULL)
+    bad <- .invalid_sample_types(meta)
+    if (!any(bad)) return(NULL)
+    tags$p(style = "font-size: 11px; color: #a3231b; font-weight: 600; margin: 4px 0;",
+      sprintf("Sample Type must be one of {%s} -- not free text. Fix: %s.",
+              paste(.SAMPLE_TYPE_LEVELS, collapse = ", "),
+              paste0(meta$sample[bad], " (\"", meta$sample_type[bad], "\")", collapse = ", ")))
   })
 
   # Live, human-readable companion to the red cell highlighting above --
@@ -1548,19 +1611,13 @@ server <- function(input, output, session) {
     }
     csv$sample <- trimws(csv$sample)
 
-    # Canonicalize sample_type against the controlled vocabulary --
-    # case/spacing/punctuation-insensitive ("Quality Control", "QC", "qc"
-    # all map to "quality_control") so a human-typed CSV isn't rejected
-    # over formatting differences. Anything that still doesn't map is kept
-    # as typed and flagged, rather than silently coerced to "unknown".
+    # Canonicalize sample_type against the controlled vocabulary (see
+    # .map_sample_type() above) so a human-typed CSV isn't rejected over
+    # formatting differences. Anything that still doesn't map is kept as
+    # typed and flagged, rather than silently coerced to "unknown".
     invalid_types <- character(0)
     if ("sample_type" %in% names(csv)) {
-      norm <- gsub("^_|_$", "", gsub("[^a-z0-9]+", "_", tolower(trimws(csv$sample_type))))
-      canon <- c(unknown = "unknown", standard = "standard",
-                 quality_control = "quality_control", qc = "quality_control",
-                 reagent_blank = "reagent_blank", blank = "reagent_blank",
-                 matrix_blank = "matrix_blank")
-      mapped <- unname(canon[norm])
+      mapped <- .map_sample_type(csv$sample_type)
       unmapped <- is.na(mapped) & nzchar(csv$sample_type)
       invalid_types <- unique(csv$sample_type[unmapped])
       csv$sample_type[!is.na(mapped)] <- mapped[!is.na(mapped)]
@@ -3114,6 +3171,30 @@ server <- function(input, output, session) {
   })
   outputOptions(output, "quant_ready", suspendWhenHidden = FALSE)
 
+  # A calibration curve needs standard-type rows/concentrations in the
+  # metadata table AND the metabolite selected under "Calibration &
+  # Quantification (Advanced)" in the sidebar (absolute_quant_mets) -- two
+  # separate steps, easy to do one and forget the other. The generic
+  # "run batch processing..." message doesn't distinguish those cases, so
+  # a user who filled in Sample Type = standard but never picked a
+  # metabolite there sees the exact same text as someone who hasn't
+  # touched the metadata table at all -- this fills in which one it is.
+  output$quant_not_ready_note <- renderUI({
+    meta <- rv$sample_meta
+    n_std <- if (!is.null(meta) && "sample_type" %in% names(meta)) {
+      sum(.map_sample_type(meta$sample_type) == "standard", na.rm = TRUE)
+    } else 0L
+    msg <- if (n_std > 0 && length(input$absolute_quant_mets %||% character(0)) == 0) {
+      sprintf(paste("%d sample(s) are marked Sample Type = standard, but no metabolite is",
+                     "selected to build a calibration curve from -- pick one under",
+                     "\"Calibration & Quantification (Advanced)\" in the sidebar,",
+                     "then click Run Statistical Analysis."), n_std)
+    } else {
+      "Run batch processing with Group/Timepoint (and Sample Type = standard for calibration) filled in to see this here."
+    }
+    tags$p(style = "padding-top: 12px; color: #6c757d;", msg)
+  })
+
   # Flattens rv$quant_results$calibration_curves (a named list of
   # fit_calibration_curve() results, one per absolute-quant metabolite) into
   # one row per metabolite -- surfaces the "note" field that explains WHY a
@@ -3420,6 +3501,17 @@ server <- function(input, output, session) {
     req(nrow(df) > 0)
     selectInput("stats_met_select", "Metabolite", choices = stats::setNames(df$met_id, df$met_name))
   })
+
+  # .is_study_sample() also exists in R/chemistry_dict.R, but as an
+  # internal (non-exported) package function -- app.R runs OUTSIDE the
+  # package namespace once installed normally (OligoMetProfiler::run_app()),
+  # so it can only ever see EXPORTED names there (confirmed by a real user
+  # report: "could not find function \".is_study_sample\""). A local copy
+  # is the same fix pattern as .find_met() above and every other in-app
+  # .xxx helper already defined directly in this file.
+  .is_study_sample <- function(sample_type) {
+    is.na(sample_type) | !nzchar(sample_type) | sample_type == "unknown"
+  }
 
   # Calibration standards/QC/blanks are for assay performance, not the
   # study design -- excluded here (same rule as quantify_relative()/
