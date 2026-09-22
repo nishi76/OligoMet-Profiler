@@ -121,6 +121,29 @@ stopifnot(inherits(p2, "gg"))
 stopifnot(inherits(p3, "gg"))
 cat("plot_volcano/plot_group_boxplot/plot_trend all return ggplot objects: PASS\n")
 
+## ---- multi_trend_summary()/plot_multi_trend() (Time Course tab) ------------
+cat("\n--- multi_trend_summary() / plot_multi_trend() ---\n")
+mts <- multi_trend_summary(long_ts, met_ids = c("M1", "M3"), normalize = TRUE)
+stopifnot(setequal(unique(mts$met_id), c("M1", "M3")))
+stopifnot(nrow(mts) == 2 * length(unique(timepoint_ts)))
+m3_rows <- mts[mts$met_id == "M3", ][order(mts[mts$met_id == "M3", "timepoint"]), ]
+stopifnot(m3_rows$mean_value[1] == 1)  # normalized to its own baseline at t=0
+stopifnot(m3_rows$mean_value[nrow(m3_rows)] > m3_rows$mean_value[1])
+m1_rows <- mts[mts$met_id == "M1", ]
+stopifnot(all(abs(m1_rows$mean_value - 1) < 0.3))  # M1 is flat, stays near its own baseline
+cat("M3 (injected trend) rises from its own baseline, M1 (flat) stays near 1.0: PASS\n")
+
+mts_raw <- multi_trend_summary(long_ts, normalize = FALSE)
+stopifnot(setequal(unique(mts_raw$met_id), met_ids))
+stopifnot(all(mts_raw$mean_value > 1000))  # raw intensity scale, not normalized
+cat("normalize = FALSE keeps raw intensity scale: PASS\n")
+
+p4 <- plot_multi_trend(mts)
+p4_empty <- plot_multi_trend(data.frame())
+stopifnot(inherits(p4, "gg"))
+stopifnot(inherits(p4_empty, "gg"))
+cat("plot_multi_trend() returns a ggplot for both populated and empty input: PASS\n")
+
 ## ---- build_kind_abundance_matrix() / kind_abundance_long() (M5) ------------
 # Synthetic data with real, varying `kind` values (unlike the single-kind
 # "truncation" fixture above) and a deliberate per-kind group difference --

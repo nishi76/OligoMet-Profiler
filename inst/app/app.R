@@ -46,7 +46,7 @@ if (!is.null(.module_dir)) {
                "chemistry_dict.R", "oligo_io.R",
                "metabolites.R", "mass_isotope.R", "fragments.R",
                "ms_matching.R", "spectra_io.R", "batch_ms_processing.R", "statistics.R",
-               "degradation.R", "build_workbook.R", "build_report.R",
+               "degradation.R", "multivariate.R", "build_workbook.R", "build_report.R",
                "export_acquisition.R", "export_spectral.R", "mirror_plot.R",
                "agent_tools.R", "agent_core.R")) {
     source(file.path(.module_dir, "R", .f))
@@ -1128,18 +1128,70 @@ ui <- fluidPage(
               )
             ),
             tabPanel("Time Course",
-              tags$div(style = "padding-top: 12px;",
-                tags$p(class = "placeholder-note",
-                  "Time-course comparison already runs automatically under Univariate ",
-                  "Statistics when Timepoint is filled in on the Batch Processing tab. A ",
-                  "dedicated multi-metabolite trend view here is not implemented yet.")
+              conditionalPanel(
+                condition = "output.batch_ready == 'true'",
+                tags$div(style = "padding-top: 12px;",
+                  tags$p(style = "font-size: 12px; color: #6c757d;",
+                    "Per-metabolite time-course comparison already runs automatically under ",
+                    "Univariate Statistics when Timepoint is filled in -- this is the same ",
+                    "data, several metabolites overlaid on one shared scale so their kinetics ",
+                    "can be compared directly. Calibration standards/QC/blanks are excluded."),
+                  selectizeInput("tc_met_ids", "Metabolites to plot", choices = character(0),
+                                 multiple = TRUE,
+                                 options = list(placeholder = "Defaults to the top few by signal")),
+                  checkboxInput("tc_normalize",
+                                "Normalize to earliest timepoint (recommended -- puts metabolites of very different abundance on one scale)",
+                                value = TRUE),
+                  uiOutput("time_course_note"),
+                  plotOutput("plot_time_course_trend", height = "340px"),
+                  DT::DTOutput("time_course_table"),
+                  tags$div(style = "height: 8px;"),
+                  downloadButton("dl_time_course_csv", "Download time-course summary (.csv)", class = "btn-outline-primary")
+                )
+              ),
+              conditionalPanel(
+                condition = "output.batch_ready != 'true'",
+                tags$p(style = "padding-top: 12px; color: #6c757d;",
+                       "Run Batch Processing with Timepoint filled in to see a multi-metabolite trend here.")
               )
             ),
             tabPanel("Multivariate",
-              tags$div(style = "padding-top: 12px;",
-                tags$p(class = "placeholder-note",
-                  "PCA / clustering across metabolites is not implemented yet -- placeholder ",
-                  "tab reflecting the reconciled mockup, flagged rather than faked.")
+              conditionalPanel(
+                condition = "output.batch_ready == 'true'",
+                tags$div(style = "padding-top: 12px;",
+                  tags$p(style = "font-size: 12px; color: #6c757d;",
+                    "PCA and hierarchical clustering of samples by metabolite profile. ",
+                    "Calibration standards, QC, and blanks are excluded (Sample Type on the ",
+                    "Batch Processing tab), same as everywhere else in this tab."),
+                  selectizeInput("mv_met_ids", "Metabolites to include", choices = character(0),
+                                 multiple = TRUE, options = list(placeholder = "All metabolites (default)")),
+                  fluidRow(
+                    column(6, checkboxInput("mv_log", "Log2-transform", value = TRUE)),
+                    column(6, checkboxInput("mv_scale", "Unit-variance scale", value = TRUE))
+                  ),
+                  uiOutput("multivariate_note"),
+                  tags$h6("PCA -- sample scores"),
+                  plotOutput("plot_pca_scores", height = "320px"),
+                  tags$p(style = "font-size: 11px; color: #6c757d; margin-top: -4px;",
+                         "Loadings: which metabolites drive each component, ranked by |PC1|."),
+                  DT::DTOutput("pca_loadings_table"),
+                  fluidRow(
+                    column(6, downloadButton("dl_pca_scores_csv", "Download PCA scores (.csv)", class = "btn-outline-primary w-100")),
+                    column(6, downloadButton("dl_pca_loadings_csv", "Download PCA loadings (.csv)", class = "btn-outline-primary w-100"))
+                  ),
+                  tags$hr(),
+                  tags$h6("Hierarchical clustering"),
+                  numericInput("mv_k", "Number of clusters", value = 2, min = 2, step = 1),
+                  plotOutput("plot_dendrogram", height = "320px"),
+                  DT::DTOutput("hclust_clusters_table"),
+                  tags$div(style = "height: 8px;"),
+                  downloadButton("dl_hclust_clusters_csv", "Download cluster assignments (.csv)", class = "btn-outline-primary")
+                )
+              ),
+              conditionalPanel(
+                condition = "output.batch_ready != 'true'",
+                tags$p(style = "padding-top: 12px; color: #6c757d;",
+                       "Run Batch Processing to see PCA / clustering here.")
               )
             )
           )
@@ -3436,6 +3488,157 @@ server <- function(input, output, session) {
     content = function(file) {
       utils::write.csv(.kind_stats_display_table(), file, row.names = FALSE)
     }
+  )
+
+  ## ---- Time Course tab: multi-metabolite trend --------------------------------
+  # Metabolite choices for both this and the Multivariate tab below come
+  # straight from the batch matches, not from any stats result -- unlike
+  # stats_met_selector (which only lists metabolites a compare_*() call
+  # already succeeded on), these should offer every matched metabolite even
+  # before/without a two-group or 3+-group comparison being meaningful.
+  observeEvent(rv$batch_ms_results, {
+    bres <- rv$batch_ms_results
+    if (is.null(bres) || nrow(bres$ms1_matches) == 0) {
+      updateSelectizeInput(session, "tc_met_ids", choices = character(0))
+      updateSelectizeInput(session, "mv_met_ids", choices = character(0))
+      return()
+    }
+    met_info <- unique(bres$ms1_matches[, c("met_id", "met_name")])
+    choices <- stats::setNames(met_info$met_id, paste0(met_info$met_name, " (", met_info$met_id, ")"))
+
+    # Time Course default: top few metabolites by total signal, so the
+    # trend plot isn't empty (nothing selected) or unreadable (every
+    # metabolite at once) the first time this tab is opened.
+    sig_col <- if ("area" %in% names(bres$ms1_matches) && any(!is.na(bres$ms1_matches$area))) "area" else "intensity"
+    tot <- stats::aggregate(stats::as.formula(paste(sig_col, "~ met_id")),
+                             data = bres$ms1_matches, FUN = sum, na.rm = TRUE)
+    top_default <- tot$met_id[order(-tot[[sig_col]])][seq_len(min(6, nrow(tot)))]
+    keep_tc <- intersect(isolate(input$tc_met_ids), met_info$met_id)
+    updateSelectizeInput(session, "tc_met_ids", choices = choices,
+                         selected = if (length(keep_tc) > 0) keep_tc else top_default)
+
+    # Multivariate default: every metabolite (NULL met_ids in run_pca()/
+    # run_hclust() below) -- narrowing is opt-in, unlike the trend view.
+    keep_mv <- intersect(isolate(input$mv_met_ids), met_info$met_id)
+    updateSelectizeInput(session, "mv_met_ids", choices = choices, selected = keep_mv)
+  }, ignoreNULL = FALSE)
+
+  .time_course_long <- reactive({
+    bres <- rv$batch_ms_results
+    if (is.null(bres) || nrow(bres$ms1_matches) == 0) return(data.frame())
+    meta <- .study_sample_meta()
+    if (!"timepoint" %in% names(meta)) return(data.frame())
+    meta$timepoint <- suppressWarnings(as.numeric(meta$timepoint))
+    meta <- meta[!is.na(meta$timepoint), c("sample", "timepoint")]
+    if (nrow(meta) == 0) return(data.frame())
+    abund <- build_abundance_matrix(bres$ms1_matches)
+    abundance_long(abund, meta)
+  })
+
+  .time_course_summary <- reactive({
+    long <- .time_course_long()
+    if (nrow(long) == 0) return(data.frame())
+    met_ids <- if (length(input$tc_met_ids) > 0) input$tc_met_ids else NULL
+    multi_trend_summary(long, met_ids = met_ids, normalize = isTRUE(input$tc_normalize))
+  })
+
+  output$time_course_note <- renderUI({
+    long <- .time_course_long()
+    msg <- if (nrow(long) == 0) {
+      "No Timepoint design detected (Batch Processing tab) after excluding calibration standards/QC/blanks."
+    } else if (length(unique(long$timepoint)) < 2) {
+      "Only one distinct timepoint found -- need at least two to show a trend."
+    } else NA_character_
+    req(!is.na(msg))
+    tags$p(style = "font-size: 11px; color: #a3231b;", msg)
+  })
+
+  output$plot_time_course_trend <- renderPlot({
+    plot_multi_trend(.time_course_summary(), normalize = isTRUE(input$tc_normalize))
+  })
+
+  output$time_course_table <- DT::renderDT({
+    df <- .time_course_summary()
+    req(nrow(df) > 0)
+    DT::datatable(df, rownames = FALSE, options = list(pageLength = 15, scrollX = TRUE)) |>
+      DT::formatRound(c("mean_value", "sd", "sem"), digits = 3)
+  })
+
+  output$dl_time_course_csv <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_time_course_trend.csv"),
+    content = function(file) utils::write.csv(.time_course_summary(), file, row.names = FALSE)
+  )
+
+  ## ---- Multivariate tab: PCA + hierarchical clustering -------------------------
+  # Same (log-transformed, study-samples-only) matrix underlies both --
+  # run_pca()/run_hclust() (R/multivariate.R) each build it independently
+  # via the shared .build_multivariate_matrix() helper, so the PCA plot and
+  # the dendrogram below are always looking at the exact same filtered data.
+  .pca_result <- reactive({
+    bres <- rv$batch_ms_results
+    if (is.null(bres) || nrow(bres$ms1_matches) == 0) {
+      return(list(scores = data.frame(), loadings = data.frame(), var_explained = numeric(0),
+                  dropped_zero_variance = character(0), note = "no batch results yet"))
+    }
+    met_ids <- if (length(input$mv_met_ids) > 0) input$mv_met_ids else NULL
+    run_pca(bres$ms1_matches, sample_meta = rv$sample_meta, met_ids = met_ids,
+            log_transform = isTRUE(input$mv_log), scale = isTRUE(input$mv_scale))
+  })
+
+  .hclust_result <- reactive({
+    bres <- rv$batch_ms_results
+    if (is.null(bres) || nrow(bres$ms1_matches) == 0) {
+      return(list(hclust = NULL, clusters = data.frame(), k = 0L,
+                  dropped_zero_variance = character(0), note = "no batch results yet"))
+    }
+    met_ids <- if (length(input$mv_met_ids) > 0) input$mv_met_ids else NULL
+    k <- suppressWarnings(as.integer(input$mv_k))
+    if (is.na(k) || k < 2) k <- 2
+    run_hclust(bres$ms1_matches, sample_meta = rv$sample_meta, met_ids = met_ids,
+               log_transform = isTRUE(input$mv_log), scale = isTRUE(input$mv_scale), k = k)
+  })
+
+  output$multivariate_note <- renderUI({
+    note <- .pca_result()$note
+    req(nzchar(note %||% ""))
+    tags$p(style = "font-size: 11px; color: #a3231b;", note)
+  })
+
+  output$plot_pca_scores <- renderPlot({
+    plot_pca_scores(.pca_result())
+  })
+
+  output$pca_loadings_table <- DT::renderDT({
+    ld <- .pca_result()$loadings
+    req(nrow(ld) > 0)
+    ld <- ld[order(-abs(ld$PC1)), ]
+    DT::datatable(ld, rownames = FALSE, options = list(pageLength = 15, scrollX = TRUE)) |>
+      DT::formatRound(setdiff(names(ld), c("met_id", "met_name")), digits = 3)
+  })
+
+  output$dl_pca_scores_csv <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_pca_scores.csv"),
+    content = function(file) utils::write.csv(.pca_result()$scores, file, row.names = FALSE)
+  )
+  output$dl_pca_loadings_csv <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_pca_loadings.csv"),
+    content = function(file) utils::write.csv(.pca_result()$loadings, file, row.names = FALSE)
+  )
+
+  output$plot_dendrogram <- renderPlot({
+    hc <- .hclust_result()
+    plot_dendrogram(hc, k = hc$k)
+  })
+
+  output$hclust_clusters_table <- DT::renderDT({
+    cl <- .hclust_result()$clusters
+    req(nrow(cl) > 0)
+    DT::datatable(cl, rownames = FALSE, options = list(pageLength = 15, scrollX = TRUE))
+  })
+
+  output$dl_hclust_clusters_csv <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_cluster_assignments.csv"),
+    content = function(file) utils::write.csv(.hclust_result()$clusters, file, row.names = FALSE)
   )
 
   output$dl_batch_tsv <- downloadHandler(

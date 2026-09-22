@@ -385,6 +385,95 @@ plot_group_boxplot <- function(abundance_long, met_id) {
     ggplot2::theme_minimal(base_size = 11, base_family = "Liberation Sans")
 }
 
+## ---- Multi-metabolite time-course trend (Time Course tab) ------------------
+# Several metabolites overlaid on raw intensity would be dominated by
+# whichever one happens to have the largest signal -- unlike plot_trend()'s
+# single metabolite (its own y-axis, an lm trend line), each metabolite here
+# is normalized to its own mean signal at the earliest timepoint by default,
+# the same baseline quantify_relative(mode = "time_series") already uses,
+# so metabolites spanning orders of magnitude in raw signal are comparable
+# on one shared scale.
+#' Summarize a multi-metabolite time-course trend
+#'
+#' One row per (metabolite, timepoint): mean, SD, SEM, and replicate count,
+#' optionally normalized to each metabolite's own mean signal at the
+#' earliest timepoint.
+#'
+#' @param time_series_long Long-format abundance data.frame (see
+#'   [abundance_long()]) with a `timepoint` column, already numeric (the
+#'   caller is expected to have converted/filtered it, the same way
+#'   [compare_time_series()]'s own callers do).
+#' @param met_ids Which metabolites to summarize; `NULL` (the default)
+#'   summarizes every metabolite present.
+#' @param normalize `TRUE` (the default): divide each metabolite's signal
+#'   by its own mean at the earliest timepoint. `FALSE` keeps raw
+#'   intensity.
+#' @return A data.frame: `met_id`, `met_name`, `timepoint`, `n`,
+#'   `mean_value`, `sd`, `sem`. Empty if there's nothing to summarize.
+#' @seealso [plot_multi_trend()], [quantify_relative()] for the same
+#'   baseline definition used elsewhere.
+#' @export
+multi_trend_summary <- function(time_series_long, met_ids = NULL, normalize = TRUE) {
+  df <- time_series_long
+  if (is.null(df) || nrow(df) == 0) return(data.frame())
+  if (!is.null(met_ids)) df <- df[df$met_id %in% met_ids, ]
+  df <- df[!is.na(df$intensity) & !is.na(df$timepoint), ]
+  if (nrow(df) == 0) return(data.frame())
+
+  if (normalize) {
+    baseline <- stats::aggregate(intensity ~ met_id,
+                                  data = df[df$timepoint == min(df$timepoint), , drop = FALSE], FUN = mean)
+    df$.baseline <- baseline$intensity[match(df$met_id, baseline$met_id)]
+    df <- df[!is.na(df$.baseline) & df$.baseline > 0, ]
+    if (nrow(df) == 0) return(data.frame())
+    df$.value <- df$intensity / df$.baseline
+  } else {
+    df$.value <- df$intensity
+  }
+
+  rows <- lapply(split(df, list(df$met_id, df$timepoint), drop = TRUE), function(g) {
+    v <- g$.value[!is.na(g$.value)]
+    data.frame(met_id = g$met_id[1], met_name = g$met_name[1], timepoint = g$timepoint[1],
+               n = length(v), mean_value = mean(v),
+               sd = if (length(v) > 1) stats::sd(v) else NA_real_,
+               sem = if (length(v) > 1) stats::sd(v) / sqrt(length(v)) else NA_real_,
+               stringsAsFactors = FALSE)
+  })
+  out <- do.call(rbind, rows)
+  out[order(out$met_id, out$timepoint), ]
+}
+
+#' Plot a multi-metabolite time-course trend
+#'
+#' One line per metabolite (mean +/- SEM per timepoint), from a
+#' [multi_trend_summary()] result -- for comparing several metabolites'
+#' kinetics on one shared axis, which [plot_trend()]'s single-metabolite,
+#' own-scale view can't do.
+#'
+#' @param trend_summary A [multi_trend_summary()] result.
+#' @param normalize Whether `trend_summary` was built with
+#'   `normalize = TRUE` -- only affects the y-axis label.
+#' @return A ggplot object.
+#' @export
+plot_multi_trend <- function(trend_summary, normalize = TRUE) {
+  if (is.null(trend_summary) || nrow(trend_summary) == 0) {
+    return(ggplot2::ggplot() + ggplot2::theme_void() +
+             ggplot2::labs(title = "No data for the selected metabolite(s)"))
+  }
+  n_met <- length(unique(trend_summary$met_name))
+  ggplot2::ggplot(trend_summary, ggplot2::aes(x = .data$timepoint, y = .data$mean_value,
+                                               color = .data$met_name, group = .data$met_name)) +
+    ggplot2::geom_line(linewidth = 0.9) +
+    ggplot2::geom_point(size = 2) +
+    ggplot2::geom_errorbar(ggplot2::aes(ymin = .data$mean_value - .data$sem, ymax = .data$mean_value + .data$sem),
+                            width = 0, na.rm = TRUE) +
+    ggplot2::scale_color_manual(values = grDevices::colorRampPalette(
+      c("#0279EE", "#FF9400", "#75A025", "#FD9BED", "#E9ED4C"))(n_met), name = NULL) +
+    ggplot2::labs(x = "Timepoint", y = if (normalize) "Relative signal (vs. earliest timepoint)" else "Intensity",
+                  title = "Multi-metabolite time course") +
+    ggplot2::theme_minimal(base_size = 11, base_family = "Liberation Sans")
+}
+
 ## =============================================================================
 ## Quantification: absolute (calibration curve) + relative (fold-change over
 ## a baseline). A user-selected subset of metabolites gets absolute
