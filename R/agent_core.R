@@ -40,6 +40,25 @@
 # suppressWarnings() below additionally blocks that auto-emitted warning
 # outright, since the exit status is already checked explicitly and a
 # sanitized stop() message is raised instead.
+# Quotes a value for a curl -K config file. Escapes backslash BEFORE
+# quote, and escapes backslash at all -- a Windows tempfile() path
+# (tmp_body/tmp_out in .http_post_json() below) is backslash-separated,
+# and curl's own -K config-file parser treats an unescaped backslash
+# inside a quoted value as an escape character (dropping it, per curl's
+# documented "\\, \", \t, \n, \r, \v are the only recognized escapes; a
+# backslash before any other letter is ignored"), silently corrupting
+# the path into a single run-on word (confirmed by reproducing the exact
+# reported failure -- "curl: Failed to open ...file.json" with every
+# backslash missing -- against a real curl -K config, and confirming the
+# fix restores the original path via a real file whose name contains a
+# literal backslash). A standalone (not nested-in-closure) function so
+# it's directly unit-testable -- see tests/test_agent_core.R.
+.cfg_quote <- function(x) {
+  x <- gsub("\\\\", "\\\\\\\\", x)
+  x <- gsub("\"", "\\\\\"", x)
+  paste0("\"", x, "\"")
+}
+
 .http_post_json <- function(url, headers = list(), body, timeout_sec = 120) {
   body_json <- jsonlite::toJSON(body, auto_unbox = TRUE, na = "null", digits = NA)
   tmp_body <- tempfile(fileext = ".json")
@@ -48,7 +67,6 @@
   on.exit(unlink(c(tmp_body, tmp_out, tmp_cfg)), add = TRUE)
   writeLines(body_json, tmp_body, useBytes = TRUE)
 
-  .cfg_quote <- function(x) paste0("\"", gsub("\"", "\\\\\"", x), "\"")
   all_headers <- c(headers, list(`Content-Type` = "application/json"))
   header_lines <- sprintf("header = %s",
     .cfg_quote(paste0(names(all_headers), ": ", unlist(all_headers))))
