@@ -678,9 +678,7 @@ quantify_relative <- function(batch_matches, met_ids, sample_meta,
 
   study_meta <- sample_meta
   if ("sample_type" %in% names(study_meta)) {
-    study_meta <- study_meta[is.na(study_meta$sample_type) |
-                                !nzchar(study_meta$sample_type) |
-                                study_meta$sample_type == "unknown", , drop = FALSE]
+    study_meta <- study_meta[.is_study_sample(study_meta$sample_type), , drop = FALSE]
   }
 
   rows <- lapply(met_ids, function(mid) {

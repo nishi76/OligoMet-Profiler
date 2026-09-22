@@ -2255,21 +2255,29 @@ server <- function(input, output, session) {
   })  # end observeEvent(input$run_phase1)
 
   ## ---- Comparison stats + quantification (Statistical Analysis tab) --------
-  # Reads whatever's already in rv$batch_ms_results/rv$sample_meta (set by a
-  # batch run) and (re)computes rv$stats_results/rv$kind_stats_results/
-  # rv$quant_results from the CURRENT Statistical Analysis tab settings --
-  # called automatically right after a batch run finishes, and again from
-  # "Run Statistical Analysis" when the user only wants to change the
+  # Re-reads the LIVE batch sample metadata table (batch_meta_data(), the
+  # thing the user actually edits -- Group/Timepoint/Sample Type/
+  # concentration) rather than rv$sample_meta, which is otherwise only ever
+  # set once, at the end of the (slow, 30+ minute) full batch MS run --
+  # editing Sample Type/concentration afterward to mark a calibration curve
+  # and clicking "Run Statistical Analysis" used to silently do nothing
+  # because this read the stale snapshot instead. Computes
+  # rv$stats_results/rv$kind_stats_results/rv$quant_results/
+  # rv$batch_ms_results$degradation from the CURRENT settings -- called
+  # automatically right after a batch run finishes, and again from "Run
+  # Statistical Analysis" when the user only wants to change metadata / the
   # P-adjustment method / Group A-B override / calibration settings without
   # re-running the whole batch pipeline.
   .recompute_stats_and_quant <- function() {
-    meta <- rv$sample_meta
+    meta <- batch_meta_data()
     bres <- rv$batch_ms_results
-    if (is.null(meta) || is.null(bres) || nrow(bres$ms1_matches) == 0) return(invisible(NULL))
+    if (is.null(meta) || nrow(meta) == 0 || is.null(bres) || nrow(bres$ms1_matches) == 0) {
+      return(invisible(NULL))
+    }
+    rv$sample_meta <- meta
 
     has_group <- !is.null(meta$group) && any(nzchar(meta$group))
     has_time <- !is.null(meta$timepoint) && any(nzchar(meta$timepoint))
-    if (!(has_group || has_time)) return(invisible(NULL))
 
     p_adjust_method <- input$stats_padjust %||% "BH"
     # An explicit Group A/B override (Statistical Analysis tab) takes
@@ -2356,6 +2364,22 @@ server <- function(input, output, session) {
       NULL
     })
     rv$quant_results <- quant_res
+
+    # Degradation summary (per-sample %, composition-by-class) also needs
+    # to reflect the CURRENT Sample Type/Group/Timepoint edits -- it's
+    # computed once inside annotate_metabolites_batch() at batch-run time,
+    # before the user has necessarily finished marking calibration
+    # standards/QC, so it's recomputed here from the live metadata too
+    # (excludes standards/QC/blanks, joins group/timepoint -- see
+    # degradation_summary()'s sample_meta argument).
+    bres$degradation <- tryCatch(
+      degradation_summary(bres$ms1_matches, sample_meta = meta),
+      error = function(e) {
+        rv$status_text <- paste0(rv$status_text,
+          "WARNING: degradation summary failed: ", conditionMessage(e), "\n")
+        NULL
+      })
+    rv$batch_ms_results <- bres
     invisible(NULL)
   }
 
@@ -2590,7 +2614,8 @@ server <- function(input, output, session) {
             mets, feats, ms2, dict = dict, ppm_tol = input$ppm_tol, z_range = z_range,
             adducts = adducts, max_oxid = input$max_oxid, h_offset = input$h_offset,
             n_iso = input$n_iso, use_envipat = input$use_envipat,
-            frag_tol_ppm = input$frag_tol_ppm, frag_z_range = 1:input$frag_z_max)
+            frag_tol_ppm = input$frag_tol_ppm, frag_z_range = 1:input$frag_z_max,
+            sample_meta = batch_meta_data())
 
           list(features = feats, results = batch_results, meta = batch_meta_data())
         }, error = function(e) {
@@ -3028,7 +3053,12 @@ server <- function(input, output, session) {
   ## ---- Quantification tab ----------------------------------------------------
   output$quant_ready <- reactive({
     q <- rv$quant_results
-    !is.null(q) && (nrow(q$absolute) > 0 || nrow(q$relative) > 0)
+    # Also true when a calibration curve was ATTEMPTED but failed to fit --
+    # calibration_curves_table exists specifically to surface WHY (too few
+    # standard points, no standard-type rows, ...) via its own "note"
+    # column, so gating the whole panel on absolute/relative having actual
+    # rows used to hide that explanation right when it was most needed.
+    !is.null(q) && (nrow(q$absolute) > 0 || nrow(q$relative) > 0 || length(q$calibration_curves) > 0)
   })
   outputOptions(output, "quant_ready", suspendWhenHidden = FALSE)
 
@@ -3339,6 +3369,16 @@ server <- function(input, output, session) {
     selectInput("stats_met_select", "Metabolite", choices = stats::setNames(df$met_id, df$met_name))
   })
 
+  # Calibration standards/QC/blanks are for assay performance, not the
+  # study design -- excluded here (same rule as quantify_relative()/
+  # degradation_summary()) so they don't show up as extra points with no
+  # real x-axis value (blank Group/Timepoint) on the trend/boxplot below.
+  .study_sample_meta <- reactive({
+    meta <- rv$sample_meta
+    req(meta)
+    if ("sample_type" %in% names(meta)) meta[.is_study_sample(meta$sample_type), ] else meta
+  })
+
   output$plot_stats_main <- renderPlot({
     sr <- rv$stats_results
     req(sr, input$stats_met_select)
@@ -3346,11 +3386,11 @@ server <- function(input, output, session) {
       plot_volcano(sr$result)
     } else if (sr$mode == "time_series") {
       abund <- build_abundance_matrix(rv$batch_ms_results$ms1_matches)
-      long <- abundance_long(abund, rv$sample_meta[, c("sample", "timepoint")])
+      long <- abundance_long(abund, .study_sample_meta()[, c("sample", "timepoint")])
       plot_trend(long, input$stats_met_select)
     } else {
       abund <- build_abundance_matrix(rv$batch_ms_results$ms1_matches)
-      long <- abundance_long(abund, rv$sample_meta[, c("sample", "group")])
+      long <- abundance_long(abund, .study_sample_meta()[, c("sample", "group")])
       plot_group_boxplot(long, input$stats_met_select)
     }
   })

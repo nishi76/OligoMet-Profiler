@@ -11,6 +11,7 @@
   }, error = function(e) NULL)
   if (!is.null(this)) dirname(dirname(this)) else ".."
 })
+source(file.path(.pkg_root, "R", "chemistry_dict.R"))  # %||%, .is_study_sample()
 source(file.path(.pkg_root, "R", "degradation.R"))  # .best_signal_per_met()
 source(file.path(.pkg_root, "R", "statistics.R"))
 

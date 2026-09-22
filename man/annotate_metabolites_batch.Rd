@@ -19,7 +19,8 @@ annotate_metabolites_batch(
   frag_tol_ppm = 25,
   frag_z_range = 1:2,
   include_internal = FALSE,
-  compute_degradation = TRUE
+  compute_degradation = TRUE,
+  sample_meta = NULL
 )
 }
 \arguments{
@@ -38,6 +39,13 @@ parameters -- see [confirm_metabolite()].}
 
 \item{compute_degradation}{Whether to also compute
 [degradation_summary()] from the MS1 matches.}
+
+\item{sample_meta}{Optional sample metadata (`sample`, `sample_type`,
+`group`/`timepoint`) forwarded to [degradation_summary()] so
+calibration standards/QC/blanks are excluded from it and its
+per-sample/composition tables carry group/timepoint context. `NULL`
+(the default) keeps every sample, same as calling
+[degradation_summary()] with no `sample_meta` of its own.}
 }
 \value{
 A list: `ms1_matches`, `envelope` (charge-envelope consistency,

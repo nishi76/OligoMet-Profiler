@@ -4,7 +4,7 @@
 \alias{degradation_summary}
 \title{Summarize % degradation of the parent oligonucleotide, per sample}
 \usage{
-degradation_summary(ms1_matches, top_n = 10)
+degradation_summary(ms1_matches, top_n = 10, sample_meta = NULL)
 }
 \arguments{
 \item{ms1_matches}{The `ms1_matches` data.frame from
@@ -12,14 +12,29 @@ degradation_summary(ms1_matches, top_n = 10)
 
 \item{top_n}{How many top degradant species to report per sample in
 `top_degradants`.}
+
+\item{sample_meta}{Optional data.frame with `sample` plus `sample_type`
+(and, if available, `group`/`timepoint`). When given, calibration
+standards, quality-control, and reagent/matrix-blank samples (every
+`sample_type` other than `"unknown"`/blank/`NA`) are excluded before
+computing anything below -- they're for assessing assay performance,
+not the biological experiment, and shouldn't appear as their own
+"sample" in the composition-by-class chart or skew a parent's %
+degradation. Any `group`/`timepoint` columns present are also joined
+onto `per_sample`/`composition` so degradation can be tracked across
+the study design directly, without a separate manual merge. `NULL`
+(the default) keeps every sample, for callers with no sample-type
+information at all.}
 }
 \value{
 A list: `per_sample` (`sample`, `signal_used`, `parent_signal`,
-  `degradant_signal`, `total_signal`, `pct_degradation`); `composition`
+  `degradant_signal`, `total_signal`, `pct_degradation`, plus `group`/
+  `timepoint` if `sample_meta` supplied them); `composition`
   (`sample`, `kind`, `class_signal`, `pct_of_total`,
   `pct_of_degradants` -- grouped by the RAW `kind` value, e.g.
   `exo_3p`/`endo_5frag`, not pre-collapsed into a 5'/3'/endo framing,
-  so a caller can still render either view); `top_degradants`
+  so a caller can still render either view; plus `group`/`timepoint` as
+  above); `top_degradants`
   (`sample`, `met_id`, `met_name`, `kind`, `signal`,
   `pct_of_degradants`, `rank`); and `signal_used` (`"area"`,
   `"intensity"`, or `NA` if there's nothing to summarize).

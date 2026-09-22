@@ -41,6 +41,19 @@
 # Defined early so every downstream function can rely on it.
 `%||%` <- function(a, b) if (is.null(a) || length(a) == 0) b else a
 
+# Which sample_meta rows are real study samples (not calibration standards,
+# quality control, or reagent/matrix blanks) -- the controlled `sample_type`
+# vocabulary is {"unknown", "standard", "quality_control", "reagent_blank",
+# "matrix_blank"} (see the Shiny batch metadata table), and a blank/NA
+# sample_type (a caller that never set it) counts as "unknown" too. Shared
+# here so every place that needs to exclude assay-performance samples from a
+# biological result -- quantify_relative()'s baseline (R/statistics.R),
+# degradation_summary() (R/degradation.R), and the Shiny app's own trend/
+# group plots -- applies the exact same rule instead of drifting apart.
+.is_study_sample <- function(sample_type) {
+  is.na(sample_type) | !nzchar(sample_type) | sample_type == "unknown"
+}
+
 ## ---- Formula helpers --------------------------------------------------------
 # A formula is a named numeric vector over .ELEMENTS (missing elements = 0).
 .empty_formula <- function() setNames(rep(0, length(.ELEMENTS)), .ELEMENTS)
