@@ -7,17 +7,17 @@
 build_abundance_matrix(batch_matches)
 }
 \arguments{
-\item{batch_matches}{The `ms1_matches` data.frame from
-[match_ms1_batch()]/[annotate_metabolites_batch()]: one row per
-(sample, metabolite, charge, adduct) hit, with `met_id`, `met_name`,
-`kind`, `sample`, and `intensity` columns.}
+\item{batch_matches}{The \code{ms1_matches} data.frame from
+\code{\link[=match_ms1_batch]{match_ms1_batch()}}/\code{\link[=annotate_metabolites_batch]{annotate_metabolites_batch()}}: one row per
+(sample, metabolite, charge, adduct) hit, with \code{met_id}, \code{met_name},
+\code{kind}, \code{sample}, and \code{intensity} columns.}
 }
 \value{
-A data.frame with one row per metabolite (`met_id`, `met_name`,
-  `kind`) and one column per sample (named after that sample) holding
-  its max intensity for that metabolite. A (metabolite, sample)
-  combination with no match is `NA`, not zero. Empty data.frame if
-  `batch_matches` is `NULL`/empty.
+A data.frame with one row per metabolite (\code{met_id}, \code{met_name},
+\code{kind}) and one column per sample (named after that sample) holding
+its max intensity for that metabolite. A (metabolite, sample)
+combination with no match is \code{NA}, not zero. Empty data.frame if
+\code{batch_matches} is \code{NULL}/empty.
 }
 \description{
 Collapses multi-sample MS1 matches into one row per metabolite, one
@@ -26,6 +26,6 @@ sample) across charge states/adducts/oxidation levels as that
 metabolite's abundance in that sample.
 }
 \seealso{
-[abundance_long()] to reshape this into long format for
-  [compare_two_groups()]/[compare_multi_groups()]/[compare_time_series()].
+\code{\link[=abundance_long]{abundance_long()}} to reshape this into long format for
+\code{\link[=compare_two_groups]{compare_two_groups()}}/\code{\link[=compare_multi_groups]{compare_multi_groups()}}/\code{\link[=compare_time_series]{compare_time_series()}}.
 }

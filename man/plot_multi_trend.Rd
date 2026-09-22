@@ -7,17 +7,17 @@
 plot_multi_trend(trend_summary, normalize = TRUE)
 }
 \arguments{
-\item{trend_summary}{A [multi_trend_summary()] result.}
+\item{trend_summary}{A \code{\link[=multi_trend_summary]{multi_trend_summary()}} result.}
 
-\item{normalize}{Whether `trend_summary` was built with
-`normalize = TRUE` -- only affects the y-axis label.}
+\item{normalize}{Whether \code{trend_summary} was built with
+\code{normalize = TRUE} -- only affects the y-axis label.}
 }
 \value{
 A ggplot object.
 }
 \description{
 One line per metabolite (mean +/- SEM per timepoint), from a
-[multi_trend_summary()] result -- for comparing several metabolites'
-kinetics on one shared axis, which [plot_trend()]'s single-metabolite,
+\code{\link[=multi_trend_summary]{multi_trend_summary()}} result -- for comparing several metabolites'
+kinetics on one shared axis, which \code{\link[=plot_trend]{plot_trend()}}'s single-metabolite,
 own-scale view can't do.
 }

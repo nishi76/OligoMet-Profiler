@@ -7,16 +7,16 @@
 find_python()
 }
 \value{
-`"python3"` or `"python"` (whichever works), or `NA_character_`
-  if neither does. Used as the default `python_bin` for
-  [run_batch_deconvolution()].
+\code{"python3"} or \code{"python"} (whichever works), or \code{NA_character_}
+if neither does. Used as the default \code{python_bin} for
+\code{\link[=run_batch_deconvolution]{run_batch_deconvolution()}}.
 }
 \description{
-Tries `"python3"` then `"python"` on `PATH`, actually invoking each
-with `--version` (not just resolving its path via `Sys.which()`) to
+Tries \code{"python3"} then \code{"python"} on \code{PATH}, actually invoking each
+with \code{--version} (not just resolving its path via \code{Sys.which()}) to
 rule out a resolvable-but-non-functional entry -- see the comment
 above for why that check matters on Windows in particular.
 }
 \seealso{
-[run_batch_deconvolution()]
+\code{\link[=run_batch_deconvolution]{run_batch_deconvolution()}}
 }

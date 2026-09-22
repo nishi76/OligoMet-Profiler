@@ -16,7 +16,7 @@ plot_mirror_spectrum(
 )
 }
 \arguments{
-\item{spec}{Output of [mirror_spectrum_data()].}
+\item{spec}{Output of \code{\link[=mirror_spectrum_data]{mirror_spectrum_data()}}.}
 
 \item{title}{Plot title.}
 
@@ -24,7 +24,7 @@ plot_mirror_spectrum(
 matched-acquired, matched-theoretical, and unmatched peaks
 respectively.}
 
-\item{matched_color}{Deprecated alias for `acquired_color`.}
+\item{matched_color}{Deprecated alias for \code{acquired_color}.}
 
 \item{xlim_pad_frac, xlim_pad_min}{Padding around the acquired
 spectrum's observed m/z range (as a fraction of its span, and a
@@ -38,11 +38,11 @@ Acquired peaks drawn upward, theoretical library peaks downward
 (negative intensity), in the style of published acquired-vs-library
 mirror plots. Color encodes panel identity (acquired vs. theoretical),
 not match status; unmatched peaks in either panel are light grey.
-Only acquired-panel peaks are ever labeled -- see [mirror_spectrum_data()]
+Only acquired-panel peaks are ever labeled -- see \code{\link[=mirror_spectrum_data]{mirror_spectrum_data()}}
 and the file header for why. The x-axis is zoomed to the acquired
 spectrum's own observed m/z range, not auto-scaled to include
 theoretical fragments that may fall outside what was actually scanned.
 }
 \seealso{
-[mirror_spectrum_data()]
+\code{\link[=mirror_spectrum_data]{mirror_spectrum_data()}}
 }

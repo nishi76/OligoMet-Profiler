@@ -14,26 +14,26 @@ convert_vendor_raw(
 \arguments{
 \item{raw_file}{Path to the vendor raw file.}
 
-\item{output_dir}{Directory to write the converted `.mzML` into.}
+\item{output_dir}{Directory to write the converted \code{.mzML} into.}
 
-\item{centroid}{Whether to pass `--centroid` to msconvert. ROI/
-charge-envelope detection ([extract_ms1_features()],
+\item{centroid}{Whether to pass \code{--centroid} to msconvert. ROI/
+charge-envelope detection (\code{\link[=extract_ms1_features]{extract_ms1_features()}},
 the Python batch pipeline) is designed for centroided peaks.}
 
 \item{peak_picking}{Currently unused (reserved).}
 }
 \value{
-The path to the converted `.mzML` file, or `NA` if msconvert
-  isn't available or the conversion didn't produce the expected
-  output file.
+The path to the converted \code{.mzML} file, or \code{NA} if msconvert
+isn't available or the conversion didn't produce the expected
+output file.
 }
 \description{
-Shells out to `msconvert` (found via [find_msconvert()]) to convert a
-vendor raw file to `.mzML`, optionally centroiding it. If `msconvert`
+Shells out to \code{msconvert} (found via \code{\link[=find_msconvert]{find_msconvert()}}) to convert a
+vendor raw file to \code{.mzML}, optionally centroiding it. If \code{msconvert}
 isn't found, prints the equivalent command to run externally and
-returns `NA` rather than erroring, so a caller (e.g.
-[resolve_ms_input_file()]) can decide how to handle it.
+returns \code{NA} rather than erroring, so a caller (e.g.
+\code{\link[=resolve_ms_input_file]{resolve_ms_input_file()}}) can decide how to handle it.
 }
 \seealso{
-[find_msconvert()], [resolve_ms_input_file()]
+\code{\link[=find_msconvert]{find_msconvert()}}, \code{\link[=resolve_ms_input_file]{resolve_ms_input_file()}}
 }

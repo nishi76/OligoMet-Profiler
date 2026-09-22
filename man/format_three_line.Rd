@@ -7,19 +7,19 @@
 format_three_line(spec)
 }
 \arguments{
-\item{spec}{An `oligo_spec` list (see [parse_input()]).}
+\item{spec}{An \code{oligo_spec} list (see \code{\link[=parse_input]{parse_input()}}).}
 }
 \value{
-A named character vector: `bases` (n codes), `sugars` (n
-  codes), `linkages` (n-1 codes).
+A named character vector: \code{bases} (n codes), \code{sugars} (n
+codes), \code{linkages} (n-1 codes).
 }
 \description{
 The layout a sequence table (or a BioPharma Finder sequence entry
 form) is filled in with. Multi-character codes are dash-separated so
-the result round-trips through [parse_three_line()]; single-character
+the result round-trips through \code{\link[=parse_three_line]{parse_three_line()}}; single-character
 codes are written compactly (one character per position, no
 separator).
 }
 \seealso{
-[parse_three_line()]
+\code{\link[=parse_three_line]{parse_three_line()}}
 }

@@ -7,16 +7,16 @@
 fragment_intensity_weight(f, met, dict = STANDARD_DICT)
 }
 \arguments{
-\item{f}{A fragment object (see [generate_fragments()]).}
+\item{f}{A fragment object (see \code{\link[=generate_fragments]{generate_fragments()}}).}
 
-\item{met}{A metabolite object (see [generate_metabolites()]).}
+\item{met}{A metabolite object (see \code{\link[=generate_metabolites]{generate_metabolites()}}).}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 }
 \value{
 A single positive numeric weight (independent of fragment
-  charge). Callers should rescale a spectrum's own set of weights
-  (e.g. to a 0-100 max), not treat this as an absolute intensity.
+charge). Callers should rescale a spectrum's own set of weights
+(e.g. to a 0-100 max), not treat this as an absolute intensity.
 }
 \description{
 NOT a calibrated intensity model -- there's no oligonucleotide
@@ -37,5 +37,5 @@ taller" ranking, not a predicted abundance -- confirm every real
 assignment against acquired data.
 }
 \seealso{
-[mirror_spectrum_data()]
+\code{\link[=mirror_spectrum_data]{mirror_spectrum_data()}}
 }

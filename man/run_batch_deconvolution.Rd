@@ -29,56 +29,56 @@ run_batch_deconvolution(
 }
 \arguments{
 \item{files}{Paths to mzML/mzXML files (already resolved -- see
-[resolve_ms_input_file()] for vendor-format conversion).}
+\code{\link[=resolve_ms_input_file]{resolve_ms_input_file()}} for vendor-format conversion).}
 
 \item{output_dir}{Directory the Python side writes its outputs into.}
 
 \item{output_file, ms2_output_file}{Feature/MS2 table filenames within
-`output_dir`. `ms2_output_file` defaults to `"combined_ms2.tsv"`
-when `precursor_watchlist` is given.}
+\code{output_dir}. \code{ms2_output_file} defaults to \code{"combined_ms2.tsv"}
+when \code{precursor_watchlist} is given.}
 
 \item{precursor_watchlist}{Optional path to a precursor-mz watch-list
-(see [write_precursor_watchlist()]) enabling targeted MS2 capture.}
+(see \code{\link[=write_precursor_watchlist]{write_precursor_watchlist()}}) enabling targeted MS2 capture.}
 
 \item{ms2_watch_ppm, roi_ppm, rt_tol, mass_tol_ppm, z_range, min_scans, max_gap_scans, min_charge_states}{Deconvolution parameters passed straight through to the Python CLI
--- see `inst/python/oligomet_deconv/cli.py`'s `--help` for what each
+-- see \code{inst/python/oligomet_deconv/cli.py}'s \code{--help} for what each
 one does.}
 
 \item{min_intensity}{Fixed absolute intensity floor for a candidate
-ROI peak; used as a fallback when `sn_threshold` is `NULL` or a
+ROI peak; used as a fallback when \code{sn_threshold} is \code{NULL} or a
 file's noise estimate comes back unavailable.}
 
-\item{sn_threshold}{When given, OVERRIDES `min_intensity` with a
-PER-FILE threshold = (that file's own noise level) * `sn_threshold`
--- see `_noise_thresholds.tsv` in the return value for what actually
+\item{sn_threshold}{When given, OVERRIDES \code{min_intensity} with a
+PER-FILE threshold = (that file's own noise level) * \code{sn_threshold}
+-- see \verb{_noise_thresholds.tsv} in the return value for what actually
 got applied per file.}
 
-\item{n_workers}{Parallel worker processes; `NULL` lets the Python
-side pick (`os.cpu_count() - 1`).}
+\item{n_workers}{Parallel worker processes; \code{NULL} lets the Python
+side pick (\code{os.cpu_count() - 1}).}
 
 \item{python_bin, module_dir}{Interpreter and module location, normally
-left at their defaults ([find_python()]/`.find_deconv_module_dir()`).}
+left at their defaults (\code{\link[=find_python]{find_python()}}/\code{.find_deconv_module_dir()}).}
 
-\item{progress, console_tracker}{Optional callbacks: `progress(msg)`
+\item{progress, console_tracker}{Optional callbacks: \code{progress(msg)}
 for a one-line status update before the subprocess runs;
-`console_tracker(text)` for the subprocess's full captured
+\code{console_tracker(text)} for the subprocess's full captured
 stdout/stderr afterward.}
 }
 \value{
-A list: `features_path`, `ms2_path` (or `NULL`),
-  `profile_mode_files` (data.frame, or `NULL` -- files that appear to
-  be uncentroided profile-mode data), `noise_thresholds` (data.frame,
-  or `NULL` -- only present in S/N-threshold mode, one row per file
-  with its computed `noise_level`/`effective_min_intensity`), and
-  `log` (the subprocess's captured output).
+A list: \code{features_path}, \code{ms2_path} (or \code{NULL}),
+\code{profile_mode_files} (data.frame, or \code{NULL} -- files that appear to
+be uncentroided profile-mode data), \code{noise_thresholds} (data.frame,
+or \code{NULL} -- only present in S/N-threshold mode, one row per file
+with its computed \code{noise_level}/\code{effective_min_intensity}), and
+\code{log} (the subprocess's captured output).
 }
 \description{
-Shells out to `python -m oligomet_deconv.cli` (see
-`inst/python/oligomet_deconv/`) to run ROI/charge-envelope
+Shells out to \verb{python -m oligomet_deconv.cli} (see
+\verb{inst/python/oligomet_deconv/}) to run ROI/charge-envelope
 deconvolution across many mzML/mzXML files in parallel, then reads the
 resulting per-file sidecars back into R.
 }
 \seealso{
-[read_batch_features()], [read_batch_ms2()],
-  [match_ms1_batch()], [annotate_metabolites_batch()]
+\code{\link[=read_batch_features]{read_batch_features()}}, \code{\link[=read_batch_ms2]{read_batch_ms2()}},
+\code{\link[=match_ms1_batch]{match_ms1_batch()}}, \code{\link[=annotate_metabolites_batch]{annotate_metabolites_batch()}}
 }

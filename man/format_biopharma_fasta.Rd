@@ -7,23 +7,23 @@
 format_biopharma_fasta(spec, name = "oligo", po_code = "p")
 }
 \arguments{
-\item{spec}{An `oligo_spec` list (see [parse_input()]).}
+\item{spec}{An \code{oligo_spec} list (see \code{\link[=parse_input]{parse_input()}}).}
 
 \item{name}{Record name for the FASTA header.}
 
-\item{po_code}{Phosphodiester linkage prefix to write; `"p"` (BPF's
-own convention, the default) or `"o"` to keep this package's own
+\item{po_code}{Phosphodiester linkage prefix to write; \code{"p"} (BPF's
+own convention, the default) or \code{"o"} to keep this package's own
 notation instead.}
 }
 \value{
 A single string: the FASTA header line, a newline, the
-  triplet-notation sequence line, and a trailing newline.
+triplet-notation sequence line, and a trailing newline.
 }
 \description{
 Writes a FASTA record for BPF's Sequence Manager ("Import FASTA
 File"): the sequence line is triplet notation (BPF's own
-[linkage][base][sugar]-per-residue building-block notation), with `p`
-for phosphodiester by default. A terminal conjugate on `spec` (which
+[linkage][base][sugar]-per-residue building-block notation), with \code{p}
+for phosphodiester by default. A terminal conjugate on \code{spec} (which
 triplet notation has nowhere to put) is written into the header as a
 comment, to be set as a terminus modification on the BPF side.
 }
@@ -35,5 +35,5 @@ site's Building Block editor; and a terminal conjugate must be set
 manually as a terminus modification, per the header comment.
 }
 \seealso{
-[parse_fasta()], [format_triplet()]
+\code{\link[=parse_fasta]{parse_fasta()}}, \code{\link[=format_triplet]{format_triplet()}}
 }

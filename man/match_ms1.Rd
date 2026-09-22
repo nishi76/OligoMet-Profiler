@@ -18,54 +18,54 @@ match_ms1(
 )
 }
 \arguments{
-\item{mets}{A list of metabolite objects (see [generate_metabolites()]).}
+\item{mets}{A list of metabolite objects (see \code{\link[=generate_metabolites]{generate_metabolites()}}).}
 
 \item{ms1_features}{Observed MS1 features (see
-[extract_ms1_features()]): a data.frame with `mz`, `rt`,
-`max_intensity`, and optionally `area`.}
+\code{\link[=extract_ms1_features]{extract_ms1_features()}}): a data.frame with \code{mz}, \code{rt},
+\code{max_intensity}, and optionally \code{area}.}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 
 \item{ppm_tol}{Mass tolerance for a match.}
 
 \item{z_range}{Charge states to consider.}
 
-\item{adducts}{Adducts to consider (`"H"` is the unmodified `[M-zH]^z-`
-envelope; others add `adduct_shift()`).}
+\item{adducts}{Adducts to consider (\code{"H"} is the unmodified \verb{[M-zH]^z-}
+envelope; others add \code{adduct_shift()}).}
 
 \item{max_oxid}{Max PS -> PO oxidation events to model per metabolite
 (capped at that metabolite's own phosphorothioate count).}
 
-\item{h_offset}{Charge-envelope offset: `0` for the standard
-`[M-zH]^z-` convention, non-zero (e.g. `3.0046`) only to match a
+\item{h_offset}{Charge-envelope offset: \code{0} for the standard
+\verb{[M-zH]^z-} convention, non-zero (e.g. \code{3.0046}) only to match a
 legacy workbook's convention.}
 
-\item{n_iso}{Number of isotope peaks to check for the fit score; `0`
-skips isotope fitting entirely (`iso_fit` stays `NA`).}
+\item{n_iso}{Number of isotope peaks to check for the fit score; \code{0}
+skips isotope fitting entirely (\code{iso_fit} stays \code{NA}).}
 
 \item{use_envipat}{Whether to use enviPat for isotope patterns
-(`FALSE` uses a built-in convolution instead).}
+(\code{FALSE} uses a built-in convolution instead).}
 }
 \value{
 A data.frame, one row per (metabolite, oxidation, charge,
-  adduct) combination that matched within `ppm_tol`: `met_id`,
-  `met_name`, `kind`, `n`, `k_oxid`, `z`, `adduct`, `theo_mz`,
-  `obs_mz`, `ppm_error`, `rt`, `intensity`, `area` (`NA` unless
-  `ms1_features` carries it), `iso_fit`, `formula`, `n_candidates`,
-  `ambiguous`. Empty data.frame if nothing matches.
+adduct) combination that matched within \code{ppm_tol}: \code{met_id},
+\code{met_name}, \code{kind}, \code{n}, \code{k_oxid}, \code{z}, \code{adduct}, \code{theo_mz},
+\code{obs_mz}, \code{ppm_error}, \code{rt}, \code{intensity}, \code{area} (\code{NA} unless
+\code{ms1_features} carries it), \code{iso_fit}, \code{formula}, \code{n_candidates},
+\code{ambiguous}. Empty data.frame if nothing matches.
 }
 \description{
 For each metabolite, enumerates every (oxidation level x charge state
 x adduct) theoretical target and reports the nearest observed feature
-within `ppm_tol`, along with an isotope-pattern fit score. Nearest-
+within \code{ppm_tol}, along with an isotope-pattern fit score. Nearest-
 feature matching reports the single closest target as if it were
-unambiguous; `n_candidates`/`ambiguous` flag when more than one
+unambiguous; \code{n_candidates}/\code{ambiguous} flag when more than one
 DISTINCT metabolite's theoretical m/z falls within tolerance of the
 same observed feature, which is common at the tolerances this package
 targets and otherwise invisible in the results table.
 }
 \seealso{
-[match_ms1_fast()] for a faster path when the caller already
-  has a pre-expanded target list, [match_ms1_batch()] for multi-sample
-  matching, [annotate_metabolites()]
+\code{\link[=match_ms1_fast]{match_ms1_fast()}} for a faster path when the caller already
+has a pre-expanded target list, \code{\link[=match_ms1_batch]{match_ms1_batch()}} for multi-sample
+matching, \code{\link[=annotate_metabolites]{annotate_metabolites()}}
 }

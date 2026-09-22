@@ -17,44 +17,44 @@ confirm_ms2_batch(
 )
 }
 \arguments{
-\item{mets}{A list of metabolite objects (see [generate_metabolites()]).}
+\item{mets}{A list of metabolite objects (see \code{\link[=generate_metabolites]{generate_metabolites()}}).}
 
-\item{ms1_matches}{Output of [match_ms1_batch()].}
+\item{ms1_matches}{Output of \code{\link[=match_ms1_batch]{match_ms1_batch()}}.}
 
-\item{ms2_by_sample}{A multi-sample MS2 table (see [read_batch_ms2()]).}
+\item{ms2_by_sample}{A multi-sample MS2 table (see \code{\link[=read_batch_ms2]{read_batch_ms2()}}).}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 
 \item{frag_tol_ppm, frag_z_range, include_internal}{Fragment matching
-parameters -- see [confirm_metabolite()].}
+parameters -- see \code{\link[=confirm_metabolite]{confirm_metabolite()}}.}
 
-\item{h_offset}{Charge-envelope offset -- see [match_ms1()].}
+\item{h_offset}{Charge-envelope offset -- see \code{\link[=match_ms1]{match_ms1()}}.}
 
 \item{ms2_lookup_ppm_tol}{Precursor m/z tolerance for finding the MS2
-spectrum to confirm against -- see [find_ms2_spectra()].}
+spectrum to confirm against -- see \code{\link[=find_ms2_spectra]{find_ms2_spectra()}}.}
 }
 \value{
 A data.frame, one row per confirmed (sample, metabolite,
-  oxidation, charge, adduct) hit: `sample`, `met_id`, `met_name`,
-  `k_oxid`, `z`, `adduct`, `n_ms2_peaks`, `n_frag_matches`,
-  `coverage`, `confirmation_score`, `n_diagnostics`, `confident`.
-  Also carries a `"spectra"` attribute: a named list (keyed
-  `"sample|met_id|k_oxid|z|adduct"`) of the acquired spectrum used for
-  each row's confirmation, for callers (the mirror-plot UI) that want
-  to re-render the comparison without re-running
-  [find_ms2_spectra()] -- this rides along as an attribute rather than
-  changing the return shape, so `nrow()`/`$sample`/column-selection
-  callers keep working unmodified.
+oxidation, charge, adduct) hit: \code{sample}, \code{met_id}, \code{met_name},
+\code{k_oxid}, \code{z}, \code{adduct}, \code{n_ms2_peaks}, \code{n_frag_matches},
+\code{coverage}, \code{confirmation_score}, \code{n_diagnostics}, \code{confident}.
+Also carries a \code{"spectra"} attribute: a named list (keyed
+\code{"sample|met_id|k_oxid|z|adduct"}) of the acquired spectrum used for
+each row's confirmation, for callers (the mirror-plot UI) that want
+to re-render the comparison without re-running
+\code{\link[=find_ms2_spectra]{find_ms2_spectra()}} -- this rides along as an attribute rather than
+changing the return shape, so \code{nrow()}/\verb{$sample}/column-selection
+callers keep working unmodified.
 }
 \description{
 For each unique (sample, metabolite, oxidation, charge, adduct) MS1
-hit, finds its acquired MS2 spectrum ([find_ms2_spectra()]) and scores
-fragment confirmation against it ([confirm_metabolite()]) -- unlike
-[annotate_metabolites()]'s single-file path, this searches the exact
-adduct the MS1 hit matched (since [match_ms1_batch()] tracks it per
+hit, finds its acquired MS2 spectrum (\code{\link[=find_ms2_spectra]{find_ms2_spectra()}}) and scores
+fragment confirmation against it (\code{\link[=confirm_metabolite]{confirm_metabolite()}}) -- unlike
+\code{\link[=annotate_metabolites]{annotate_metabolites()}}'s single-file path, this searches the exact
+adduct the MS1 hit matched (since \code{\link[=match_ms1_batch]{match_ms1_batch()}} tracks it per
 hit), not the full requested adduct set.
 }
 \seealso{
-[annotate_metabolites_batch()], [confirm_metabolite()],
-  [plot_mirror_spectrum()]
+\code{\link[=annotate_metabolites_batch]{annotate_metabolites_batch()}}, \code{\link[=confirm_metabolite]{confirm_metabolite()}},
+\code{\link[=plot_mirror_spectrum]{plot_mirror_spectrum()}}
 }

@@ -8,20 +8,20 @@ multi_trend_summary(time_series_long, met_ids = NULL, normalize = TRUE)
 }
 \arguments{
 \item{time_series_long}{Long-format abundance data.frame (see
-[abundance_long()]) with a `timepoint` column, already numeric (the
+\code{\link[=abundance_long]{abundance_long()}}) with a \code{timepoint} column, already numeric (the
 caller is expected to have converted/filtered it, the same way
-[compare_time_series()]'s own callers do).}
+\code{\link[=compare_time_series]{compare_time_series()}}'s own callers do).}
 
-\item{met_ids}{Which metabolites to summarize; `NULL` (the default)
+\item{met_ids}{Which metabolites to summarize; \code{NULL} (the default)
 summarizes every metabolite present.}
 
-\item{normalize}{`TRUE` (the default): divide each metabolite's signal
-by its own mean at the earliest timepoint. `FALSE` keeps raw
+\item{normalize}{\code{TRUE} (the default): divide each metabolite's signal
+by its own mean at the earliest timepoint. \code{FALSE} keeps raw
 intensity.}
 }
 \value{
-A data.frame: `met_id`, `met_name`, `timepoint`, `n`,
-  `mean_value`, `sd`, `sem`. Empty if there's nothing to summarize.
+A data.frame: \code{met_id}, \code{met_name}, \code{timepoint}, \code{n},
+\code{mean_value}, \code{sd}, \code{sem}. Empty if there's nothing to summarize.
 }
 \description{
 One row per (metabolite, timepoint): mean, SD, SEM, and replicate count,
@@ -29,6 +29,6 @@ optionally normalized to each metabolite's own mean signal at the
 earliest timepoint.
 }
 \seealso{
-[plot_multi_trend()], [quantify_relative()] for the same
-  baseline definition used elsewhere.
+\code{\link[=plot_multi_trend]{plot_multi_trend()}}, \code{\link[=quantify_relative]{quantify_relative()}} for the same
+baseline definition used elsewhere.
 }

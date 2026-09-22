@@ -7,19 +7,19 @@
 count_linkages(spec, dict = STANDARD_DICT)
 }
 \arguments{
-\item{spec}{An `oligo_spec` list (see [parse_input()]).}
+\item{spec}{An \code{oligo_spec} list (see \code{\link[=parse_input]{parse_input()}}).}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 }
 \value{
-A list: `n_ps`, `n_po`, `n_bonds` (total internal linkages).
+A list: \code{n_ps}, \code{n_po}, \code{n_bonds} (total internal linkages).
 }
 \description{
 A linkage counts as phosphorothioate by sulfur content in its own
-dictionary formula, not by matching the literal codes `"s"`/`"u"` --
+dictionary formula, not by matching the literal codes \code{"s"}/\code{"u"} --
 so a custom sulfur-bearing backbone (mesyl phosphoramidate, thioPACE,
 a user-defined PS analogue) is counted correctly too.
 }
 \seealso{
-[generate_metabolites()] (drives the PS -> PO oxidation series)
+\code{\link[=generate_metabolites]{generate_metabolites()}} (drives the PS -> PO oxidation series)
 }

@@ -10,19 +10,19 @@ attach_conjugate(f, code, dict)
 \item{f}{A formula vector to attach the conjugate to.}
 
 \item{code}{A conjugate code from the dictionary (see
-`CONJUGATE_FORMULAS`), or `"none"`/`NA`/empty to leave `f` unchanged.}
+\code{CONJUGATE_FORMULAS}), or \code{"none"}/\code{NA}/empty to leave \code{f} unchanged.}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 }
 \value{
-`f` with the conjugate attached.
+\code{f} with the conjugate attached.
 }
 \description{
 Adds the conjugate's own formula, then applies its attachment
-chemistry: `"replace_H"` (the conjugate replaces a terminal hydrogen),
-`"replace_OH"` (an ester condensation, losing water), or `"add"` (no
-correction -- the default for `code = "none"`).
+chemistry: \code{"replace_H"} (the conjugate replaces a terminal hydrogen),
+\code{"replace_OH"} (an ester condensation, losing water), or \code{"add"} (no
+correction -- the default for \code{code = "none"}).
 }
 \seealso{
-[assemble_oligo_formula()]
+\code{\link[=assemble_oligo_formula]{assemble_oligo_formula()}}
 }

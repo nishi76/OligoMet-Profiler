@@ -13,24 +13,24 @@ ps_oxidation_series(
 )
 }
 \arguments{
-\item{met}{A metabolite object (see [generate_metabolites()]).}
+\item{met}{A metabolite object (see \code{\link[=generate_metabolites]{generate_metabolites()}}).}
 
-\item{max_oxid}{Maximum oxidation events to model (capped at `met`'s
+\item{max_oxid}{Maximum oxidation events to model (capped at \code{met}'s
 own phosphorothioate count).}
 
 \item{z_range, h_offset}{Unused by the current implementation (reserved
 for an envelope column); kept for signature compatibility.}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 }
 \value{
-A data.frame, one row per oxidation level `k = 0` (unoxidized)
-  through `min(met$n_ps, max_oxid)`: `k`, `mono_mass`, `avg_mass`,
-  `formula_str`.
+A data.frame, one row per oxidation level \code{k = 0} (unoxidized)
+through \code{min(met$n_ps, max_oxid)}: \code{k}, \code{mono_mass}, \code{avg_mass},
+\code{formula_str}.
 }
 \description{
 Compute a metabolite's full PS -> PO oxidation series
 }
 \seealso{
-[ps_oxid_mass()], [ps_oxid_formula()]
+\code{\link[=ps_oxid_mass]{ps_oxid_mass()}}, \code{\link[=ps_oxid_formula]{ps_oxid_formula()}}
 }

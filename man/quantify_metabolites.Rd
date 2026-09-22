@@ -16,43 +16,43 @@ quantify_metabolites(
 )
 }
 \arguments{
-\item{batch_matches}{The `ms1_matches` data.frame (see
-[match_ms1_batch()]/[annotate_metabolites_batch()]).}
+\item{batch_matches}{The \code{ms1_matches} data.frame (see
+\code{\link[=match_ms1_batch]{match_ms1_batch()}}/\code{\link[=annotate_metabolites_batch]{annotate_metabolites_batch()}}).}
 
-\item{sample_meta}{A data.frame with `sample` plus `group`/`timepoint`
-(for relative quantification) and `sample_type`/`concentration` (for
+\item{sample_meta}{A data.frame with \code{sample} plus \code{group}/\code{timepoint}
+(for relative quantification) and \code{sample_type}/\code{concentration} (for
 absolute quantification) as relevant.}
 
 \item{absolute_met_ids}{Metabolite IDs to absolute-quantify from their
 own calibration curve. Every other metabolite actually present in
-`batch_matches` is relative-quantified instead. Defaults to none
+\code{batch_matches} is relative-quantified instead. Defaults to none
 (every metabolite relative-quantified).}
 
-\item{mode}{`"time_series"` or `"group"` -- see [quantify_relative()].}
+\item{mode}{\code{"time_series"} or \code{"group"} -- see \code{\link[=quantify_relative]{quantify_relative()}}.}
 
-\item{control_group}{Required when `mode = "group"` -- see
-[quantify_relative()].}
+\item{control_group}{Required when \code{mode = "group"} -- see
+\code{\link[=quantify_relative]{quantify_relative()}}.}
 
 \item{weighting}{Calibration curve weighting -- see
-[fit_calibration_curve()].}
+\code{\link[=fit_calibration_curve]{fit_calibration_curve()}}.}
 
-\item{signal_col}{Which column to use as signal; `NULL` auto-detects.}
+\item{signal_col}{Which column to use as signal; \code{NULL} auto-detects.}
 
 \item{min_points}{Minimum calibration standard points required per
-metabolite -- see [fit_calibration_curve()].}
+metabolite -- see \code{\link[=fit_calibration_curve]{fit_calibration_curve()}}.}
 }
 \value{
-`list(absolute, calibration_curves, relative)`: `absolute` and
-  `relative` are the `quant`/result data.frames from
-  [quantify_absolute()]/[quantify_relative()] respectively;
-  `calibration_curves` is the named list of fitted curves from
-  [quantify_absolute()].
+\code{list(absolute, calibration_curves, relative)}: \code{absolute} and
+\code{relative} are the \code{quant}/result data.frames from
+\code{\link[=quantify_absolute]{quantify_absolute()}}/\code{\link[=quantify_relative]{quantify_relative()}} respectively;
+\code{calibration_curves} is the named list of fitted curves from
+\code{\link[=quantify_absolute]{quantify_absolute()}}.
 }
 \description{
-Splits every metabolite present in `batch_matches` into the
-user-selected `absolute_met_ids` (calibration-curve back-calculation,
-via [quantify_absolute()]) and everything else (fold-change relative
-to pre-dose/time-0 or to `control_group`, via [quantify_relative()]) --
+Splits every metabolite present in \code{batch_matches} into the
+user-selected \code{absolute_met_ids} (calibration-curve back-calculation,
+via \code{\link[=quantify_absolute]{quantify_absolute()}}) and everything else (fold-change relative
+to pre-dose/time-0 or to \code{control_group}, via \code{\link[=quantify_relative]{quantify_relative()}}) --
 one call for the whole "some metabolites absolute, the rest relative"
 workflow.
 }

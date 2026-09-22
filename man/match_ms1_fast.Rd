@@ -7,33 +7,33 @@
 match_ms1_fast(targets, features, ppm_tol = 10)
 }
 \arguments{
-\item{targets}{A data.frame with (at least) `met_id`, `met_name`,
-`kind`, `k_oxid`, `z`, `adduct`, `theo_mz` -- one row per
+\item{targets}{A data.frame with (at least) \code{met_id}, \code{met_name},
+\code{kind}, \code{k_oxid}, \code{z}, \code{adduct}, \code{theo_mz} -- one row per
 theoretical target.}
 
-\item{features}{Observed MS1 features (see [extract_ms1_features()]):
-a data.frame with `mz`, `rt`, `max_intensity`.}
+\item{features}{Observed MS1 features (see \code{\link[=extract_ms1_features]{extract_ms1_features()}}):
+a data.frame with \code{mz}, \code{rt}, \code{max_intensity}.}
 
 \item{ppm_tol}{Mass tolerance for a match.}
 }
 \value{
-`targets`, filtered to rows with a match within `ppm_tol`,
-  with `obs_mz`, `rt`, `intensity`, `ppm_error` appended, plus the
-  same `n_candidates`/`ambiguous` ambiguity flag as [match_ms1()]
-  (computed by distinct `met_id` competing for the same observed
-  feature).
+\code{targets}, filtered to rows with a match within \code{ppm_tol},
+with \code{obs_mz}, \code{rt}, \code{intensity}, \code{ppm_error} appended, plus the
+same \code{n_candidates}/\code{ambiguous} ambiguity flag as \code{\link[=match_ms1]{match_ms1()}}
+(computed by distinct \code{met_id} competing for the same observed
+feature).
 }
 \description{
-A faster alternative to [match_ms1()] for a caller that already has
+A faster alternative to \code{\link[=match_ms1]{match_ms1()}} for a caller that already has
 (or can cheaply build) the expanded theoretical target list as a flat
-data.frame: sorts `features` once and uses `findInterval()` to locate
+data.frame: sorts \code{features} once and uses \code{findInterval()} to locate
 each target's tolerance window, so cost scales with
-`n_targets * log(n_features)` instead of `match_ms1()`'s
-`n_targets * n_features`. Does NOT compute isotope fit or adduct/
-oxidation bookkeeping itself -- the caller's `targets` frame is
-assumed to already carry `kind`/`k_oxid`/`z`/`adduct`; use
-[match_ms1()] when those need to be derived.
+\code{n_targets * log(n_features)} instead of \code{match_ms1()}'s
+\code{n_targets * n_features}. Does NOT compute isotope fit or adduct/
+oxidation bookkeeping itself -- the caller's \code{targets} frame is
+assumed to already carry \code{kind}/\code{k_oxid}/\code{z}/\code{adduct}; use
+\code{\link[=match_ms1]{match_ms1()}} when those need to be derived.
 }
 \seealso{
-[match_ms1()]
+\code{\link[=match_ms1]{match_ms1()}}
 }

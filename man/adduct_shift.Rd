@@ -7,15 +7,15 @@
 adduct_shift(adduct = c("Na", "K", "NH4"))
 }
 \arguments{
-\item{adduct}{One of `"Na"`, `"K"`, `"NH4"`.}
+\item{adduct}{One of \code{"Na"}, \code{"K"}, \code{"NH4"}.}
 }
 \value{
 The mass shift, in Da.
 }
 \description{
 Negative-mode adduct where one cation replaces one backbone hydrogen:
-`+Na` +21.981944 Da, `+K` +37.955882 Da, `+NH4` +17.026549 Da.
+\code{+Na} +21.981944 Da, \code{+K} +37.955882 Da, \code{+NH4} +17.026549 Da.
 }
 \seealso{
-[match_ms1()]
+\code{\link[=match_ms1]{match_ms1()}}
 }

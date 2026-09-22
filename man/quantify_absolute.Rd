@@ -14,47 +14,47 @@ quantify_absolute(
 )
 }
 \arguments{
-\item{batch_matches}{The `ms1_matches` data.frame (see
-[match_ms1_batch()]/[annotate_metabolites_batch()]).}
+\item{batch_matches}{The \code{ms1_matches} data.frame (see
+\code{\link[=match_ms1_batch]{match_ms1_batch()}}/\code{\link[=annotate_metabolites_batch]{annotate_metabolites_batch()}}).}
 
 \item{met_ids}{Metabolite IDs to absolute-quantify.}
 
-\item{sample_meta}{A data.frame with `sample`, `sample_type`, and
-`concentration` columns.}
+\item{sample_meta}{A data.frame with \code{sample}, \code{sample_type}, and
+\code{concentration} columns.}
 
 \item{weighting}{Calibration curve weighting -- see
-[fit_calibration_curve()].}
+\code{\link[=fit_calibration_curve]{fit_calibration_curve()}}.}
 
-\item{signal_col}{Which column to use as signal; `NULL` auto-detects
-(see [fit_calibration_curve()]).}
+\item{signal_col}{Which column to use as signal; \code{NULL} auto-detects
+(see \code{\link[=fit_calibration_curve]{fit_calibration_curve()}}).}
 
 \item{min_points}{Minimum calibration standard points required per
-metabolite -- see [fit_calibration_curve()].}
+metabolite -- see \code{\link[=fit_calibration_curve]{fit_calibration_curve()}}.}
 }
 \value{
-`list(quant, curves)`: `quant` is a data.frame with one row
-  per (metabolite, sample) -- `met_id`, `met_name`, `sample`,
-  `sample_type`, `signal`, `concentration_calc` (back-calculated from
-  the curve), `extrapolated` (`TRUE` if `concentration_calc` falls
-  outside the curve's own observed standard range -- unreliable, not
-  just borderline), `nominal_concentration`, `percent_re` (only
-  populated for standard/QC rows with a nominal concentration), and
-  the curve's own `curve_r_squared`/`curve_n_points`/`curve_weighting`.
-  `curves` is a named list (by `met_id`) of each metabolite's
-  [fit_calibration_curve()] result, e.g. for plotting or QC review.
-  A metabolite whose curve couldn't be fit contributes no rows to
-  `quant` but its (empty) curve is still in `curves`.
+\code{list(quant, curves)}: \code{quant} is a data.frame with one row
+per (metabolite, sample) -- \code{met_id}, \code{met_name}, \code{sample},
+\code{sample_type}, \code{signal}, \code{concentration_calc} (back-calculated from
+the curve), \code{extrapolated} (\code{TRUE} if \code{concentration_calc} falls
+outside the curve's own observed standard range -- unreliable, not
+just borderline), \code{nominal_concentration}, \code{percent_re} (only
+populated for standard/QC rows with a nominal concentration), and
+the curve's own \code{curve_r_squared}/\code{curve_n_points}/\code{curve_weighting}.
+\code{curves} is a named list (by \code{met_id}) of each metabolite's
+\code{\link[=fit_calibration_curve]{fit_calibration_curve()}} result, e.g. for plotting or QC review.
+A metabolite whose curve couldn't be fit contributes no rows to
+\code{quant} but its (empty) curve is still in \code{curves}.
 }
 \description{
-For each metabolite in `met_ids`, fits its own calibration curve (see
-[fit_calibration_curve()]) and back-calculates concentration for EVERY
+For each metabolite in \code{met_ids}, fits its own calibration curve (see
+\code{\link[=fit_calibration_curve]{fit_calibration_curve()}}) and back-calculates concentration for EVERY
 sample with signal for it -- standards and quality-control samples
 included, not just unknowns, so a standard's/QC's back-calculated value
 can be checked against its own nominal concentration as an
 accuracy/data-quality signal.
 }
 \seealso{
-[quantify_relative()] for metabolites NOT selected for
-  absolute quantification, [quantify_metabolites()] to dispatch both
-  in one call.
+\code{\link[=quantify_relative]{quantify_relative()}} for metabolites NOT selected for
+absolute quantification, \code{\link[=quantify_metabolites]{quantify_metabolites()}} to dispatch both
+in one call.
 }

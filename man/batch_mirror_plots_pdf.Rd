@@ -18,31 +18,31 @@ batch_mirror_plots_pdf(
 )
 }
 \arguments{
-\item{mets}{A list of metabolite objects (see [generate_metabolites()]).}
+\item{mets}{A list of metabolite objects (see \code{\link[=generate_metabolites]{generate_metabolites()}}).}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 
-\item{ms2_confirmations}{Output of [confirm_ms2_batch()]/
-[annotate_metabolites_batch()].}
+\item{ms2_confirmations}{Output of \code{\link[=confirm_ms2_batch]{confirm_ms2_batch()}}/
+\code{\link[=annotate_metabolites_batch]{annotate_metabolites_batch()}}.}
 
-\item{ms2_spectra}{The `"spectra"` attribute from the same call (a
-named list keyed `"sample|met_id|k_oxid|z|adduct"`).}
+\item{ms2_spectra}{The \code{"spectra"} attribute from the same call (a
+named list keyed \code{"sample|met_id|k_oxid|z|adduct"}).}
 
 \item{file}{Output PDF path.}
 
 \item{tol_ppm, z_range, h_offset}{Fragment matching parameters -- see
-[confirm_metabolite()]/[match_ms1()].}
+\code{\link[=confirm_metabolite]{confirm_metabolite()}}/\code{\link[=match_ms1]{match_ms1()}}.}
 
-\item{width, height}{Page size in inches, passed to `grDevices::pdf()`.}
+\item{width, height}{Page size in inches, passed to \code{grDevices::pdf()}.}
 }
 \value{
-`file`, invisibly.
+\code{file}, invisibly.
 }
 \description{
-One page per confirmed batch hit, reusing [mirror_spectrum_data()]/
-[plot_mirror_spectrum()] exactly as the interactive single-hit view
+One page per confirmed batch hit, reusing \code{\link[=mirror_spectrum_data]{mirror_spectrum_data()}}/
+\code{\link[=plot_mirror_spectrum]{plot_mirror_spectrum()}} exactly as the interactive single-hit view
 does, so the PDF matches what's shown in the app.
 }
 \seealso{
-[batch_annotated_msp_records()], [confirm_ms2_batch()]
+\code{\link[=batch_annotated_msp_records]{batch_annotated_msp_records()}}, \code{\link[=confirm_ms2_batch]{confirm_ms2_batch()}}
 }

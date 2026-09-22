@@ -7,24 +7,24 @@
 endo_cleave(spec, i, dict = STANDARD_DICT)
 }
 \arguments{
-\item{spec}{An `oligo_spec` list (see [parse_input()]).}
+\item{spec}{An \code{oligo_spec} list (see \code{\link[=parse_input]{parse_input()}}).}
 
-\item{i}{Cleavage site: the bond between position `i` and `i+1`,
-`1` to `n-1`.}
+\item{i}{Cleavage site: the bond between position \code{i} and \code{i+1},
+\code{1} to \code{n-1}.}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 }
 \value{
-A list of four spec-like fragments: `frag5`/`frag3` (free
-  3'-OH / free 5'-OH -- the bridging phosphate went to the OTHER
-  fragment), `frag5_p`/`frag3_p` (carrying the terminal (thio)phosphate
-  instead). Use `frag5` with `frag3_p`, or `frag5_p` with `frag3`, as
-  a mass-balanced pair -- never `frag5` with `frag3` together (that
-  drops the bridging phosphate entirely).
+A list of four spec-like fragments: \code{frag5}/\code{frag3} (free
+3'-OH / free 5'-OH -- the bridging phosphate went to the OTHER
+fragment), \code{frag5_p}/\code{frag3_p} (carrying the terminal (thio)phosphate
+instead). Use \code{frag5} with \code{frag3_p}, or \code{frag5_p} with \code{frag3}, as
+a mass-balanced pair -- never \code{frag5} with \code{frag3} together (that
+drops the bridging phosphate entirely).
 }
 \description{
 Cleaves a single phosphodiester (or phosphorothioate) bond between
-position `i` and `i+1`. Hydrolysis leaves the bridging phosphate on
+position \code{i} and \code{i+1}. Hydrolysis leaves the bridging phosphate on
 exactly one product, never neither and never both -- which side keeps
 it depends on the nuclease, so both mass-balanced outcomes are
 returned: the free-3'-OH/free-5'-OH pair (the majority mechanism for
@@ -35,5 +35,5 @@ terminal thiophosphate, decided by the linkage's sulfur content, not
 by its literal code.
 }
 \seealso{
-[generate_metabolites()]
+\code{\link[=generate_metabolites]{generate_metabolites()}}
 }

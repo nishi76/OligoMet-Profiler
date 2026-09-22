@@ -7,23 +7,23 @@
 abundance_long(abundance_matrix, sample_meta)
 }
 \arguments{
-\item{abundance_matrix}{Output of [build_abundance_matrix()] or
-[build_kind_abundance_matrix()].}
+\item{abundance_matrix}{Output of \code{\link[=build_abundance_matrix]{build_abundance_matrix()}} or
+\code{\link[=build_kind_abundance_matrix]{build_kind_abundance_matrix()}}.}
 
-\item{sample_meta}{A data.frame with a `sample` column plus whichever
-of `group`/`timepoint`/`sample_type`/`concentration` are relevant --
-every non-`sample` column is carried through untouched.}
+\item{sample_meta}{A data.frame with a \code{sample} column plus whichever
+of \code{group}/\code{timepoint}/\code{sample_type}/\code{concentration} are relevant --
+every non-\code{sample} column is carried through untouched.}
 }
 \value{
-A data.frame: one row per (metabolite, sample), with `met_id`,
-  `met_name`, `kind`, `sample`, `intensity`, and every `sample_meta`
-  column besides `sample`. Empty data.frame if `abundance_matrix` is
-  empty, or if a sample has no matching row in `sample_meta`.
+A data.frame: one row per (metabolite, sample), with \code{met_id},
+\code{met_name}, \code{kind}, \code{sample}, \code{intensity}, and every \code{sample_meta}
+column besides \code{sample}. Empty data.frame if \code{abundance_matrix} is
+empty, or if a sample has no matching row in \code{sample_meta}.
 }
 \description{
-Companion to [build_abundance_matrix()]/[build_kind_abundance_matrix()]:
+Companion to \code{\link[=build_abundance_matrix]{build_abundance_matrix()}}/\code{\link[=build_kind_abundance_matrix]{build_kind_abundance_matrix()}}:
 pivots the wide metabolite x sample matrix to one row per (metabolite,
 sample) with sample metadata attached, the shape
-[compare_two_groups()]/[compare_multi_groups()]/[compare_time_series()]
+\code{\link[=compare_two_groups]{compare_two_groups()}}/\code{\link[=compare_multi_groups]{compare_multi_groups()}}/\code{\link[=compare_time_series]{compare_time_series()}}
 and the quantification functions expect.
 }

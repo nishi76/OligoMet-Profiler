@@ -15,27 +15,27 @@ compute_envelope(
 )
 }
 \arguments{
-\item{met}{A metabolite object (see [generate_metabolites()]).}
+\item{met}{A metabolite object (see \code{\link[=generate_metabolites]{generate_metabolites()}}).}
 
 \item{z_range}{Charge states to include.}
 
 \item{n_iso}{Isotope peaks per (oxidation level, charge state) -- see
-[isotope_mz_cluster()].}
+\code{\link[=isotope_mz_cluster]{isotope_mz_cluster()}}.}
 
 \item{max_oxid}{Maximum PS -> PO oxidation events to model (capped at
-`met`'s own phosphorothioate count).}
+\code{met}'s own phosphorothioate count).}
 
-\item{h_offset}{Charge-envelope offset -- see [charge_envelope()].}
+\item{h_offset}{Charge-envelope offset -- see \code{\link[=charge_envelope]{charge_envelope()}}.}
 
 \item{use_envipat}{Whether to use enviPat for isotope patterns -- see
-[isotope_pattern()].}
+\code{\link[=isotope_pattern]{isotope_pattern()}}.}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 }
 \value{
-A data.frame: `met_id`, `met_name`, `k_oxid`, `z`, `iso`,
-  `mz`, `abundance`, `mono_mass`, `formula` -- one row per (oxidation
-  level, charge state, isotope peak).
+A data.frame: \code{met_id}, \code{met_name}, \code{k_oxid}, \code{z}, \code{iso},
+\code{mz}, \code{abundance}, \code{mono_mass}, \code{formula} -- one row per (oxidation
+level, charge state, isotope peak).
 }
 \description{
 One row per (PS-oxidation level, charge state, isotope peak) --
@@ -43,5 +43,5 @@ the table behind the app's Charge Envelopes workbook sheet and report
 section.
 }
 \seealso{
-[isotope_mz_cluster()], [ps_oxidation_series()]
+\code{\link[=isotope_mz_cluster]{isotope_mz_cluster()}}, \code{\link[=ps_oxidation_series]{ps_oxidation_series()}}
 }

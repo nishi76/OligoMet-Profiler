@@ -15,30 +15,30 @@ generate_internal_fragments(
 )
 }
 \arguments{
-\item{met}{A metabolite object (see [generate_metabolites()]).}
+\item{met}{A metabolite object (see \code{\link[=generate_metabolites]{generate_metabolites()}}).}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 
-\item{types}{Which internal ion types to generate: `"wa"`, `"wb"`,
-`"wd"`.}
+\item{types}{Which internal ion types to generate: \code{"wa"}, \code{"wb"},
+\code{"wd"}.}
 
 \item{z_range}{Charge states for m/z calculation.}
 
-\item{h_offset}{Mass offset -- see [charge_envelope()].}
+\item{h_offset}{Mass offset -- see \code{\link[=charge_envelope]{charge_envelope()}}.}
 
 \item{min_len, max_len}{Minimum/maximum internal fragment length to
 generate.}
 }
 \value{
 A list of fragment objects, same shape as
-  [generate_fragments()] plus `internal_5`/`internal_3` (the two
-  cleavage positions). Empty list for a metabolite shorter than 4 nt.
+\code{\link[=generate_fragments]{generate_fragments()}} plus \code{internal_5}/\code{internal_3} (the two
+cleavage positions). Empty list for a metabolite shorter than 4 nt.
 }
 \description{
-Internal fragments from two backbone cleavages at positions `i < j`
-(spanning `i+1..j`): w-a (w-type 5' end + a-type 3' end), w-b, and
+Internal fragments from two backbone cleavages at positions \code{i < j}
+(spanning \verb{i+1..j}): w-a (w-type 5' end + a-type 3' end), w-b, and
 optionally w-d (with additional base loss).
 }
 \seealso{
-[generate_fragments()]
+\code{\link[=generate_fragments]{generate_fragments()}}
 }

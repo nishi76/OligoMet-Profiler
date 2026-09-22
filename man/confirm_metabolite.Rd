@@ -18,27 +18,27 @@ confirm_metabolite(
 )
 }
 \arguments{
-\item{met}{A metabolite object (see [generate_metabolites()]).}
+\item{met}{A metabolite object (see \code{\link[=generate_metabolites]{generate_metabolites()}}).}
 
-\item{ms2_peaks}{A data.frame with `mz`, `intensity` columns: one
+\item{ms2_peaks}{A data.frame with \code{mz}, \code{intensity} columns: one
 acquired MS2 spectrum.}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 
-\item{tol_ppm, z_range, ion_types, include_internal, include_dz, h_offset, adducts}{Fragment generation/matching parameters -- see [generate_fragments()]/
-[match_fragments()].}
+\item{tol_ppm, z_range, ion_types, include_internal, include_dz, h_offset, adducts}{Fragment generation/matching parameters -- see \code{\link[=generate_fragments]{generate_fragments()}}/
+\code{\link[=match_fragments]{match_fragments()}}.}
 }
 \value{
-A list: `metabolite`, `fragments` (all generated, matched or
-  not), `matched` (see [match_fragments()]), `diagnostics` (see
-  [check_ps_diagnostic()]), `coverage`, `score` (see
-  [confirmation_score()]).
+A list: \code{metabolite}, \code{fragments} (all generated, matched or
+not), \code{matched} (see \code{\link[=match_fragments]{match_fragments()}}), \code{diagnostics} (see
+\code{\link[=check_ps_diagnostic]{check_ps_diagnostic()}}), \code{coverage}, \code{score} (see
+\code{\link[=confirmation_score]{confirmation_score()}}).
 }
 \description{
-Convenience wrapper: [generate_fragments()] (plus
-[generate_internal_fragments()] when requested), [match_fragments()],
-[check_ps_diagnostic()], and [confirmation_score()], in one call.
+Convenience wrapper: \code{\link[=generate_fragments]{generate_fragments()}} (plus
+\code{\link[=generate_internal_fragments]{generate_internal_fragments()}} when requested), \code{\link[=match_fragments]{match_fragments()}},
+\code{\link[=check_ps_diagnostic]{check_ps_diagnostic()}}, and \code{\link[=confirmation_score]{confirmation_score()}}, in one call.
 }
 \seealso{
-[annotate_metabolites()], [mirror_spectrum_data()]
+\code{\link[=annotate_metabolites]{annotate_metabolites()}}, \code{\link[=mirror_spectrum_data]{mirror_spectrum_data()}}
 }

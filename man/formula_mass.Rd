@@ -9,7 +9,7 @@ formula_mass(f, mono = TRUE)
 \arguments{
 \item{f}{A formula vector (compact or full).}
 
-\item{mono}{`TRUE` (default) for monoisotopic mass, `FALSE` for
+\item{mono}{\code{TRUE} (default) for monoisotopic mass, \code{FALSE} for
 average (molecular weight).}
 }
 \value{
@@ -19,5 +19,5 @@ A single numeric mass, in Da.
 Compute a formula's monoisotopic or average mass
 }
 \seealso{
-[parse_formula()], [format_formula()]
+\code{\link[=parse_formula]{parse_formula()}}, \code{\link[=format_formula]{format_formula()}}
 }

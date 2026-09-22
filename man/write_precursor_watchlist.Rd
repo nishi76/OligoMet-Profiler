@@ -14,26 +14,26 @@ write_precursor_watchlist(
 )
 }
 \arguments{
-\item{mets}{A list of metabolite objects (see [generate_metabolites()]).}
+\item{mets}{A list of metabolite objects (see \code{\link[=generate_metabolites]{generate_metabolites()}}).}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 
-\item{z_range, max_oxid, h_offset}{Passed to [prm_inclusion_list()].}
+\item{z_range, max_oxid, h_offset}{Passed to \code{\link[=prm_inclusion_list]{prm_inclusion_list()}}.}
 
 \item{out_path}{File path to write the watch-list to.}
 }
 \value{
-`out_path`, returned for chaining into
-  [run_batch_deconvolution()]'s `precursor_watchlist` argument.
+\code{out_path}, returned for chaining into
+\code{\link[=run_batch_deconvolution]{run_batch_deconvolution()}}'s \code{precursor_watchlist} argument.
 }
 \description{
 Writes the (H-adduct-only) theoretical precursor m/z list from
-[prm_inclusion_list()] to a plain text file, one value per line, for
-[run_batch_deconvolution()]'s `precursor_watchlist` argument. Only
-needs to be a broad net -- the Python side's own `ms2_watch_ppm`
+\code{\link[=prm_inclusion_list]{prm_inclusion_list()}} to a plain text file, one value per line, for
+\code{\link[=run_batch_deconvolution]{run_batch_deconvolution()}}'s \code{precursor_watchlist} argument. Only
+needs to be a broad net -- the Python side's own \code{ms2_watch_ppm}
 widens the match, and DDA fragmentation is triggered off the dominant
 charge/adduct envelope in practice regardless.
 }
 \seealso{
-[prm_inclusion_list()], [run_batch_deconvolution()]
+\code{\link[=prm_inclusion_list]{prm_inclusion_list()}}, \code{\link[=run_batch_deconvolution]{run_batch_deconvolution()}}
 }

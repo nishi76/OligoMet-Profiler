@@ -7,26 +7,26 @@
 parse_fasta(seq, dict = STANDARD_DICT)
 }
 \arguments{
-\item{seq}{The FASTA record text (header line(s) starting `">"`,
+\item{seq}{The FASTA record text (header line(s) starting \code{">"},
 then one or more sequence lines).}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 }
 \value{
-A list with `bases`, `sugars`, `linkages`, `conj5`, `conj3` --
-  see [parse_oligodistiller()] for the shape, ready for
-  [parse_input()] to finish into a canonical `oligo_spec`.
+A list with \code{bases}, \code{sugars}, \code{linkages}, \code{conj5}, \code{conj3} --
+see \code{\link[=parse_oligodistiller]{parse_oligodistiller()}} for the shape, ready for
+\code{\link[=parse_input]{parse_input()}} to finish into a canonical \code{oligo_spec}.
 }
 \description{
 Reads a FASTA-style record whose sequence line is ordinary triplet
-notation (what [format_biopharma_fasta()] writes, and what BioPharma
+notation (what \code{\link[=format_biopharma_fasta]{format_biopharma_fasta()}} writes, and what BioPharma
 Finder itself uses) -- strips the header/comment line(s) and parses
-what's left with [parse_triplet()]. A terminal conjugate written into
-the header as `5'-<code>`/`3'-<code>` (the way
-[format_biopharma_fasta()] writes them) is recovered on a best-effort
-basis. Usually called indirectly via [parse_input()], which
-auto-detects this notation from a leading `">"`.
+what's left with \code{\link[=parse_triplet]{parse_triplet()}}. A terminal conjugate written into
+the header as \verb{5'-<code>}/\verb{3'-<code>} (the way
+\code{\link[=format_biopharma_fasta]{format_biopharma_fasta()}} writes them) is recovered on a best-effort
+basis. Usually called indirectly via \code{\link[=parse_input]{parse_input()}}, which
+auto-detects this notation from a leading \code{">"}.
 }
 \seealso{
-[parse_input()], [format_biopharma_fasta()]
+\code{\link[=parse_input]{parse_input()}}, \code{\link[=format_biopharma_fasta]{format_biopharma_fasta()}}
 }

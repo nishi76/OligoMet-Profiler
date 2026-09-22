@@ -12,7 +12,7 @@ scale_formula(a, k)
 \item{k}{Scale factor, e.g. the number of repeats of a residue.}
 }
 \value{
-`a * k` as a full element vector.
+\code{a * k} as a full element vector.
 }
 \description{
 Scale a molecular formula by an integer

@@ -7,21 +7,21 @@
 validate_spec(spec, dict = STANDARD_DICT)
 }
 \arguments{
-\item{spec}{An `oligo_spec` list (see [parse_input()]).}
+\item{spec}{An \code{oligo_spec} list (see \code{\link[=parse_input]{parse_input()}}).}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 }
 \value{
-`invisible(TRUE)` on success; throws an error naming the first
-  unknown or mismatched-kind code otherwise.
+\code{invisible(TRUE)} on success; throws an error naming the first
+unknown or mismatched-kind code otherwise.
 }
 \description{
-Checks that every base/sugar/linkage/conjugate code in `spec` exists
-in `dict` and is used as the right kind (e.g. a code registered as a
+Checks that every base/sugar/linkage/conjugate code in \code{spec} exists
+in \code{dict} and is used as the right kind (e.g. a code registered as a
 sugar isn't accidentally used as a base). Called automatically by
-[parse_input()]; exposed separately for re-validating a spec built or
+\code{\link[=parse_input]{parse_input()}}; exposed separately for re-validating a spec built or
 edited by hand.
 }
 \seealso{
-[parse_input()]
+\code{\link[=parse_input]{parse_input()}}
 }

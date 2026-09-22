@@ -7,11 +7,10 @@
 format_spec(spec)
 }
 \arguments{
-\item{spec}{An `oligo_spec` list (see [parse_input()]).}
+\item{spec}{An \code{oligo_spec} list (see \code{\link[=parse_input]{parse_input()}}).}
 }
 \value{
-A single string like `"[triplet] n=18  bases=...  sugars=...
-  links=...  conj5=none  conj3=none"`.
+A single string like \code{"[triplet] n=18  bases=...  sugars=... links=...  conj5=none  conj3=none"}.
 }
 \description{
 One-line human-readable summary of an oligo_spec

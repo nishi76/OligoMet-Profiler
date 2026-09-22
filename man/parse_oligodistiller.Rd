@@ -7,30 +7,29 @@
 parse_oligodistiller(seq, dict = STANDARD_DICT, sugar_map = .default_sugar_map)
 }
 \arguments{
-\item{seq}{The OligoDistiller-notation string (must start `"OH-"` and
-end `"-OH"`).}
+\item{seq}{The OligoDistiller-notation string (must start \code{"OH-"} and
+end \code{"-OH"}).}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 
 \item{sugar_map}{Named character vector mapping a single-letter sugar
-suffix (as used in `seq`) to the dictionary's own sugar code, e.g.
-`c(m = "m", f = "f", d = "d", r = "r", e = "MOE")` (the default).
+suffix (as used in \code{seq}) to the dictionary's own sugar code, e.g.
+\code{c(m = "m", f = "f", d = "d", r = "r", e = "MOE")} (the default).
 Extend it for a suffix your data uses that isn't in the default map.}
 }
 \value{
-A list with `bases`, `sugars`, `linkages` (parallel vectors,
-  one entry per position; `linkages[i]` is the bond FROM position i to
-  i+1, `NA` at the 3' end) -- the same shape [parse_triplet()]/
-  [parse_structured()] return, ready for [parse_input()] to finish
-  into a canonical `oligo_spec`.
+A list with \code{bases}, \code{sugars}, \code{linkages} (parallel vectors,
+one entry per position; \code{linkages[i]} is the bond FROM position i to
+i+1, \code{NA} at the 3' end) -- the same shape \code{\link[=parse_triplet]{parse_triplet()}}/
+\code{\link[=parse_structured]{parse_structured()}} return, ready for \code{\link[=parse_input]{parse_input()}} to finish
+into a canonical \code{oligo_spec}.
 }
 \description{
-Parses `"OH-Am*-Af*-Cm-...-Cm-OH"` style notation: `<base><sugar
-suffix>[*]` per residue, `*` marking a phosphorothioate bond OUT of
+Parses \code{"OH-Am*-Af*-Cm-...-Cm-OH"} style notation: \verb{<base><sugar suffix>[*]} per residue, \code{*} marking a phosphorothioate bond OUT of
 that residue (phosphodiester otherwise). Usually called indirectly via
-[parse_input()], which auto-detects this notation from the `"OH-"`
+\code{\link[=parse_input]{parse_input()}}, which auto-detects this notation from the \code{"OH-"}
 prefix.
 }
 \seealso{
-[parse_input()], [format_oligodistiller()]
+\code{\link[=parse_input]{parse_input()}}, \code{\link[=format_oligodistiller]{format_oligodistiller()}}
 }

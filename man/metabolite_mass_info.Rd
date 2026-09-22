@@ -7,18 +7,18 @@
 metabolite_mass_info(met, dict = STANDARD_DICT)
 }
 \arguments{
-\item{met}{A metabolite object (see [generate_metabolites()]).}
+\item{met}{A metabolite object (see \code{\link[=generate_metabolites]{generate_metabolites()}}).}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 }
 \value{
-A list: `mono_mass`, `avg_mass`, `formula_str`, `formula_vec`
-  (the full element vector, e.g. for [ps_oxid_formula()]).
+A list: \code{mono_mass}, \code{avg_mass}, \code{formula_str}, \code{formula_vec}
+(the full element vector, e.g. for \code{\link[=ps_oxid_formula]{ps_oxid_formula()}}).
 }
 \description{
 Compute a metabolite's mass and molecular formula
 }
 \seealso{
-[assemble_oligo_formula()], [charge_envelope()],
-  [ps_oxidation_series()]
+\code{\link[=assemble_oligo_formula]{assemble_oligo_formula()}}, \code{\link[=charge_envelope]{charge_envelope()}},
+\code{\link[=ps_oxidation_series]{ps_oxidation_series()}}
 }

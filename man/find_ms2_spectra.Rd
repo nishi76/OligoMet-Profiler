@@ -7,27 +7,27 @@
 find_ms2_spectra(ms2_data, precursor_mz, precursor_z = NA, ppm_tol = 20)
 }
 \arguments{
-\item{ms2_data}{A data.frame of MS2 peaks with `rt`, `precursor_mz`,
-`precursor_z`, `mz`, `intensity` (see [read_ms_file()]/
-[import_peak_list()]/[read_batch_ms2()]).}
+\item{ms2_data}{A data.frame of MS2 peaks with \code{rt}, \code{precursor_mz},
+\code{precursor_z}, \code{mz}, \code{intensity} (see \code{\link[=read_ms_file]{read_ms_file()}}/
+\code{\link[=import_peak_list]{import_peak_list()}}/\code{\link[=read_batch_ms2]{read_batch_ms2()}}).}
 
 \item{precursor_mz}{Target precursor m/z to match against.}
 
-\item{precursor_z}{Target precursor charge; `NA` (the default) skips
+\item{precursor_z}{Target precursor charge; \code{NA} (the default) skips
 the charge check (matches on m/z alone). When both the target and a
-scan's own recorded charge are non-`NA`, they must agree exactly.}
+scan's own recorded charge are non-\code{NA}, they must agree exactly.}
 
 \item{ppm_tol}{Precursor m/z matching tolerance.}
 }
 \value{
-A list of data.frames (`mz`, `intensity`), one per matching
-  MS2 scan. Empty list if `ms2_data` is empty or nothing matches.
+A list of data.frames (\code{mz}, \code{intensity}), one per matching
+MS2 scan. Empty list if \code{ms2_data} is empty or nothing matches.
 }
 \description{
-Groups `ms2_data` into scans (by unique `rt`/`precursor_mz`) and
+Groups \code{ms2_data} into scans (by unique \code{rt}/\code{precursor_mz}) and
 returns the peaks from every scan whose precursor matches within
 tolerance.
 }
 \seealso{
-[confirm_metabolite()], [annotate_metabolites()]
+\code{\link[=confirm_metabolite]{confirm_metabolite()}}, \code{\link[=annotate_metabolites]{annotate_metabolites()}}
 }

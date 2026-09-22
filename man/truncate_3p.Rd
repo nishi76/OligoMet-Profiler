@@ -7,17 +7,17 @@
 truncate_3p(spec, k)
 }
 \arguments{
-\item{spec}{An `oligo_spec` list (see [parse_input()]).}
+\item{spec}{An \code{oligo_spec} list (see \code{\link[=parse_input]{parse_input()}}).}
 
-\item{k}{Number of nucleotides to remove, `1` to `n-1`.}
+\item{k}{Number of nucleotides to remove, \code{1} to \code{n-1}.}
 }
 \value{
-A truncated spec-like list (`bases`, `sugars`, `linkages`,
-  `conj5`, `conj3 = "none"` (lost with the 3' end), `n`).
+A truncated spec-like list (\code{bases}, \code{sugars}, \code{linkages},
+\code{conj5}, \code{conj3 = "none"} (lost with the 3' end), \code{n}).
 }
 \description{
 Truncate an oligo_spec from the 3' end (exonuclease truncation)
 }
 \seealso{
-[truncate_5p()], [generate_metabolites()]
+\code{\link[=truncate_5p]{truncate_5p()}}, \code{\link[=generate_metabolites]{generate_metabolites()}}
 }

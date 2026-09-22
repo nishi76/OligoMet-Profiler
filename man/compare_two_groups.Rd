@@ -14,28 +14,27 @@ compare_two_groups(
 }
 \arguments{
 \item{abundance_long}{Long-format abundance data.frame from
-[abundance_long()], with a `group` column.}
+\code{\link[=abundance_long]{abundance_long()}}, with a \code{group} column.}
 
-\item{group_a, group_b}{The two `group` values to compare. `log2fc` is
-`log2(mean(group_b) / mean(group_a))`, so `group_a` is the reference.}
+\item{group_a, group_b}{The two \code{group} values to compare. \code{log2fc} is
+\code{log2(mean(group_b) / mean(group_a))}, so \code{group_a} is the reference.}
 
 \item{min_n}{Minimum replicates required per group to run the test
 (clamped to at least 2, since a t-test needs to estimate variance).
-A metabolite with fewer replicates gets `note = "insufficient
-replicates"` and `NA` statistics instead of being dropped.}
+A metabolite with fewer replicates gets \code{note = "insufficient replicates"} and \code{NA} statistics instead of being dropped.}
 
-\item{p_adjust_method}{Method passed to [stats::p.adjust()] for the
-across-metabolite correction (`"BH"` by default).}
+\item{p_adjust_method}{Method passed to \code{\link[stats:p.adjust]{stats::p.adjust()}} for the
+across-metabolite correction (\code{"BH"} by default).}
 }
 \value{
-A data.frame with one row per metabolite: `met_id`, `met_name`,
-  `mean_a`, `mean_b`, `log2fc`, `t_stat`, `p_value`, `p_adj` (adjusted per
-  `p_adjust_method`), `n_a`, `n_b`, `note`.
+A data.frame with one row per metabolite: \code{met_id}, \code{met_name},
+\code{mean_a}, \code{mean_b}, \code{log2fc}, \code{t_stat}, \code{p_value}, \code{p_adj} (adjusted per
+\code{p_adjust_method}), \code{n_a}, \code{n_b}, \code{note}.
 }
 \description{
 Independent-samples Welch's t-test per metabolite, with
 Benjamini-Hochberg FDR correction across metabolites.
 }
 \seealso{
-[plot_volcano()] to visualize this result.
+\code{\link[=plot_volcano]{plot_volcano()}} to visualize this result.
 }

@@ -7,25 +7,25 @@
 dedupe_metabolites(mets)
 }
 \arguments{
-\item{mets}{A list of metabolite objects (see [generate_metabolites()]).}
+\item{mets}{A list of metabolite objects (see \code{\link[=generate_metabolites]{generate_metabolites()}}).}
 }
 \value{
 The deduplicated list -- one entry per distinct structure,
-  each with `kind_all` (every `kind` that produced this structure) and
-  `n_routes` added.
+each with \code{kind_all} (every \code{kind} that produced this structure) and
+\code{n_routes} added.
 }
 \description{
-With `endo = TRUE, endo_sites = "all"`, a 3' exonuclease truncation
+With \verb{endo = TRUE, endo_sites = "all"}, a 3' exonuclease truncation
 and an endonuclease 5' fragment (or a 5' truncation and an
 endonuclease 3' fragment) can be the exact same molecule -- same
-sequence, same termini, same mass -- differing only in the `kind`
+sequence, same termini, same mass -- differing only in the \code{kind}
 label attached by whichever route produced it. Left uncollapsed,
-[degradation_summary()] (which sums signal by `kind`) would count
-that one species twice on the degradant side, inflating % degradation.
+\code{\link[=degradation_summary]{degradation_summary()}} (which sums signal by \code{kind}) would count
+that one species twice on the degradant side, inflating \% degradation.
 Collapses on a structural key (sequence + sugars + linkages + terminal
 conjugates), keeping every route that produces the surviving species
-in `kind_all`/`n_routes` so the reporting stays informative.
+in \code{kind_all}/\code{n_routes} so the reporting stays informative.
 }
 \seealso{
-[generate_metabolites()]
+\code{\link[=generate_metabolites]{generate_metabolites()}}
 }

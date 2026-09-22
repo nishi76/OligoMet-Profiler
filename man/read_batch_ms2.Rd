@@ -7,19 +7,19 @@
 read_batch_ms2(tsv_path)
 }
 \arguments{
-\item{tsv_path}{Path to the MS2 TSV (see [run_batch_deconvolution()]'s
-`ms2_path`), or `NULL`/nonexistent (returns the empty shape below).}
+\item{tsv_path}{Path to the MS2 TSV (see \code{\link[=run_batch_deconvolution]{run_batch_deconvolution()}}'s
+\code{ms2_path}), or \code{NULL}/nonexistent (returns the empty shape below).}
 }
 \value{
-A data.frame: `sample`, `ms2_scan_id`, `rt`, `precursor_mz`,
-  `precursor_z`, `mz`, `intensity` -- one row per peak. Empty
-  data.frame (same columns) if `tsv_path` is `NULL`, missing, or has
-  no rows.
+A data.frame: \code{sample}, \code{ms2_scan_id}, \code{rt}, \code{precursor_mz},
+\code{precursor_z}, \code{mz}, \code{intensity} -- one row per peak. Empty
+data.frame (same columns) if \code{tsv_path} is \code{NULL}, missing, or has
+no rows.
 }
 \description{
-Unpacks the semicolon-delimited `mz_list`/`intensity_list` columns the
+Unpacks the semicolon-delimited \code{mz_list}/\code{intensity_list} columns the
 Python side writes (one row per MS2 scan) into one row per peak.
 }
 \seealso{
-[run_batch_deconvolution()], [confirm_ms2_batch()]
+\code{\link[=run_batch_deconvolution]{run_batch_deconvolution()}}, \code{\link[=confirm_ms2_batch]{confirm_ms2_batch()}}
 }

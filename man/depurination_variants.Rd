@@ -7,19 +7,19 @@
 depurination_variants(met, dict = STANDARD_DICT)
 }
 \arguments{
-\item{met}{A metabolite object (see [generate_metabolites()]).}
+\item{met}{A metabolite object (see \code{\link[=generate_metabolites]{generate_metabolites()}}).}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]).}
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}).}
 }
 \value{
-A data.frame, one row per purine position: `position`, `base`,
-  `mono_mass`, `formula_str`, `mass_shift`. `NULL` if `met` has no
-  purine (A/G) positions.
+A data.frame, one row per purine position: \code{position}, \code{base},
+\code{mono_mass}, \code{formula_str}, \code{mass_shift}. \code{NULL} if \code{met} has no
+purine (A/G) positions.
 }
 \description{
 For each purine position (A or G), computes the mass/formula after
 loss of the free base with regain of water (an abasic site).
 }
 \seealso{
-[oxidation_variant()]
+\code{\link[=oxidation_variant]{oxidation_variant()}}
 }

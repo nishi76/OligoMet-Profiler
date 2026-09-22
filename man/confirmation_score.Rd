@@ -7,30 +7,30 @@
 confirmation_score(matched, n, diagnostics = NULL)
 }
 \arguments{
-\item{matched}{Output of [match_fragments()].}
+\item{matched}{Output of \code{\link[=match_fragments]{match_fragments()}}.}
 
 \item{n}{Oligonucleotide length.}
 
-\item{diagnostics}{Output of [check_ps_diagnostic()]; `NULL` treats
+\item{diagnostics}{Output of \code{\link[=check_ps_diagnostic]{check_ps_diagnostic()}}; \code{NULL} treats
 it as no diagnostic ions found.}
 }
 \value{
-A list: `total_score` (0-100), `coverage`, `coverage_score`,
-  `n_matches`, `match_score`, `median_ppm`, `accuracy_score`,
-  `n_diagnostics`, `diagnostic_score`, `covered_sites`,
-  `total_sites`, `confident` (`TRUE` when `total_score >= 75` AND
-  `coverage >= 0.5`).
+A list: \code{total_score} (0-100), \code{coverage}, \code{coverage_score},
+\code{n_matches}, \code{match_score}, \code{median_ppm}, \code{accuracy_score},
+\code{n_diagnostics}, \code{diagnostic_score}, \code{covered_sites},
+\code{total_sites}, \code{confident} (\code{TRUE} when \code{total_score >= 75} AND
+\code{coverage >= 0.5}).
 }
 \description{
-Combines sequence coverage (0-50 points, linear up to 80% coverage
+Combines sequence coverage (0-50 points, linear up to 80\% coverage
 then capped), number of matched fragment ions (0-25, 10+ matches =
 full score), mass accuracy of matches (0-15, based on median ppm
 error), and PS diagnostic ion presence (0-10, 5 per diagnostic ion).
 Inspired by the FMVS paper's total confirmation score concept
-(isotope-envelope similarity for MS1, >50% sequence coverage
+(isotope-envelope similarity for MS1, >50\% sequence coverage
 threshold for MS2), adapted into one composite MS2-only score here.
 }
 \seealso{
-[confirm_metabolite()], [match_fragments()],
-  [check_ps_diagnostic()]
+\code{\link[=confirm_metabolite]{confirm_metabolite()}}, \code{\link[=match_fragments]{match_fragments()}},
+\code{\link[=check_ps_diagnostic]{check_ps_diagnostic()}}
 }

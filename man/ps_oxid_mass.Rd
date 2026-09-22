@@ -12,12 +12,12 @@ ps_oxid_mass(mono_mass, k)
 \item{k}{Number of desulfurization events.}
 }
 \value{
-`mono_mass - k * 15.977157`.
+\code{mono_mass - k * 15.977157}.
 }
 \description{
 Each PS -> PO oxidation event replaces one sulfur with one oxygen
 (-15.977157 Da).
 }
 \seealso{
-[ps_oxid_formula()], [ps_oxidation_series()]
+\code{\link[=ps_oxid_formula]{ps_oxid_formula()}}, \code{\link[=ps_oxidation_series]{ps_oxidation_series()}}
 }

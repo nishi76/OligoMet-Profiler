@@ -7,25 +7,25 @@
 parse_structured(spec, dict = STANDARD_DICT)
 }
 \arguments{
-\item{spec}{A list with (at least) `bases`, `sugars`, `linkages`
-character vectors of equal length, and optionally `conj5`/`conj3`
-(default `"none"`).}
+\item{spec}{A list with (at least) \code{bases}, \code{sugars}, \code{linkages}
+character vectors of equal length, and optionally \code{conj5}/\code{conj3}
+(default \code{"none"}).}
 
-\item{dict}{A chemistry dictionary (see [build_dictionary()]); not
-used for validation here (see [validate_spec()]), only threaded
+\item{dict}{A chemistry dictionary (see \code{\link[=build_dictionary]{build_dictionary()}}); not
+used for validation here (see \code{\link[=validate_spec]{validate_spec()}}), only threaded
 through for a consistent signature with the other parsers.}
 }
 \value{
-A list with `bases`, `sugars`, `linkages`, `conj5`, `conj3` --
-  ready for [parse_input()] to finish into a canonical `oligo_spec`.
+A list with \code{bases}, \code{sugars}, \code{linkages}, \code{conj5}, \code{conj3} --
+ready for \code{\link[=parse_input]{parse_input()}} to finish into a canonical \code{oligo_spec}.
 }
 \description{
 Validates and normalizes a plain R list already in
-`list(bases=, sugars=, linkages=, conj5=, conj3=)` shape -- the only
+\code{list(bases=, sugars=, linkages=, conj5=, conj3=)} shape -- the only
 notation that can carry terminal conjugates directly. Usually called
-indirectly via [parse_input()], which dispatches to this whenever `x`
+indirectly via \code{\link[=parse_input]{parse_input()}}, which dispatches to this whenever \code{x}
 is a list.
 }
 \seealso{
-[parse_input()]
+\code{\link[=parse_input]{parse_input()}}
 }

@@ -7,18 +7,18 @@
 fragment_table(frags)
 }
 \arguments{
-\item{frags}{A list of fragment objects (see [generate_fragments()]/
-[generate_internal_fragments()]).}
+\item{frags}{A list of fragment objects (see \code{\link[=generate_fragments]{generate_fragments()}}/
+\code{\link[=generate_internal_fragments]{generate_internal_fragments()}}).}
 }
 \value{
-A data.frame, one row per (fragment, charge state): `met_id`,
-  `ion_type`, `direction`, `cleavage_site`, `frag_length`, `formula`,
-  `mono_mass`, `base_loss`, plus `z`/`mz` from each fragment's
-  `mz_table`.
+A data.frame, one row per (fragment, charge state): \code{met_id},
+\code{ion_type}, \code{direction}, \code{cleavage_site}, \code{frag_length}, \code{formula},
+\code{mono_mass}, \code{base_loss}, plus \code{z}/\code{mz} from each fragment's
+\code{mz_table}.
 }
 \description{
 Flatten a fragment list to a display data.frame
 }
 \seealso{
-[generate_fragments()]
+\code{\link[=generate_fragments]{generate_fragments()}}
 }
