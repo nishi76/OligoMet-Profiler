@@ -239,6 +239,23 @@ and a statistics CSV to `results_batch_example/`. `inst/extdata/batch_example/ge
 shows exactly how the synthetic data was built, with fixed seeds, if you
 want to regenerate or adapt it.
 
+**Calibration curve, same reference oligo:** a second bundled example
+(`inst/extdata/calibration_example/`) ships a 5-level standard curve
+(1/5/25/100/500 ng/mL, n=2 replicate injections per level, 10 files
+total) for the same inotersen sequence, with `Sample Type = standard`
+and `concentration` already filled in `sample_meta.csv`. Run it with:
+
+```bash
+Rscript inst/examples/run_calibration_example.R
+```
+
+which fits a 1/x²-weighted calibration curve (R² > 0.999 on this
+synthetic data) and back-calculates each standard's concentration --
+useful both as a working example and as a reference for what correctly
+set-up calibration standard metadata looks like, if a real dataset's
+curve isn't building. `inst/extdata/calibration_example/generate_calibration_example.py`
+shows how it was built.
+
 For many raw files at once — a multi-sample experiment rather than one
 sequence against one file — a parallel Python pipeline
 (`inst/python/oligomet_deconv/`) streams each mzML/mzXML file, detects

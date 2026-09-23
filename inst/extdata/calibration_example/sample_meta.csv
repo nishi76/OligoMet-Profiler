@@ -1,0 +1,11 @@
+sample,group,timepoint,sample_type,concentration
+std_L1_r1,,,standard,1.0
+std_L1_r2,,,standard,1.0
+std_L2_r1,,,standard,5.0
+std_L2_r2,,,standard,5.0
+std_L3_r1,,,standard,25.0
+std_L3_r2,,,standard,25.0
+std_L4_r1,,,standard,100.0
+std_L4_r2,,,standard,100.0
+std_L5_r1,,,standard,500.0
+std_L5_r2,,,standard,500.0

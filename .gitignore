@@ -9,6 +9,7 @@
 /results/
 /results_batch/
 /results_batch_example/
+/results_calibration_example/
 *.xlsx
 *.html
 plot_*.png
