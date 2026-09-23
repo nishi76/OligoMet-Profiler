@@ -10,6 +10,7 @@ quantify_metabolites(
   absolute_met_ids = character(0),
   mode = c("time_series", "group"),
   control_group = NULL,
+  reference_timepoint = NULL,
   weighting = c("1/x2", "1/x", "none"),
   signal_col = NULL,
   min_points = 3
@@ -31,6 +32,9 @@ own calibration curve. Every other metabolite actually present in
 \item{mode}{\code{"time_series"} or \code{"group"} -- see \code{\link[=quantify_relative]{quantify_relative()}}.}
 
 \item{control_group}{Required when \code{mode = "group"} -- see
+\code{\link[=quantify_relative]{quantify_relative()}}.}
+
+\item{reference_timepoint}{Only used when \code{mode = "time_series"} -- see
 \code{\link[=quantify_relative]{quantify_relative()}}.}
 
 \item{weighting}{Calibration curve weighting -- see

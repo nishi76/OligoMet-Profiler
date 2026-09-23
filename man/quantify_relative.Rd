@@ -10,6 +10,7 @@ quantify_relative(
   sample_meta,
   mode = c("time_series", "group"),
   control_group = NULL,
+  reference_timepoint = NULL,
   signal_col = NULL
 )
 }
@@ -23,15 +24,25 @@ quantify_relative(
 \code{timepoint} (and optionally \code{sample_type}, used to exclude
 standards/QC/blanks).}
 
-\item{mode}{\code{"time_series"}: baseline is the mean signal at the
-earliest timepoint (pre-dose/time 0), computed per group/arm if a
-\code{group} column is also present, so e.g. a "treated" arm normalizes
-to ITS OWN time-0 mean rather than pooling with control's.
+\item{mode}{\code{"time_series"}: baseline is the mean signal at
+\code{reference_timepoint}, computed per group/arm if a \code{group} column is
+also present, so e.g. a "treated" arm normalizes to ITS OWN
+reference-timepoint mean rather than pooling with control's.
 \code{"group"}: baseline is the mean signal in \code{control_group} -- every
 sample's \code{relative_signal} is its own signal over that one number.}
 
 \item{control_group}{Required when \code{mode = "group"}: the \code{group} value
 to treat as baseline.}
+
+\item{reference_timepoint}{Only used when \code{mode = "time_series"}: the
+numeric \code{timepoint} value to treat as the pre-dose/reference
+baseline. \code{NULL} (the default) uses the earliest timepoint present,
+which is only the same thing as "pre-dose" if pre-dose happens to be
+coded as the smallest number -- pass this explicitly whenever that
+isn't the case (e.g. a study with no baseline draw, or a non-zero/
+negative pre-dose code). A sample whose exact timepoint doesn't
+match any observed value contributes no rows to \code{relative_signal}
+for that arm (a \code{NA} baseline), rather than erroring.}
 
 \item{signal_col}{Which column to use as signal; \code{NULL} auto-detects
 (\code{"area"} if present and not all-\code{NA}, else \code{"intensity"}).}

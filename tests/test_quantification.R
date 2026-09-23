@@ -133,6 +133,24 @@ stopifnot(abs(mean(t0) - 1) < 1e-6)
 stopifnot(abs(mean(t2) - 4) < 1e-6)
 cat("Baseline (time 0) normalizes to 1.0, later timepoint recovers 4x injected fold: PASS\n")
 
+## ---- quantify_relative(): reference_timepoint override ---------------------
+# Real-world motivation: "earliest timepoint" is only the same thing as
+# "pre-dose" when pre-dose happens to be coded as the smallest number --
+# reference_timepoint lets a caller say explicitly which timepoint is the
+# baseline instead. Same fixture, but baseline moves to timepoint 1.
+cat("\n--- quantify_relative(reference_timepoint = 1) ---\n")
+rel_ts_ref1 <- quantify_relative(ts_matches, "DEG1", ts_meta, mode = "time_series",
+                                  reference_timepoint = 1, signal_col = "intensity")
+r0 <- rel_ts_ref1$relative_signal[rel_ts_ref1$timepoint == "0"]
+r1 <- rel_ts_ref1$relative_signal[rel_ts_ref1$timepoint == "1"]
+r2 <- rel_ts_ref1$relative_signal[rel_ts_ref1$timepoint == "2"]
+cat("Relative signal at t0 (mean", round(mean(r0), 2), "), t1 (mean", round(mean(r1), 2),
+    "), t2 (mean", round(mean(r2), 2), ")\n")
+stopifnot(abs(mean(r0) - 0.5) < 1e-6)
+stopifnot(abs(mean(r1) - 1) < 1e-6)
+stopifnot(abs(mean(r2) - 2) < 1e-6)
+cat("Baseline correctly moves to timepoint 1, not the earliest (0): PASS\n")
+
 ## ---- quantify_relative(): group mode relative to control ------------------
 cat("\n--- quantify_relative(mode = 'group') ---\n")
 grp_samples <- c("ctrl_1", "ctrl_2", "ctrl_3", "treat_1", "treat_2", "treat_3")

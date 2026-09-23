@@ -1042,6 +1042,13 @@ ui <- fluidPage(
             tags$p(style = "font-size: 10px; color: #6c757d; margin-top: -8px;",
                    "Leave both blank to auto-pick the first two Group values found. ",
                    "Only used for a 2-group design; ignored for 3+ groups or time-course."),
+            selectInput("stats_reference_timepoint", "Reference timepoint (baseline)",
+                        choices = c("Auto (earliest)" = "")),
+            tags$p(style = "font-size: 10px; color: #6c757d; margin-top: -8px;",
+                   "Time-course relative quantification and the Time Course trend plot ",
+                   "normalize every sample to this timepoint's mean signal. \"Auto\" picks ",
+                   "the smallest Timepoint value -- override this when pre-dose/reference ",
+                   "isn't coded as the smallest number (e.g. a study with no true time-0 draw)."),
             fluidRow(
               column(6, selectInput("stats_padjust", "P-value adjustment",
                         choices = c("Benjamini-Hochberg" = "BH", "Bonferroni" = "bonferroni",
@@ -1743,6 +1750,22 @@ server <- function(input, output, session) {
     updateSelectInput(session, "control_group", choices = groups, selected = keep_selected)
   }, ignoreNULL = FALSE)
 
+  # Reference-timepoint choices come from whatever numeric Timepoint values
+  # are actually on the sample metadata table right now -- same live-update
+  # pattern as control_group above. "Auto (earliest)" (empty string) keeps
+  # the smallest-value default quantify_metabolites()/multi_trend_summary()
+  # already use when no override is picked.
+  observeEvent(batch_meta_data(), {
+    meta <- batch_meta_data()
+    tps <- if ("timepoint" %in% names(meta)) {
+      sort(unique(suppressWarnings(as.numeric(meta$timepoint[nzchar(meta$timepoint)]))))
+    } else numeric(0)
+    tps <- tps[!is.na(tps)]
+    ch <- c("Auto (earliest)" = "", stats::setNames(as.character(tps), as.character(tps)))
+    keep_selected <- if (isolate(input$stats_reference_timepoint) %in% ch) isolate(input$stats_reference_timepoint) else ""
+    updateSelectInput(session, "stats_reference_timepoint", choices = ch, selected = keep_selected)
+  }, ignoreNULL = FALSE)
+
   ## ---- MS2 library explorer --------------------------------------------------
   # Cached separately from rv$ms_results etc.: building the full MS2 library
   # is expensive (see .ms2_library() below), so it's built once on demand via
@@ -2427,6 +2450,15 @@ server <- function(input, output, session) {
     if (identical(input$signal_basis, "bcorr") && bcorr %in% names(matches)) bcorr else base
   }
 
+  # Maps the "Reference timepoint" dropdown (Statistical Analysis sidebar)
+  # to the value quantify_metabolites()/multi_trend_summary() expect:
+  # NULL (auto -- earliest timepoint) when left on "Auto", else the
+  # explicit numeric timepoint the user picked.
+  .resolve_reference_timepoint <- function() {
+    val <- input$stats_reference_timepoint %||% ""
+    if (!nzchar(val)) NULL else suppressWarnings(as.numeric(val))
+  }
+
   .recompute_stats_and_quant <- function() {
     meta <- batch_meta_data()
     bres <- rv$batch_ms_results
@@ -2519,6 +2551,7 @@ server <- function(input, output, session) {
         absolute_met_ids = input$absolute_quant_mets,
         mode = if (has_time) "time_series" else "group",
         control_group = if (has_time) NULL else input$control_group,
+        reference_timepoint = if (has_time) .resolve_reference_timepoint() else NULL,
         weighting = input$calibration_weighting,
         signal_col = sig_col)
     }, error = function(e) {
@@ -3711,7 +3744,8 @@ server <- function(input, output, session) {
     long <- .time_course_long()
     if (nrow(long) == 0) return(data.frame())
     met_ids <- if (length(input$tc_met_ids) > 0) input$tc_met_ids else NULL
-    multi_trend_summary(long, met_ids = met_ids, normalize = isTRUE(input$tc_normalize))
+    multi_trend_summary(long, met_ids = met_ids, normalize = isTRUE(input$tc_normalize),
+                         reference_timepoint = .resolve_reference_timepoint())
   })
 
   output$time_course_note <- renderUI({
@@ -3726,7 +3760,8 @@ server <- function(input, output, session) {
   })
 
   output$plot_time_course_trend <- renderPlot({
-    plot_multi_trend(.time_course_summary(), normalize = isTRUE(input$tc_normalize))
+    plot_multi_trend(.time_course_summary(), normalize = isTRUE(input$tc_normalize),
+                      reference_timepoint = .resolve_reference_timepoint())
   })
 
   output$time_course_table <- DT::renderDT({
