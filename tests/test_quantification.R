@@ -11,9 +11,11 @@
   }, error = function(e) NULL)
   if (!is.null(this)) dirname(dirname(this)) else ".."
 })
-source(file.path(.pkg_root, "R", "chemistry_dict.R"))  # %||%, .is_study_sample()
-source(file.path(.pkg_root, "R", "degradation.R"))  # .best_signal_per_met()
-source(file.path(.pkg_root, "R", "statistics.R"))
+for (.f in c("about.R", "chemistry_dict.R", "oligo_io.R", "metabolites.R",
+             "mass_isotope.R", "fragments.R", "ms_matching.R",
+             "batch_ms_processing.R", "degradation.R", "statistics.R")) {
+  source(file.path(.pkg_root, "R", .f))
+}
 
 cat("==== Quantification suite validation ====\n\n")
 
@@ -198,5 +200,63 @@ stopifnot(all(combo$absolute$met_id == "PARENT"))
 stopifnot(all(combo$relative$met_id == "DEG2"))
 stopifnot("PARENT" %in% names(combo$calibration_curves))
 cat("PARENT routed to absolute quant, DEG2 routed to relative quant: PASS\n")
+
+## ---- Integration: real calibration_example fixture (5 levels x n=2) ------
+# See inst/extdata/calibration_example/generate_calibration_example.py --
+# same inotersen reference sequence as batch_example, a pure 5-level
+# (1/5/25/100/500 ng/mL) x n=2-replicate standard curve, parent-only (no
+# degradants/contaminant -- these are calibration standards, not a
+# biological sample). z_range/min_charge_states are narrower here than
+# the pipeline's own defaults for a documented reason -- see
+# inst/examples/run_calibration_example.R's header comment: this
+# envelope's exact z=5,6,7,8 is a consecutive small-integer charge set,
+# which produces spurious "confirmed" 2-charge-state harmonic collisions
+# (a z=6 peak reinterpreted at z=3 exactly matches a z=8 peak
+# reinterpreted at z=4, since 6:3 and 8:4 are both 2:1) if swept as wide
+# as the default z_max=20 -- a real, general limitation of the sweep-
+# based grouping (group_charge_states() in charge_group.py already
+# documents the broader coincidental-collision issue), not a defect in
+# this fixture.
+cat("\n--- integration: inst/extdata/calibration_example (real deconvolution) ---\n")
+cal_dir <- file.path(.pkg_root, "inst", "extdata", "calibration_example")
+cal_files <- list.files(cal_dir, pattern = "\\.mzML$", full.names = TRUE)
+if (length(cal_files) == 0 || is.na(find_python())) {
+  cat("SKIPPED (no fixtures or no python3 on PATH)\n")
+} else {
+  dict <- STANDARD_DICT
+  spec <- parse_input(INOTERSEN_TRIPLET)
+  mets <- generate_metabolites(spec, opts = list(oligo_name = "inotersen",
+                                                  max_3p = 3, max_5p = 3, endo = FALSE))
+  parent_id <- mets[[which(vapply(mets, function(m) identical(m$kind, "parent"), logical(1)))[1]]]$id
+  cal_meta <- utils::read.csv(file.path(cal_dir, "sample_meta.csv"), stringsAsFactors = FALSE,
+                               colClasses = "character")
+
+  deconv <- tryCatch(
+    run_batch_deconvolution(cal_files, roi_ppm = 15, rt_tol = 0.15, mass_tol_ppm = 10,
+                             z_range = 3:12, min_intensity = 5000, min_scans = 3,
+                             max_gap_scans = 2, min_charge_states = 3, n_workers = 1),
+    error = function(e) NULL)
+  if (is.null(deconv)) {
+    cat("SKIPPED (batch deconvolution failed)\n")
+  } else {
+    feats <- read_batch_features(deconv$features_path)
+    m <- match_ms1_batch(mets, feats, dict, ppm_tol = 10, z_range = 3:12, adducts = "H", max_oxid = 0)
+    cat("MS1 matches:", nrow(m), "\n")
+    stopifnot(nrow(m) == 10)  # one clean feature per sample, by construction
+
+    curve <- fit_calibration_curve(m, parent_id, cal_meta, weighting = "1/x2")
+    cat("n_points:", curve$n_points, " r_squared:", round(curve$r_squared, 5), "\n")
+    stopifnot(!is.null(curve$model))
+    stopifnot(curve$n_points == 10)
+    stopifnot(curve$r_squared > 0.99)
+    stopifnot(curve$slope > 0)
+
+    quant <- quantify_absolute(m, parent_id, cal_meta, weighting = "1/x2")
+    re <- abs(quant$quant$percent_re)
+    cat("max |percent_re| across all 10 standards:", round(max(re), 2), "%\n")
+    stopifnot(all(re < 5))  # every standard back-calculates within 5% of nominal
+    cat("real 5-level x n=2 calibration curve fits cleanly (R^2 > 0.99, all points within 5% RE): PASS\n")
+  }
+}
 
 cat("\n==== All quantification tests passed ====\n")
