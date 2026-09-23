@@ -32,6 +32,7 @@ class ChargeGroup:
     charge: int
     neutral_mass: float
     n_charge_states: int
+    n_summed: int
     mass_cv_ppm: float
     rt: float
     rt_start: float
@@ -57,7 +58,23 @@ def _rt_clusters(peaks: list[ROIPeak], rt_tol: float) -> list[list[ROIPeak]]:
 def group_charge_states(peaks: list[ROIPeak], z_min: int = 3, z_max: int = 20,
                          rt_tol: float = 0.15, mass_tol_ppm: float = 20.0,
                          min_mass: float = 200.0, max_mass: float = 50000.0,
-                         min_charge_states: int = 2) -> list[ChargeGroup]:
+                         min_charge_states: int = 2,
+                         top_n: int = 5) -> list[ChargeGroup]:
+    # apex_intensity/area used to be a single representative charge state's
+    # own value (whichever charge state in the confirmed envelope happened
+    # to be most intense) -- picking only one channel means the reported
+    # signal is at the mercy of whichever charge state ionizes best THAT
+    # run, which drifts with source conditions (voltage, mobile-phase pH,
+    # ion-pairing reagent) independent of actual analyte amount. Summing
+    # the confirmed envelope's charge states instead recovers something
+    # closer to a true total-ion estimate, proportional to molar amount --
+    # the same reasoning intact-mass deconvolution tools (Xtract,
+    # BioPharma Finder) use for reporting a summed/deconvoluted total
+    # rather than one charge state's peak. Capped at the `top_n` most
+    # intense of the CONFIRMED charge states (not the raw sweep) so a
+    # weak, barely-there fringe charge state at the tail of a wide
+    # envelope (z=3..20) doesn't dilute the sum with noise; envelopes with
+    # fewer than top_n confirmed states just sum all of them.
     # Sweeping every peak against every z in [z_min, z_max] deliberately
     # over-generates candidates: a single real peak's mass, back-calculated
     # at some WRONG z, will coincidentally land within mass_tol_ppm of some
@@ -118,13 +135,23 @@ def group_charge_states(peaks: list[ROIPeak], z_min: int = 3, z_max: int = 20,
             if len(entries) < min_charge_states:
                 continue
 
+            # Sum the top_n most intense CONFIRMED charge states (already
+            # passed the min_charge_states/mass-agreement gate above) --
+            # mz/charge/rt/n_scans still identify the envelope by its own
+            # most intense channel (rep_peak), only the reported signal
+            # magnitude changes.
+            order = np.argsort(intensities)[::-1][:top_n]
+            top_peaks = [cluster[entries[i][0]] for i in order]
+            sum_intensity = float(sum(p.apex_intensity for p in top_peaks))
+            sum_area = float(sum(p.area for p in top_peaks))
+
             groups.append(ChargeGroup(
                 mz=rep_peak.mz, charge=rep_z, neutral_mass=mean_mass,
-                n_charge_states=len(entries), mass_cv_ppm=cv_ppm,
+                n_charge_states=len(entries), n_summed=len(top_peaks), mass_cv_ppm=cv_ppm,
                 rt=float(np.average([cluster[e[0]].rt_apex for e in entries], weights=intensities)),
                 rt_start=min(cluster[e[0]].rt_start for e in entries),
                 rt_end=max(cluster[e[0]].rt_end for e in entries),
-                apex_intensity=rep_peak.apex_intensity, area=rep_peak.area,
+                apex_intensity=sum_intensity, area=sum_area,
                 n_scans=rep_peak.n_scans,
             ))
     return groups

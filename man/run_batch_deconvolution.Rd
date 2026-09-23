@@ -20,6 +20,7 @@ run_batch_deconvolution(
   min_scans = 3,
   max_gap_scans = 2,
   min_charge_states = 2,
+  top_n_charge_states = 5,
   n_workers = NULL,
   python_bin = find_python(),
   module_dir = .find_deconv_module_dir(),
@@ -40,9 +41,13 @@ when \code{precursor_watchlist} is given.}
 \item{precursor_watchlist}{Optional path to a precursor-mz watch-list
 (see \code{\link[=write_precursor_watchlist]{write_precursor_watchlist()}}) enabling targeted MS2 capture.}
 
-\item{ms2_watch_ppm, roi_ppm, rt_tol, mass_tol_ppm, z_range, min_scans, max_gap_scans, min_charge_states}{Deconvolution parameters passed straight through to the Python CLI
+\item{ms2_watch_ppm, roi_ppm, rt_tol, mass_tol_ppm, z_range, min_scans, max_gap_scans, min_charge_states, top_n_charge_states}{Deconvolution parameters passed straight through to the Python CLI
 -- see \code{inst/python/oligomet_deconv/cli.py}'s \code{--help} for what each
-one does.}
+one does. \code{top_n_charge_states} (default 5) sums this many of a
+confirmed envelope's most intense charge states for the reported
+intensity/area, instead of a single channel's own max -- see
+\code{group_charge_states()} in \code{charge_group.py} for why summing
+(capped, not the single loudest channel) is the default.}
 
 \item{min_intensity}{Fixed absolute intensity floor for a candidate
 ROI peak; used as a fallback when \code{sn_threshold} is \code{NULL} or a

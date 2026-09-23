@@ -169,6 +169,43 @@ def main():
         check("envelope B has 3 charge states (not merged with A)", group_b[0]["n_charge_states"] == 3)
         check("envelope B representative charge is one of 6/7/9", group_b[0]["charge"] in (6, 7, 9))
 
+    # Envelope-sum: with the default top_n_charge_states=5, envelope A's 4
+    # confirmed charge states (weights 0.6/0.8/1.0/0.7 at apex base=25000,
+    # i.e. individual apex intensities 15000/20000/25000/17500) should all
+    # be summed, not just the single loudest (z=7, 25000) reported before
+    # this feature existed. n_summed reports how many actually went in.
+    if group_a:
+        check("envelope A n_summed == n_charge_states (4 <= default top_n=5)",
+              group_a[0]["n_summed"] == group_a[0]["n_charge_states"] == 4)
+        check("envelope A max_intensity is the SUM of its 4 charge states (~77500), not just one (~25000)",
+              abs(group_a[0]["max_intensity"] - 77500) < 1)
+
+    # top_n_charge_states=1 must recover the OLD single-most-intense-
+    # channel behavior exactly -- a direct backward-compatibility check.
+    params_top1 = DeconvParams(roi_ppm=15.0, rt_tol=0.15, mass_tol_ppm=20.0,
+                                z_min=3, z_max=20, min_intensity=1e4, min_scans=3,
+                                max_gap_scans=2, ms2_watch_ppm=50.0, top_n_charge_states=1)
+    features_top1, _, _ = process_file(mzml_path, params_top1, precursor_watchlist_path=watchlist_path)
+    group_a_top1 = [f for f in features_top1 if abs(f["neutral_mass"] - 6543.21) < 0.01]
+    if group_a_top1:
+        check("top_n_charge_states=1 recovers the single-loudest-channel value (~25000)",
+              abs(group_a_top1[0]["max_intensity"] - 25000) < 1)
+        check("top_n_charge_states=1 -> n_summed == 1", group_a_top1[0]["n_summed"] == 1)
+        check("top_n_charge_states=1 doesn't change n_charge_states (still 4 confirmed)",
+              group_a_top1[0]["n_charge_states"] == 4)
+
+    # A cap between 1 and n_charge_states sums only that many (the most
+    # intense ones): z=7 (25000) + z=6 (20000) = 45000.
+    params_top2 = DeconvParams(roi_ppm=15.0, rt_tol=0.15, mass_tol_ppm=20.0,
+                                z_min=3, z_max=20, min_intensity=1e4, min_scans=3,
+                                max_gap_scans=2, ms2_watch_ppm=50.0, top_n_charge_states=2)
+    features_top2, _, _ = process_file(mzml_path, params_top2, precursor_watchlist_path=watchlist_path)
+    group_a_top2 = [f for f in features_top2 if abs(f["neutral_mass"] - 6543.21) < 0.01]
+    if group_a_top2:
+        check("top_n_charge_states=2 sums exactly its 2 loudest channels (~45000)",
+              abs(group_a_top2[0]["max_intensity"] - 45000) < 1)
+        check("top_n_charge_states=2 -> n_summed == 2", group_a_top2[0]["n_summed"] == 2)
+
     # Envelope C is single-charge by construction -- with the default
     # min_charge_states=2 it must NOT appear at all: a group confirmed by
     # only one charge-state observation cannot actually confirm a charge,

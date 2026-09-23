@@ -14,8 +14,8 @@ import pandas as pd
 from .deconvolve import DeconvParams, process_file
 
 FEATURE_COLUMNS = ["sample", "source_file", "feature_id", "mz", "rt", "max_intensity",
-                    "n_scans", "charge", "neutral_mass", "n_charge_states", "mass_cv_ppm",
-                    "rt_start", "rt_end", "area"]
+                    "n_scans", "charge", "neutral_mass", "n_charge_states", "n_summed",
+                    "mass_cv_ppm", "rt_start", "rt_end", "area"]
 MS2_COLUMNS = ["sample", "source_file", "ms2_scan_id", "precursor_mz", "precursor_z",
                "rt", "mz_list", "intensity_list"]
 

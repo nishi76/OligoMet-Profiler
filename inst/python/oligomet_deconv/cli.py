@@ -53,6 +53,11 @@ def build_parser() -> argparse.ArgumentParser:
                          "actually confirm a charge, and sweeping every peak against every "
                          "z in [--z-min, --z-max] produces many such coincidental single-"
                          "observation matches; set to 1 to see everything the sweep finds)")
+    p.add_argument("--top-n-charge-states", type=int, default=5,
+                    help="sum this many of a confirmed envelope's most intense charge "
+                         "states for the reported intensity/area, instead of a single "
+                         "channel's own max (default 5; envelopes with fewer confirmed "
+                         "charge states sum all of them)")
     p.add_argument("--n-workers", type=int, default=None)
     return p
 
@@ -70,6 +75,7 @@ def main(argv=None) -> int:
         min_scans=args.min_scans, max_gap_scans=args.max_gap_scans,
         min_mass=args.min_mass, max_mass=args.max_mass, ms2_watch_ppm=args.ms2_watch_ppm,
         min_charge_states=args.min_charge_states, sn_threshold=args.sn_threshold,
+        top_n_charge_states=args.top_n_charge_states,
     )
 
     ms2_output_file = args.ms2_output_file
