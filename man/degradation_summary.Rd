@@ -4,7 +4,12 @@
 \alias{degradation_summary}
 \title{Summarize \% degradation of the parent oligonucleotide, per sample}
 \usage{
-degradation_summary(ms1_matches, top_n = 10, sample_meta = NULL)
+degradation_summary(
+  ms1_matches,
+  top_n = 10,
+  sample_meta = NULL,
+  signal_col = NULL
+)
 }
 \arguments{
 \item{ms1_matches}{The \code{ms1_matches} data.frame from
@@ -25,6 +30,11 @@ onto \code{per_sample}/\code{composition} so degradation can be tracked across
 the study design directly, without a separate manual merge. \code{NULL}
 (the default) keeps every sample, for callers with no sample-type
 information at all.}
+
+\item{signal_col}{Which column to use as signal (e.g. a blank-corrected
+column such as \code{"intensity_bcorr"} -- see \code{\link[=apply_blank_correction]{apply_blank_correction()}}).
+\code{NULL} (the default) auto-detects: \code{"area"} if present and not
+all-\code{NA}, else \code{"intensity"}.}
 }
 \value{
 A list: \code{per_sample} (\code{sample}, \code{signal_used}, \code{parent_signal},

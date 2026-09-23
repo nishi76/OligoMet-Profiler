@@ -54,6 +54,27 @@
   is.na(sample_type) | !nzchar(sample_type) | sample_type == "unknown"
 }
 
+# Recognize a reagent/matrix blank from the sample NAME alone, e.g.
+# "RB_01.mzML" or "Sample-MB-2" -- RB/MB matched only as a delimited
+# token (bounded by "_", ".", "-", whitespace, or string start/end), not
+# a bare substring, so "CARBON" or "MBio_01" do not false-positive.
+# Case-insensitive. Returns "reagent_blank"/"matrix_blank"/NA per element.
+.detect_blank_type_from_name <- function(sample_name) {
+  tok <- "(^|[_.\\-\\s])(RB|MB)([_.\\-\\s]|$)"
+  hit <- regmatches(sample_name, regexpr(tok, sample_name, ignore.case = TRUE, perl = TRUE))
+  found <- grepl(tok, sample_name, ignore.case = TRUE, perl = TRUE)
+  ifelse(found, ifelse(grepl("MB", hit, ignore.case = TRUE), "matrix_blank", "reagent_blank"),
+         NA_character_)
+}
+
+# TRUE if a sample is a reagent/matrix blank, whether tagged via
+# sample_type or only recognizable from its name -- the single
+# authoritative predicate for both auto-fill and blank-value computation.
+.is_blank_sample <- function(sample_type, sample_name) {
+  (!is.na(sample_type) & sample_type %in% c("reagent_blank", "matrix_blank")) |
+    !is.na(.detect_blank_type_from_name(sample_name))
+}
+
 ## ---- Formula helpers --------------------------------------------------------
 # A formula is a named numeric vector over .ELEMENTS (missing elements = 0).
 .empty_formula <- function() setNames(rep(0, length(.ELEMENTS)), .ELEMENTS)

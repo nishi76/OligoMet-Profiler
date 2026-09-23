@@ -4,20 +4,27 @@
 \alias{build_abundance_matrix}
 \title{Build a metabolite x sample abundance matrix}
 \usage{
-build_abundance_matrix(batch_matches)
+build_abundance_matrix(batch_matches, signal_col = "intensity")
 }
 \arguments{
 \item{batch_matches}{The \code{ms1_matches} data.frame from
 \code{\link[=match_ms1_batch]{match_ms1_batch()}}/\code{\link[=annotate_metabolites_batch]{annotate_metabolites_batch()}}: one row per
 (sample, metabolite, charge, adduct) hit, with \code{met_id}, \code{met_name},
-\code{kind}, \code{sample}, and \code{intensity} columns.}
+\code{kind}, \code{sample}, and a signal column (\code{intensity} by default).}
+
+\item{signal_col}{Which column to use as signal (e.g. \code{"intensity"},
+\code{"area"}, or a blank-corrected column such as \code{"intensity_bcorr"} --
+see \code{\link[=apply_blank_correction]{apply_blank_correction()}}). Defaults to \code{"intensity"}, preserving
+this function's original behavior.}
 }
 \value{
 A data.frame with one row per metabolite (\code{met_id}, \code{met_name},
 \code{kind}) and one column per sample (named after that sample) holding
-its max intensity for that metabolite. A (metabolite, sample)
+its max signal for that metabolite. A (metabolite, sample)
 combination with no match is \code{NA}, not zero. Empty data.frame if
-\code{batch_matches} is \code{NULL}/empty.
+\code{batch_matches} is \code{NULL}/empty, or if \code{signal_col} isn't present at
+all (e.g. \code{"area"} on single-file-mode features, which the R-native
+reader doesn't compute AUC for).
 }
 \description{
 Collapses multi-sample MS1 matches into one row per metabolite, one

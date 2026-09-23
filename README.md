@@ -256,6 +256,20 @@ set-up calibration standard metadata looks like, if a real dataset's
 curve isn't building. `inst/extdata/calibration_example/generate_calibration_example.py`
 shows how it was built.
 
+**Reagent/matrix blank correction:** mark a batch sample `Sample Type =
+reagent_blank`/`matrix_blank` in the sample table, or just name the raw
+file with an "RB" or "MB" token (`RB_01.mzML`, `Sample-MB-2.mzML`) --
+Sample Type auto-fills from the name (still editable). Every other
+sample's signal then has that metabolite's pooled mean blank signal
+subtracted (`max(0, signal - blank_mean)`), as a *new* derived
+`intensity_bcorr`/`area_bcorr` column alongside the untouched raw
+values -- nothing is silently changed. The Statistical Analysis tab
+gets a **Signal basis: Raw / Blank-corrected** toggle (default Raw) that
+switches the calibration curve, degradation summary, univariate/class
+comparison stats, and PCA/clustering over to the corrected signal; the
+**Data Matrix** tab shows exactly what per-metabolite value is being
+subtracted.
+
 For many raw files at once — a multi-sample experiment rather than one
 sequence against one file — a parallel Python pipeline
 (`inst/python/oligomet_deconv/`) streams each mzML/mzXML file, detects

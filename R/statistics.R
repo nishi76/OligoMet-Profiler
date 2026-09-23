@@ -24,25 +24,33 @@
 #' @param batch_matches The `ms1_matches` data.frame from
 #'   [match_ms1_batch()]/[annotate_metabolites_batch()]: one row per
 #'   (sample, metabolite, charge, adduct) hit, with `met_id`, `met_name`,
-#'   `kind`, `sample`, and `intensity` columns.
+#'   `kind`, `sample`, and a signal column (`intensity` by default).
+#' @param signal_col Which column to use as signal (e.g. `"intensity"`,
+#'   `"area"`, or a blank-corrected column such as `"intensity_bcorr"` --
+#'   see [apply_blank_correction()]). Defaults to `"intensity"`, preserving
+#'   this function's original behavior.
 #' @return A data.frame with one row per metabolite (`met_id`, `met_name`,
 #'   `kind`) and one column per sample (named after that sample) holding
-#'   its max intensity for that metabolite. A (metabolite, sample)
+#'   its max signal for that metabolite. A (metabolite, sample)
 #'   combination with no match is `NA`, not zero. Empty data.frame if
-#'   `batch_matches` is `NULL`/empty.
+#'   `batch_matches` is `NULL`/empty, or if `signal_col` isn't present at
+#'   all (e.g. `"area"` on single-file-mode features, which the R-native
+#'   reader doesn't compute AUC for).
 #' @seealso [abundance_long()] to reshape this into long format for
 #'   [compare_two_groups()]/[compare_multi_groups()]/[compare_time_series()].
 #' @export
-build_abundance_matrix <- function(batch_matches) {
+build_abundance_matrix <- function(batch_matches, signal_col = "intensity") {
   if (is.null(batch_matches) || nrow(batch_matches) == 0) return(data.frame())
+  if (!signal_col %in% names(batch_matches) || all(is.na(batch_matches[[signal_col]]))) return(data.frame())
   met_info <- unique(batch_matches[, c("met_id", "met_name", "kind")])
   met_info <- met_info[order(met_info$met_id), ]
   samples <- unique(batch_matches$sample)
   out <- met_info
   for (s in samples) {
-    sub <- batch_matches[batch_matches$sample == s, ]
-    best <- stats::aggregate(intensity ~ met_id, data = sub, FUN = max)
-    out[[s]] <- best$intensity[match(out$met_id, best$met_id)]
+    sub <- batch_matches[batch_matches$sample == s & !is.na(batch_matches[[signal_col]]), ]
+    if (nrow(sub) == 0) { out[[s]] <- NA_real_; next }
+    best <- stats::aggregate(stats::as.formula(paste(signal_col, "~ met_id")), data = sub, FUN = max)
+    out[[s]] <- best[[signal_col]][match(out$met_id, best$met_id)]
   }
   out
 }
@@ -50,25 +58,12 @@ build_abundance_matrix <- function(batch_matches) {
 # Same as build_abundance_matrix(), but on peak area (trapezoidal AUC) --
 # the batch/Python ROI pipeline's alternative to max intensity (see the
 # `area` column threaded through match_ms1()/match_ms1_batch() in
-# R/ms_matching.R and R/batch_ms_processing.R). Returns an empty data.frame
-# if `area` isn't present at all (e.g. single-file-mode features, which the
-# R-native reader doesn't compute AUC for) -- callers (degradation_summary()
-# in R/degradation.R) fall back to build_abundance_matrix()'s intensity in
-# that case.
+# R/ms_matching.R and R/batch_ms_processing.R). Kept as a thin wrapper so
+# existing callers referencing it by name keep working unchanged; callers
+# (degradation_summary() in R/degradation.R) fall back to
+# build_abundance_matrix()'s intensity when this returns empty.
 build_abundance_matrix_area <- function(batch_matches) {
-  if (is.null(batch_matches) || nrow(batch_matches) == 0) return(data.frame())
-  if (!"area" %in% names(batch_matches) || all(is.na(batch_matches$area))) return(data.frame())
-  met_info <- unique(batch_matches[, c("met_id", "met_name", "kind")])
-  met_info <- met_info[order(met_info$met_id), ]
-  samples <- unique(batch_matches$sample)
-  out <- met_info
-  for (s in samples) {
-    sub <- batch_matches[batch_matches$sample == s & !is.na(batch_matches$area), ]
-    if (nrow(sub) == 0) { out[[s]] <- NA_real_; next }
-    best <- stats::aggregate(area ~ met_id, data = sub, FUN = max)
-    out[[s]] <- best$area[match(out$met_id, best$met_id)]
-  }
-  out
+  build_abundance_matrix(batch_matches, signal_col = "area")
 }
 
 # Long-format companion: sample_meta is data.frame(sample, group) and/or

@@ -39,6 +39,10 @@
 #'   [annotate_metabolites_batch()]/[match_ms1_batch()].
 #' @param top_n How many top degradant species to report per sample in
 #'   `top_degradants`.
+#' @param signal_col Which column to use as signal (e.g. a blank-corrected
+#'   column such as `"intensity_bcorr"` -- see [apply_blank_correction()]).
+#'   `NULL` (the default) auto-detects: `"area"` if present and not
+#'   all-`NA`, else `"intensity"`.
 #' @param sample_meta Optional data.frame with `sample` plus `sample_type`
 #'   (and, if available, `group`/`timepoint`). When given, calibration
 #'   standards, quality-control, and reagent/matrix-blank samples (every
@@ -79,16 +83,20 @@
 # framing -- that collapse is a trivial display-layer ifelse() at render
 # time (Shiny/Excel), not baked into this function, so callers keep the
 # more informative breakdown and can still show either view.
-degradation_summary <- function(ms1_matches, top_n = 10, sample_meta = NULL) {
+degradation_summary <- function(ms1_matches, top_n = 10, sample_meta = NULL, signal_col = NULL) {
   empty <- list(per_sample = data.frame(), composition = data.frame(),
                 top_degradants = data.frame(), signal_used = NA_character_)
   if (is.null(ms1_matches) || nrow(ms1_matches) == 0) return(empty)
 
-  signal_col <- if ("area" %in% names(ms1_matches) && any(!is.na(ms1_matches$area))) {
-    "area"
-  } else if ("intensity" %in% names(ms1_matches)) {
-    "intensity"
-  } else {
+  if (is.null(signal_col)) {
+    signal_col <- if ("area" %in% names(ms1_matches) && any(!is.na(ms1_matches$area))) {
+      "area"
+    } else if ("intensity" %in% names(ms1_matches)) {
+      "intensity"
+    } else {
+      return(empty)
+    }
+  } else if (!signal_col %in% names(ms1_matches) || all(is.na(ms1_matches[[signal_col]]))) {
     return(empty)
   }
   m <- ms1_matches[!is.na(ms1_matches[[signal_col]]), ]
