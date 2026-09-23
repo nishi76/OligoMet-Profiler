@@ -108,10 +108,14 @@ write_precursor_watchlist <- function(mets, dict = STANDARD_DICT, z_range = 3:12
 #'   when `precursor_watchlist` is given.
 #' @param precursor_watchlist Optional path to a precursor-mz watch-list
 #'   (see [write_precursor_watchlist()]) enabling targeted MS2 capture.
-#' @param ms2_watch_ppm,roi_ppm,rt_tol,mass_tol_ppm,z_range,min_scans,max_gap_scans,min_charge_states
+#' @param ms2_watch_ppm,roi_ppm,rt_tol,mass_tol_ppm,z_range,min_scans,max_gap_scans,min_charge_states,top_n_charge_states
 #'   Deconvolution parameters passed straight through to the Python CLI
 #'   -- see `inst/python/oligomet_deconv/cli.py`'s `--help` for what each
-#'   one does.
+#'   one does. `top_n_charge_states` (default 5) sums this many of a
+#'   confirmed envelope's most intense charge states for the reported
+#'   intensity/area, instead of a single channel's own max -- see
+#'   `group_charge_states()` in `charge_group.py` for why summing
+#'   (capped, not the single loudest channel) is the default.
 #' @param min_intensity Fixed absolute intensity floor for a candidate
 #'   ROI peak; used as a fallback when `sn_threshold` is `NULL` or a
 #'   file's noise estimate comes back unavailable.
@@ -143,7 +147,8 @@ run_batch_deconvolution <- function(files, output_dir = tempdir(),
                                      roi_ppm = 15, rt_tol = 0.15, mass_tol_ppm = 20,
                                      z_range = 3:20, min_intensity = 1e4, sn_threshold = NULL,
                                      min_scans = 3,
-                                     max_gap_scans = 2, min_charge_states = 2, n_workers = NULL,
+                                     max_gap_scans = 2, min_charge_states = 2,
+                                     top_n_charge_states = 5, n_workers = NULL,
                                      python_bin = find_python(),
                                      module_dir = .find_deconv_module_dir(),
                                      progress = NULL, console_tracker = NULL) {
@@ -166,7 +171,8 @@ run_batch_deconvolution <- function(files, output_dir = tempdir(),
     "--roi-ppm", roi_ppm, "--rt-tol", rt_tol, "--mass-tol-ppm", mass_tol_ppm,
     "--z-min", min(z_range), "--z-max", max(z_range),
     "--min-intensity", min_intensity, "--min-scans", min_scans,
-    "--max-gap-scans", max_gap_scans, "--min-charge-states", min_charge_states
+    "--max-gap-scans", max_gap_scans, "--min-charge-states", min_charge_states,
+    "--top-n-charge-states", top_n_charge_states
   )
   if (!is.null(n_workers)) args <- c(args, "--n-workers", n_workers)
   # sn_threshold OVERRIDES --min-intensity on the Python side (see

@@ -31,6 +31,11 @@ class DeconvParams:
     max_mass: float = 50000.0
     ms2_watch_ppm: float = 50.0
     min_charge_states: int = 2
+    # How many of a confirmed envelope's most intense charge states to sum
+    # for the reported intensity/area -- see group_charge_states() in
+    # charge_group.py for why summing (capped, not the single loudest
+    # channel) is the default.
+    top_n_charge_states: int = 5
     # When set, OVERRIDES min_intensity with a per-file computed threshold:
     # effective_min_intensity = (this file's own noise level) * sn_threshold
     # -- see roi.py's _NoiseReservoir/ROIBuilder. A fixed min_intensity
@@ -98,16 +103,19 @@ def process_file(path: str, params: DeconvParams, precursor_watchlist_path: Opti
     groups = group_charge_states(
         roi_peaks, z_min=params.z_min, z_max=params.z_max, rt_tol=params.rt_tol,
         mass_tol_ppm=params.mass_tol_ppm, min_mass=params.min_mass, max_mass=params.max_mass,
-        min_charge_states=params.min_charge_states,
+        min_charge_states=params.min_charge_states, top_n=params.top_n_charge_states,
     )
 
     features = []
     for i, g in enumerate(groups):
         features.append({
             "sample": sample, "source_file": path, "feature_id": f"{sample}_F{i + 1}",
+            # max_intensity/area are now the SUM of up to top_n_charge_states
+            # of this envelope's most intense confirmed charge states, not a
+            # single channel's own max -- see group_charge_states().
             "mz": g.mz, "rt": g.rt, "max_intensity": g.apex_intensity, "n_scans": g.n_scans,
             "charge": g.charge, "neutral_mass": g.neutral_mass,
-            "n_charge_states": g.n_charge_states, "mass_cv_ppm": g.mass_cv_ppm,
+            "n_charge_states": g.n_charge_states, "n_summed": g.n_summed, "mass_cv_ppm": g.mass_cv_ppm,
             "rt_start": g.rt_start, "rt_end": g.rt_end, "area": g.area,
         })
     return features, ms2_rows, {"sample": sample, "source_file": path,
