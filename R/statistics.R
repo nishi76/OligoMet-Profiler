@@ -619,6 +619,78 @@ fit_calibration_curve <- function(batch_matches, met_id, sample_meta,
        points = pts, note = "")
 }
 
+## ---- Calibration curve plot -------------------------------------------------
+# Standards (fit_calibration_curve()'s own `points`) as the scatter the
+# line is actually fit to, plus dotted vlines at the fitted conc_range --
+# the same boundary quantify_absolute()'s `extrapolated` flag is computed
+# from, so a point past the line visually IS an extrapolated one. QC/
+# unknown samples are optional: quantify_absolute()'s `quant` table
+# back-calculates concentration for every sample with signal (standards
+# included), not just the ones used to build the curve, so passing that
+# subset in lets a QC or unknown sample's own (back-calculated
+# concentration, signal) show where it actually falls against the line --
+# still informative relative to the extrapolation boundary even though,
+# by construction, back-calculated points always sit exactly on the line.
+#' Plot a calibration curve
+#'
+#' Scatter of standard signal vs. concentration with the fitted regression
+#' line, dotted vertical lines marking the calibrated (non-extrapolated)
+#' concentration range, and an r-squared/weighting/n annotation.
+#' Optionally overlays QC/unknown samples' own back-calculated
+#' concentration in a second color.
+#'
+#' @param curve_result A [fit_calibration_curve()] result.
+#' @param quant_points Optional: the subset of [quantify_absolute()]'s
+#'   `quant` data.frame for this SAME `met_id` (`sample_type`,
+#'   `concentration_calc`, `signal` columns) -- standard rows are dropped
+#'   automatically (already shown from `curve_result$points`), so this can
+#'   just be every row for the metabolite.
+#' @return A ggplot object. If `curve_result$model` is `NULL` (curve
+#'   couldn't be fit), returns an empty plot titled with
+#'   `curve_result$note` instead of erroring.
+#' @seealso [fit_calibration_curve()], [quantify_absolute()].
+#' @export
+plot_calibration_curve <- function(curve_result, quant_points = NULL) {
+  # Checks note/intercept/slope, NOT $model -- a curve restored from a
+  # saved Analysis State has $model set to NULL (stripped for
+  # serialization, see .strip_for_analysis_state() in app.R) even though
+  # everything actually needed to plot (intercept, slope, r_squared,
+  # points) survives the round-trip untouched.
+  if (is.null(curve_result) || nzchar(curve_result$note %||% "") ||
+      is.null(curve_result$intercept) || is.na(curve_result$intercept)) {
+    msg <- if (!is.null(curve_result) && nzchar(curve_result$note %||% "")) curve_result$note else "No calibration curve to plot"
+    return(ggplot2::ggplot() + ggplot2::theme_void() + ggplot2::labs(title = msg))
+  }
+  pts <- curve_result$points
+  p <- ggplot2::ggplot() +
+    ggplot2::geom_vline(xintercept = curve_result$conc_range, linetype = "dotted", color = "#B7B2A7") +
+    ggplot2::geom_abline(intercept = curve_result$intercept, slope = curve_result$slope,
+                          color = "#75A025", linewidth = 0.8) +
+    ggplot2::geom_point(data = pts, ggplot2::aes(x = .data$concentration, y = .data$signal),
+                         color = "#0279EE", size = 2.5, alpha = 0.85)
+
+  if (!is.null(quant_points) && nrow(quant_points) > 0) {
+    qp <- quant_points[!is.na(quant_points$concentration_calc) & !is.na(quant_points$signal), ]
+    is_std <- !is.na(qp$sample_type) & qp$sample_type == "standard"
+    qp <- qp[!is_std, ]
+    if (nrow(qp) > 0) {
+      qp$.type <- ifelse(!is.na(qp$sample_type) & qp$sample_type == "quality_control", "QC", "unknown")
+      p <- p + ggplot2::geom_point(
+        data = qp, ggplot2::aes(x = .data$concentration_calc, y = .data$signal, shape = .data$.type),
+        color = "#FD9BED", size = 2.5, alpha = 0.85) +
+        ggplot2::scale_shape_manual(values = c(QC = 17, unknown = 15), name = NULL)
+    }
+  }
+
+  p + ggplot2::labs(
+    x = "Concentration", y = "Signal",
+    title = paste0("Calibration curve -- ", curve_result$met_id),
+    subtitle = sprintf("R^2 = %.4f   n = %d standards   weighting = %s   signal = %s",
+                        curve_result$r_squared, curve_result$n_points,
+                        curve_result$weighting, curve_result$signal_col)) +
+    ggplot2::theme_minimal(base_size = 11, base_family = "Liberation Sans")
+}
+
 ## ---- Absolute quantification (a set of metabolites, all study samples) -----
 # For each metabolite in met_ids, fits its own calibration curve (see
 # fit_calibration_curve() above) and back-calculates concentration for

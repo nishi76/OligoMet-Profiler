@@ -978,6 +978,14 @@ ui <- fluidPage(
               conditionalPanel(
                 condition = "output.quant_ready == 'true'",
                 tags$div(style = "padding-top: 12px;",
+                  tags$h6("Calibration curve plot"),
+                  uiOutput("calib_curve_selector"),
+                  plotOutput("plot_calibration_curve", height = "380px"),
+                  tags$p(style = "font-size: 10.5px; color: #6c757d;",
+                    "Blue = standards the curve is fit from. Pink triangle/square = QC/unknown ",
+                    "samples' own back-calculated concentration. Dotted lines mark the ",
+                    "calibrated range -- a sample past either one is extrapolated."),
+                  tags$hr(),
                   tags$h6("Calibration curves"),
                   tags$p(style = "font-size: 12px; color: #6c757d;",
                     "One row per metabolite selected for absolute quantification. ",
@@ -3328,6 +3336,29 @@ server <- function(input, output, session) {
                  stringsAsFactors = FALSE)
     }))
   })
+  # Only metabolites that actually got a fit_calibration_curve() attempt
+  # (selected under "Calibration & Quantification (Advanced)") -- same
+  # source .calibration_curves_display() reads, so the selector and the
+  # table below always agree on which metabolites exist here.
+  output$calib_curve_selector <- renderUI({
+    cc <- rv$quant_results$calibration_curves
+    req(length(cc) > 0)
+    met_names <- vapply(cc, function(c) c$met_id, character(1))
+    selectInput("calib_curve_met_select", "Metabolite", choices = stats::setNames(names(cc), met_names))
+  })
+
+  output$plot_calibration_curve <- renderPlot({
+    cc <- rv$quant_results$calibration_curves
+    req(length(cc) > 0, input$calib_curve_met_select)
+    curve <- cc[[input$calib_curve_met_select]]
+    req(curve)
+    abs_tbl <- rv$quant_results$absolute
+    quant_points <- if (!is.null(abs_tbl) && nrow(abs_tbl) > 0) {
+      abs_tbl[abs_tbl$met_id == input$calib_curve_met_select, ]
+    } else NULL
+    plot_calibration_curve(curve, quant_points = quant_points)
+  })
+
   output$calibration_curves_table <- DT::renderDT({
     DT::datatable(.calibration_curves_display(), rownames = FALSE,
                   options = list(pageLength = 15, scrollX = TRUE)) |>
