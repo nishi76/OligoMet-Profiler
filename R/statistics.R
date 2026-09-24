@@ -24,25 +24,33 @@
 #' @param batch_matches The `ms1_matches` data.frame from
 #'   [match_ms1_batch()]/[annotate_metabolites_batch()]: one row per
 #'   (sample, metabolite, charge, adduct) hit, with `met_id`, `met_name`,
-#'   `kind`, `sample`, and `intensity` columns.
+#'   `kind`, `sample`, and a signal column (`intensity` by default).
+#' @param signal_col Which column to use as signal (e.g. `"intensity"`,
+#'   `"area"`, or a blank-corrected column such as `"intensity_bcorr"` --
+#'   see [apply_blank_correction()]). Defaults to `"intensity"`, preserving
+#'   this function's original behavior.
 #' @return A data.frame with one row per metabolite (`met_id`, `met_name`,
 #'   `kind`) and one column per sample (named after that sample) holding
-#'   its max intensity for that metabolite. A (metabolite, sample)
+#'   its max signal for that metabolite. A (metabolite, sample)
 #'   combination with no match is `NA`, not zero. Empty data.frame if
-#'   `batch_matches` is `NULL`/empty.
+#'   `batch_matches` is `NULL`/empty, or if `signal_col` isn't present at
+#'   all (e.g. `"area"` on single-file-mode features, which the R-native
+#'   reader doesn't compute AUC for).
 #' @seealso [abundance_long()] to reshape this into long format for
 #'   [compare_two_groups()]/[compare_multi_groups()]/[compare_time_series()].
 #' @export
-build_abundance_matrix <- function(batch_matches) {
+build_abundance_matrix <- function(batch_matches, signal_col = "intensity") {
   if (is.null(batch_matches) || nrow(batch_matches) == 0) return(data.frame())
+  if (!signal_col %in% names(batch_matches) || all(is.na(batch_matches[[signal_col]]))) return(data.frame())
   met_info <- unique(batch_matches[, c("met_id", "met_name", "kind")])
   met_info <- met_info[order(met_info$met_id), ]
   samples <- unique(batch_matches$sample)
   out <- met_info
   for (s in samples) {
-    sub <- batch_matches[batch_matches$sample == s, ]
-    best <- stats::aggregate(intensity ~ met_id, data = sub, FUN = max)
-    out[[s]] <- best$intensity[match(out$met_id, best$met_id)]
+    sub <- batch_matches[batch_matches$sample == s & !is.na(batch_matches[[signal_col]]), ]
+    if (nrow(sub) == 0) { out[[s]] <- NA_real_; next }
+    best <- stats::aggregate(stats::as.formula(paste(signal_col, "~ met_id")), data = sub, FUN = max)
+    out[[s]] <- best[[signal_col]][match(out$met_id, best$met_id)]
   }
   out
 }
@@ -50,25 +58,12 @@ build_abundance_matrix <- function(batch_matches) {
 # Same as build_abundance_matrix(), but on peak area (trapezoidal AUC) --
 # the batch/Python ROI pipeline's alternative to max intensity (see the
 # `area` column threaded through match_ms1()/match_ms1_batch() in
-# R/ms_matching.R and R/batch_ms_processing.R). Returns an empty data.frame
-# if `area` isn't present at all (e.g. single-file-mode features, which the
-# R-native reader doesn't compute AUC for) -- callers (degradation_summary()
-# in R/degradation.R) fall back to build_abundance_matrix()'s intensity in
-# that case.
+# R/ms_matching.R and R/batch_ms_processing.R). Kept as a thin wrapper so
+# existing callers referencing it by name keep working unchanged; callers
+# (degradation_summary() in R/degradation.R) fall back to
+# build_abundance_matrix()'s intensity when this returns empty.
 build_abundance_matrix_area <- function(batch_matches) {
-  if (is.null(batch_matches) || nrow(batch_matches) == 0) return(data.frame())
-  if (!"area" %in% names(batch_matches) || all(is.na(batch_matches$area))) return(data.frame())
-  met_info <- unique(batch_matches[, c("met_id", "met_name", "kind")])
-  met_info <- met_info[order(met_info$met_id), ]
-  samples <- unique(batch_matches$sample)
-  out <- met_info
-  for (s in samples) {
-    sub <- batch_matches[batch_matches$sample == s & !is.na(batch_matches$area), ]
-    if (nrow(sub) == 0) { out[[s]] <- NA_real_; next }
-    best <- stats::aggregate(area ~ met_id, data = sub, FUN = max)
-    out[[s]] <- best$area[match(out$met_id, best$met_id)]
-  }
-  out
+  build_abundance_matrix(batch_matches, signal_col = "area")
 }
 
 # Long-format companion: sample_meta is data.frame(sample, group) and/or
@@ -389,15 +384,15 @@ plot_group_boxplot <- function(abundance_long, met_id) {
 # Several metabolites overlaid on raw intensity would be dominated by
 # whichever one happens to have the largest signal -- unlike plot_trend()'s
 # single metabolite (its own y-axis, an lm trend line), each metabolite here
-# is normalized to its own mean signal at the earliest timepoint by default,
+# is normalized to its own mean signal at `reference_timepoint` by default,
 # the same baseline quantify_relative(mode = "time_series") already uses,
 # so metabolites spanning orders of magnitude in raw signal are comparable
 # on one shared scale.
 #' Summarize a multi-metabolite time-course trend
 #'
 #' One row per (metabolite, timepoint): mean, SD, SEM, and replicate count,
-#' optionally normalized to each metabolite's own mean signal at the
-#' earliest timepoint.
+#' optionally normalized to each metabolite's own mean signal at a
+#' reference timepoint.
 #'
 #' @param time_series_long Long-format abundance data.frame (see
 #'   [abundance_long()]) with a `timepoint` column, already numeric (the
@@ -406,14 +401,19 @@ plot_group_boxplot <- function(abundance_long, met_id) {
 #' @param met_ids Which metabolites to summarize; `NULL` (the default)
 #'   summarizes every metabolite present.
 #' @param normalize `TRUE` (the default): divide each metabolite's signal
-#'   by its own mean at the earliest timepoint. `FALSE` keeps raw
+#'   by its own mean at `reference_timepoint`. `FALSE` keeps raw
 #'   intensity.
+#' @param reference_timepoint The numeric `timepoint` value to normalize
+#'   against when `normalize = TRUE`. `NULL` (the default) uses the
+#'   earliest timepoint present -- see [quantify_relative()]'s own
+#'   `reference_timepoint` for why that isn't always "pre-dose".
 #' @return A data.frame: `met_id`, `met_name`, `timepoint`, `n`,
 #'   `mean_value`, `sd`, `sem`. Empty if there's nothing to summarize.
 #' @seealso [plot_multi_trend()], [quantify_relative()] for the same
 #'   baseline definition used elsewhere.
 #' @export
-multi_trend_summary <- function(time_series_long, met_ids = NULL, normalize = TRUE) {
+multi_trend_summary <- function(time_series_long, met_ids = NULL, normalize = TRUE,
+                                 reference_timepoint = NULL) {
   df <- time_series_long
   if (is.null(df) || nrow(df) == 0) return(data.frame())
   if (!is.null(met_ids)) df <- df[df$met_id %in% met_ids, ]
@@ -421,8 +421,9 @@ multi_trend_summary <- function(time_series_long, met_ids = NULL, normalize = TR
   if (nrow(df) == 0) return(data.frame())
 
   if (normalize) {
+    ref_time <- if (is.null(reference_timepoint)) min(df$timepoint) else reference_timepoint
     baseline <- stats::aggregate(intensity ~ met_id,
-                                  data = df[df$timepoint == min(df$timepoint), , drop = FALSE], FUN = mean)
+                                  data = df[df$timepoint == ref_time, , drop = FALSE], FUN = mean)
     df$.baseline <- baseline$intensity[match(df$met_id, baseline$met_id)]
     df <- df[!is.na(df$.baseline) & df$.baseline > 0, ]
     if (nrow(df) == 0) return(data.frame())
@@ -453,14 +454,23 @@ multi_trend_summary <- function(time_series_long, met_ids = NULL, normalize = TR
 #' @param trend_summary A [multi_trend_summary()] result.
 #' @param normalize Whether `trend_summary` was built with
 #'   `normalize = TRUE` -- only affects the y-axis label.
+#' @param reference_timepoint The `reference_timepoint` (if any) that
+#'   `trend_summary` was normalized against -- only affects the y-axis
+#'   label (`NULL` labels it "earliest timepoint", matching
+#'   [multi_trend_summary()]'s own default).
 #' @return A ggplot object.
 #' @export
-plot_multi_trend <- function(trend_summary, normalize = TRUE) {
+plot_multi_trend <- function(trend_summary, normalize = TRUE, reference_timepoint = NULL) {
   if (is.null(trend_summary) || nrow(trend_summary) == 0) {
     return(ggplot2::ggplot() + ggplot2::theme_void() +
              ggplot2::labs(title = "No data for the selected metabolite(s)"))
   }
   n_met <- length(unique(trend_summary$met_name))
+  y_lab <- if (!normalize) "Intensity" else if (is.null(reference_timepoint)) {
+    "Relative signal (vs. earliest timepoint)"
+  } else {
+    paste0("Relative signal (vs. timepoint ", reference_timepoint, ")")
+  }
   ggplot2::ggplot(trend_summary, ggplot2::aes(x = .data$timepoint, y = .data$mean_value,
                                                color = .data$met_name, group = .data$met_name)) +
     ggplot2::geom_line(linewidth = 0.9) +
@@ -469,8 +479,7 @@ plot_multi_trend <- function(trend_summary, normalize = TRUE) {
                             width = 0, na.rm = TRUE) +
     ggplot2::scale_color_manual(values = grDevices::colorRampPalette(
       c("#0279EE", "#FF9400", "#75A025", "#FD9BED", "#E9ED4C"))(n_met), name = NULL) +
-    ggplot2::labs(x = "Timepoint", y = if (normalize) "Relative signal (vs. earliest timepoint)" else "Intensity",
-                  title = "Multi-metabolite time course") +
+    ggplot2::labs(x = "Timepoint", y = y_lab, title = "Multi-metabolite time course") +
     ggplot2::theme_minimal(base_size = 11, base_family = "Liberation Sans")
 }
 
@@ -610,6 +619,78 @@ fit_calibration_curve <- function(batch_matches, met_id, sample_meta,
        points = pts, note = "")
 }
 
+## ---- Calibration curve plot -------------------------------------------------
+# Standards (fit_calibration_curve()'s own `points`) as the scatter the
+# line is actually fit to, plus dotted vlines at the fitted conc_range --
+# the same boundary quantify_absolute()'s `extrapolated` flag is computed
+# from, so a point past the line visually IS an extrapolated one. QC/
+# unknown samples are optional: quantify_absolute()'s `quant` table
+# back-calculates concentration for every sample with signal (standards
+# included), not just the ones used to build the curve, so passing that
+# subset in lets a QC or unknown sample's own (back-calculated
+# concentration, signal) show where it actually falls against the line --
+# still informative relative to the extrapolation boundary even though,
+# by construction, back-calculated points always sit exactly on the line.
+#' Plot a calibration curve
+#'
+#' Scatter of standard signal vs. concentration with the fitted regression
+#' line, dotted vertical lines marking the calibrated (non-extrapolated)
+#' concentration range, and an r-squared/weighting/n annotation.
+#' Optionally overlays QC/unknown samples' own back-calculated
+#' concentration in a second color.
+#'
+#' @param curve_result A [fit_calibration_curve()] result.
+#' @param quant_points Optional: the subset of [quantify_absolute()]'s
+#'   `quant` data.frame for this SAME `met_id` (`sample_type`,
+#'   `concentration_calc`, `signal` columns) -- standard rows are dropped
+#'   automatically (already shown from `curve_result$points`), so this can
+#'   just be every row for the metabolite.
+#' @return A ggplot object. If `curve_result$model` is `NULL` (curve
+#'   couldn't be fit), returns an empty plot titled with
+#'   `curve_result$note` instead of erroring.
+#' @seealso [fit_calibration_curve()], [quantify_absolute()].
+#' @export
+plot_calibration_curve <- function(curve_result, quant_points = NULL) {
+  # Checks note/intercept/slope, NOT $model -- a curve restored from a
+  # saved Analysis State has $model set to NULL (stripped for
+  # serialization, see .strip_for_analysis_state() in app.R) even though
+  # everything actually needed to plot (intercept, slope, r_squared,
+  # points) survives the round-trip untouched.
+  if (is.null(curve_result) || nzchar(curve_result$note %||% "") ||
+      is.null(curve_result$intercept) || is.na(curve_result$intercept)) {
+    msg <- if (!is.null(curve_result) && nzchar(curve_result$note %||% "")) curve_result$note else "No calibration curve to plot"
+    return(ggplot2::ggplot() + ggplot2::theme_void() + ggplot2::labs(title = msg))
+  }
+  pts <- curve_result$points
+  p <- ggplot2::ggplot() +
+    ggplot2::geom_vline(xintercept = curve_result$conc_range, linetype = "dotted", color = "#B7B2A7") +
+    ggplot2::geom_abline(intercept = curve_result$intercept, slope = curve_result$slope,
+                          color = "#75A025", linewidth = 0.8) +
+    ggplot2::geom_point(data = pts, ggplot2::aes(x = .data$concentration, y = .data$signal),
+                         color = "#0279EE", size = 2.5, alpha = 0.85)
+
+  if (!is.null(quant_points) && nrow(quant_points) > 0) {
+    qp <- quant_points[!is.na(quant_points$concentration_calc) & !is.na(quant_points$signal), ]
+    is_std <- !is.na(qp$sample_type) & qp$sample_type == "standard"
+    qp <- qp[!is_std, ]
+    if (nrow(qp) > 0) {
+      qp$.type <- ifelse(!is.na(qp$sample_type) & qp$sample_type == "quality_control", "QC", "unknown")
+      p <- p + ggplot2::geom_point(
+        data = qp, ggplot2::aes(x = .data$concentration_calc, y = .data$signal, shape = .data$.type),
+        color = "#FD9BED", size = 2.5, alpha = 0.85) +
+        ggplot2::scale_shape_manual(values = c(QC = 17, unknown = 15), name = NULL)
+    }
+  }
+
+  p + ggplot2::labs(
+    x = "Concentration", y = "Signal",
+    title = paste0("Calibration curve -- ", curve_result$met_id),
+    subtitle = sprintf("R^2 = %.4f   n = %d standards   weighting = %s   signal = %s",
+                        curve_result$r_squared, curve_result$n_points,
+                        curve_result$weighting, curve_result$signal_col)) +
+    ggplot2::theme_minimal(base_size = 11, base_family = "Liberation Sans")
+}
+
 ## ---- Absolute quantification (a set of metabolites, all study samples) -----
 # For each metabolite in met_ids, fits its own calibration curve (see
 # fit_calibration_curve() above) and back-calculates concentration for
@@ -710,10 +791,17 @@ quantify_absolute <- function(batch_matches, met_ids, sample_meta,
 # rather than repeated measures on the same individual (see that
 # function's own header comment).
 #
-#   mode = "time_series": baseline = mean signal at the earliest timepoint
-#     (pre-dose/time 0), computed PER group/arm if a group column is also
-#     present, so e.g. a "treated" arm is normalized to ITS OWN time-0
-#     mean, not pooled with control's.
+#   mode = "time_series": baseline = mean signal at `reference_timepoint`
+#     (the earliest timepoint present, by default -- overridable, since
+#     "earliest" and "pre-dose" are not always the same thing: a real
+#     report had pre-dose coded as timepoint 0 with 2h/6h post-dose, where
+#     0 IS the earliest value and this default is already correct, but a
+#     study that only samples DURING dosing, or codes pre-dose as a
+#     negative offset, needs to say explicitly which timepoint is the
+#     reference rather than have "smallest number" silently decide it),
+#     computed PER group/arm if a group column is also present, so e.g. a
+#     "treated" arm is normalized to ITS OWN reference-timepoint mean, not
+#     pooled with control's.
 #   mode = "group": baseline = mean signal in `control_group`; every
 #     sample's relative_signal is its own signal over that one number, per
 #     the request that "control vs treatment should be relative to
@@ -740,14 +828,23 @@ quantify_absolute <- function(batch_matches, met_ids, sample_meta,
 #' @param sample_meta A data.frame with `sample` plus `group` and/or
 #'   `timepoint` (and optionally `sample_type`, used to exclude
 #'   standards/QC/blanks).
-#' @param mode `"time_series"`: baseline is the mean signal at the
-#'   earliest timepoint (pre-dose/time 0), computed per group/arm if a
-#'   `group` column is also present, so e.g. a "treated" arm normalizes
-#'   to ITS OWN time-0 mean rather than pooling with control's.
+#' @param mode `"time_series"`: baseline is the mean signal at
+#'   `reference_timepoint`, computed per group/arm if a `group` column is
+#'   also present, so e.g. a "treated" arm normalizes to ITS OWN
+#'   reference-timepoint mean rather than pooling with control's.
 #'   `"group"`: baseline is the mean signal in `control_group` -- every
 #'   sample's `relative_signal` is its own signal over that one number.
 #' @param control_group Required when `mode = "group"`: the `group` value
 #'   to treat as baseline.
+#' @param reference_timepoint Only used when `mode = "time_series"`: the
+#'   numeric `timepoint` value to treat as the pre-dose/reference
+#'   baseline. `NULL` (the default) uses the earliest timepoint present,
+#'   which is only the same thing as "pre-dose" if pre-dose happens to be
+#'   coded as the smallest number -- pass this explicitly whenever that
+#'   isn't the case (e.g. a study with no baseline draw, or a non-zero/
+#'   negative pre-dose code). A sample whose exact timepoint doesn't
+#'   match any observed value contributes no rows to `relative_signal`
+#'   for that arm (a `NA` baseline), rather than erroring.
 #' @param signal_col Which column to use as signal; `NULL` auto-detects
 #'   (`"area"` if present and not all-`NA`, else `"intensity"`).
 #' @return A data.frame with one row per (metabolite, sample):
@@ -758,7 +855,8 @@ quantify_absolute <- function(batch_matches, met_ids, sample_meta,
 #' @export
 quantify_relative <- function(batch_matches, met_ids, sample_meta,
                                mode = c("time_series", "group"),
-                               control_group = NULL, signal_col = NULL) {
+                               control_group = NULL, reference_timepoint = NULL,
+                               signal_col = NULL) {
   mode <- match.arg(mode)
   if (is.null(signal_col)) signal_col <- .auto_signal_col(batch_matches)
   if (mode == "group" && is.null(control_group)) {
@@ -784,7 +882,8 @@ quantify_relative <- function(batch_matches, met_ids, sample_meta,
       d <- d[!is.na(d$.time), ]
       if (nrow(d) == 0) return(NULL)
       d$.arm <- if ("group" %in% names(d)) ifelse(nzchar(d$group), d$group, "") else ""
-      baseline <- stats::aggregate(signal ~ .arm, data = d[d$.time == min(d$.time), , drop = FALSE], FUN = mean)
+      ref_time <- if (is.null(reference_timepoint)) min(d$.time) else reference_timepoint
+      baseline <- stats::aggregate(signal ~ .arm, data = d[d$.time == ref_time, , drop = FALSE], FUN = mean)
       d$baseline_signal <- baseline$signal[match(d$.arm, baseline$.arm)]
       d$.time <- NULL; d$.arm <- NULL
     } else {
@@ -829,6 +928,8 @@ quantify_relative <- function(batch_matches, met_ids, sample_meta,
 #' @param mode `"time_series"` or `"group"` -- see [quantify_relative()].
 #' @param control_group Required when `mode = "group"` -- see
 #'   [quantify_relative()].
+#' @param reference_timepoint Only used when `mode = "time_series"` -- see
+#'   [quantify_relative()].
 #' @param weighting Calibration curve weighting -- see
 #'   [fit_calibration_curve()].
 #' @param signal_col Which column to use as signal; `NULL` auto-detects.
@@ -851,6 +952,7 @@ quantify_relative <- function(batch_matches, met_ids, sample_meta,
 #' @export
 quantify_metabolites <- function(batch_matches, sample_meta, absolute_met_ids = character(0),
                                   mode = c("time_series", "group"), control_group = NULL,
+                                  reference_timepoint = NULL,
                                   weighting = c("1/x2", "1/x", "none"),
                                   signal_col = NULL, min_points = 3) {
   mode <- match.arg(mode)
@@ -864,11 +966,14 @@ quantify_metabolites <- function(batch_matches, sample_meta, absolute_met_ids = 
   relative_met_ids <- setdiff(all_met_ids, absolute_met_ids)
 
   abs_res <- if (length(absolute_met_ids) > 0) {
-    quantify_absolute(batch_matches, absolute_met_ids, sample_meta, weighting, signal_col, min_points)
+    quantify_absolute(batch_matches, absolute_met_ids, sample_meta, weighting = weighting,
+                       signal_col = signal_col, min_points = min_points)
   } else list(quant = data.frame(), curves = list())
 
   rel_res <- if (length(relative_met_ids) > 0) {
-    quantify_relative(batch_matches, relative_met_ids, sample_meta, mode, control_group, signal_col)
+    quantify_relative(batch_matches, relative_met_ids, sample_meta, mode = mode,
+                       control_group = control_group, reference_timepoint = reference_timepoint,
+                       signal_col = signal_col)
   } else data.frame()
 
   list(absolute = abs_res$quant, calibration_curves = abs_res$curves, relative = rel_res)

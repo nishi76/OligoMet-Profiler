@@ -4,7 +4,12 @@
 \alias{multi_trend_summary}
 \title{Summarize a multi-metabolite time-course trend}
 \usage{
-multi_trend_summary(time_series_long, met_ids = NULL, normalize = TRUE)
+multi_trend_summary(
+  time_series_long,
+  met_ids = NULL,
+  normalize = TRUE,
+  reference_timepoint = NULL
+)
 }
 \arguments{
 \item{time_series_long}{Long-format abundance data.frame (see
@@ -16,8 +21,13 @@ caller is expected to have converted/filtered it, the same way
 summarizes every metabolite present.}
 
 \item{normalize}{\code{TRUE} (the default): divide each metabolite's signal
-by its own mean at the earliest timepoint. \code{FALSE} keeps raw
+by its own mean at \code{reference_timepoint}. \code{FALSE} keeps raw
 intensity.}
+
+\item{reference_timepoint}{The numeric \code{timepoint} value to normalize
+against when \code{normalize = TRUE}. \code{NULL} (the default) uses the
+earliest timepoint present -- see \code{\link[=quantify_relative]{quantify_relative()}}'s own
+\code{reference_timepoint} for why that isn't always "pre-dose".}
 }
 \value{
 A data.frame: \code{met_id}, \code{met_name}, \code{timepoint}, \code{n},
@@ -25,8 +35,8 @@ A data.frame: \code{met_id}, \code{met_name}, \code{timepoint}, \code{n},
 }
 \description{
 One row per (metabolite, timepoint): mean, SD, SEM, and replicate count,
-optionally normalized to each metabolite's own mean signal at the
-earliest timepoint.
+optionally normalized to each metabolite's own mean signal at a
+reference timepoint.
 }
 \seealso{
 \code{\link[=plot_multi_trend]{plot_multi_trend()}}, \code{\link[=quantify_relative]{quantify_relative()}} for the same

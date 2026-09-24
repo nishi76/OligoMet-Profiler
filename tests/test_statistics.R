@@ -144,6 +144,23 @@ stopifnot(inherits(p4, "gg"))
 stopifnot(inherits(p4_empty, "gg"))
 cat("plot_multi_trend() returns a ggplot for both populated and empty input: PASS\n")
 
+## ---- multi_trend_summary(): reference_timepoint override -------------------
+# Same motivation as quantify_relative()'s own override: "earliest" isn't
+# always "reference". M3's injected trend is 1 + 0.6*t, so baseline at t=1
+# is 1.6x t=0's -- moving reference_timepoint to 1 should renormalize M3's
+# own t=1 row back to ~1.0 instead of ~1.6.
+cat("\n--- multi_trend_summary(reference_timepoint = 1) ---\n")
+mts_ref1 <- multi_trend_summary(long_ts, met_ids = "M3", normalize = TRUE, reference_timepoint = 1)
+m3_ref1 <- mts_ref1[order(mts_ref1$timepoint), ]
+stopifnot(abs(m3_ref1$mean_value[m3_ref1$timepoint == 1] - 1) < 0.3)
+stopifnot(abs(m3_ref1$mean_value[m3_ref1$timepoint == 0] - (1 / 1.6)) < 0.3)
+cat("Baseline correctly moves to timepoint 1, M3 renormalizes accordingly: PASS\n")
+
+p4_ref1 <- plot_multi_trend(mts_ref1, reference_timepoint = 1)
+stopifnot(inherits(p4_ref1, "gg"))
+stopifnot(grepl("timepoint 1", p4_ref1$labels$y))
+cat("plot_multi_trend() labels the y-axis with the explicit reference timepoint: PASS\n")
+
 ## ---- build_kind_abundance_matrix() / kind_abundance_long() (M5) ------------
 # Synthetic data with real, varying `kind` values (unlike the single-kind
 # "truncation" fixture above) and a deliberate per-kind group difference --

@@ -46,7 +46,8 @@ if (!is.null(.module_dir)) {
                "chemistry_dict.R", "oligo_io.R",
                "metabolites.R", "mass_isotope.R", "fragments.R",
                "ms_matching.R", "spectra_io.R", "batch_ms_processing.R", "statistics.R",
-               "degradation.R", "multivariate.R", "build_workbook.R", "build_report.R",
+               "degradation.R", "multivariate.R", "blank_correction.R",
+               "build_workbook.R", "build_report.R",
                "export_acquisition.R", "export_spectral.R", "mirror_plot.R",
                "agent_tools.R", "agent_core.R")) {
     source(file.path(.module_dir, "R", .f))
@@ -977,6 +978,14 @@ ui <- fluidPage(
               conditionalPanel(
                 condition = "output.quant_ready == 'true'",
                 tags$div(style = "padding-top: 12px;",
+                  tags$h6("Calibration curve plot"),
+                  uiOutput("calib_curve_selector"),
+                  plotOutput("plot_calibration_curve", height = "380px"),
+                  tags$p(style = "font-size: 10.5px; color: #6c757d;",
+                    "Blue = standards the curve is fit from. Pink triangle/square = QC/unknown ",
+                    "samples' own back-calculated concentration. Dotted lines mark the ",
+                    "calibrated range -- a sample past either one is extrapolated."),
+                  tags$hr(),
                   tags$h6("Calibration curves"),
                   tags$p(style = "font-size: 12px; color: #6c757d;",
                     "One row per metabolite selected for absolute quantification. ",
@@ -1041,13 +1050,24 @@ ui <- fluidPage(
             tags$p(style = "font-size: 10px; color: #6c757d; margin-top: -8px;",
                    "Leave both blank to auto-pick the first two Group values found. ",
                    "Only used for a 2-group design; ignored for 3+ groups or time-course."),
+            selectInput("stats_reference_timepoint", "Reference timepoint (baseline)",
+                        choices = c("Auto (earliest)" = "")),
+            tags$p(style = "font-size: 10px; color: #6c757d; margin-top: -8px;",
+                   "Time-course relative quantification and the Time Course trend plot ",
+                   "normalize every sample to this timepoint's mean signal. \"Auto\" picks ",
+                   "the smallest Timepoint value -- override this when pre-dose/reference ",
+                   "isn't coded as the smallest number (e.g. a study with no true time-0 draw)."),
             fluidRow(
               column(6, selectInput("stats_padjust", "P-value adjustment",
                         choices = c("Benjamini-Hochberg" = "BH", "Bonferroni" = "bonferroni",
                                     "Holm" = "holm", "None" = "none"), selected = "BH")),
               column(6, numericInput("stats_log2fc_threshold", "Log2FC highlight threshold",
                         value = 1, min = 0, step = 0.1))
-            )
+            ),
+            radioButtons("signal_basis", "Signal basis",
+                         choices = c("Raw" = "raw", "Blank-corrected" = "bcorr"),
+                         selected = "raw", inline = TRUE),
+            uiOutput("signal_basis_note")
           ),
           tags$details(class = "adv-panel",
             tags$summary("Charge Grouping (Advanced)"),
@@ -1087,7 +1107,17 @@ ui <- fluidPage(
                   fluidRow(
                     column(6, downloadButton("dl_data_matrix_wide", "Data Matrix -- wide (.csv)", class = "btn-outline-primary w-100")),
                     column(6, downloadButton("dl_data_matrix_long", "Data Matrix -- long (.csv)", class = "btn-outline-primary w-100"))
-                  )
+                  ),
+                  tags$hr(),
+                  tags$h6("Blank value (reagent/matrix blank subtraction)"),
+                  tags$p(style = "font-size: 11px; color: #6c757d;",
+                    "Per-metabolite mean signal across every reagent_blank/matrix_blank ",
+                    "sample (Sample Type or RB/MB in name), pooled together -- this is ",
+                    "exactly what gets subtracted for the \"Blank-corrected\" Signal basis ",
+                    "toggle on the Statistical Analysis tab."),
+                  DT::DTOutput("blank_correction_table"),
+                  tags$div(style = "height: 8px;"),
+                  downloadButton("dl_blank_correction_csv", "Download blank values (.csv)", class = "btn-outline-primary")
                 )
               ),
               conditionalPanel(
@@ -1385,6 +1415,27 @@ server <- function(input, output, session) {
     unname(canon[norm])
   }
 
+  # .detect_blank_type_from_name() also exists in R/chemistry_dict.R, but
+  # (same reason as the .is_study_sample() copy further down) app.R runs
+  # OUTSIDE the package namespace once installed, so this dot-prefixed
+  # internal helper isn't visible to it -- duplicated here rather than
+  # exported, to keep the "internal = dot-prefixed" convention intact.
+  .detect_blank_type_from_name <- function(sample_name) {
+    tok <- "(^|[_.\\-\\s])(RB|MB)([_.\\-\\s]|$)"
+    hit <- regmatches(sample_name, regexpr(tok, sample_name, ignore.case = TRUE, perl = TRUE))
+    found <- grepl(tok, sample_name, ignore.case = TRUE, perl = TRUE)
+    ifelse(found, ifelse(grepl("MB", hit, ignore.case = TRUE), "matrix_blank", "reagent_blank"),
+           NA_character_)
+  }
+
+  # Auto-fills Sample Type from an RB/MB token in the file name (e.g.
+  # "RB_01.mzML" -> "reagent_blank") -- still a fully editable cell
+  # afterward, same as any other row set to "unknown" below.
+  .seed_sample_type <- function(samples) {
+    detected <- .detect_blank_type_from_name(samples)
+    ifelse(is.na(detected), "unknown", detected)
+  }
+
   batch_meta_data <- reactiveVal(data.frame(
     sample = character(0), group = character(0), timepoint = character(0),
     sample_type = character(0), concentration = character(0), stringsAsFactors = FALSE))
@@ -1392,7 +1443,7 @@ server <- function(input, output, session) {
   observeEvent(input$batch_files, {
     samples <- tools::file_path_sans_ext(input$batch_files$name)
     batch_meta_data(data.frame(sample = samples, group = "", timepoint = "",
-                                sample_type = "unknown", concentration = "",
+                                sample_type = .seed_sample_type(samples), concentration = "",
                                 stringsAsFactors = FALSE))
   })
 
@@ -1408,7 +1459,7 @@ server <- function(input, output, session) {
       if (length(paths) > 0) {
         samples <- tools::file_path_sans_ext(basename(paths))
         batch_meta_data(data.frame(sample = samples, group = "", timepoint = "",
-                                    sample_type = "unknown", concentration = "",
+                                    sample_type = .seed_sample_type(samples), concentration = "",
                                     stringsAsFactors = FALSE))
       }
     }
@@ -1705,6 +1756,22 @@ server <- function(input, output, session) {
     groups <- if ("group" %in% names(meta)) unique(meta$group[nzchar(meta$group)]) else character(0)
     keep_selected <- if (isolate(input$control_group) %in% groups) isolate(input$control_group) else NULL
     updateSelectInput(session, "control_group", choices = groups, selected = keep_selected)
+  }, ignoreNULL = FALSE)
+
+  # Reference-timepoint choices come from whatever numeric Timepoint values
+  # are actually on the sample metadata table right now -- same live-update
+  # pattern as control_group above. "Auto (earliest)" (empty string) keeps
+  # the smallest-value default quantify_metabolites()/multi_trend_summary()
+  # already use when no override is picked.
+  observeEvent(batch_meta_data(), {
+    meta <- batch_meta_data()
+    tps <- if ("timepoint" %in% names(meta)) {
+      sort(unique(suppressWarnings(as.numeric(meta$timepoint[nzchar(meta$timepoint)]))))
+    } else numeric(0)
+    tps <- tps[!is.na(tps)]
+    ch <- c("Auto (earliest)" = "", stats::setNames(as.character(tps), as.character(tps)))
+    keep_selected <- if (isolate(input$stats_reference_timepoint) %in% ch) isolate(input$stats_reference_timepoint) else ""
+    updateSelectInput(session, "stats_reference_timepoint", choices = ch, selected = keep_selected)
   }, ignoreNULL = FALSE)
 
   ## ---- MS2 library explorer --------------------------------------------------
@@ -2377,12 +2444,40 @@ server <- function(input, output, session) {
   # Statistical Analysis" when the user only wants to change metadata / the
   # P-adjustment method / Group A-B override / calibration settings without
   # re-running the whole batch pipeline.
+  # Maps the "Signal basis" toggle (Statistical Analysis sidebar) to an
+  # actual column name for every signal_col-accepting consumer
+  # (build_abundance_matrix(), degradation_summary(), quantify_metabolites(),
+  # run_pca()/run_hclust()) -- "raw" is intensity/area (whichever
+  # .auto_signal_col()'s own rule would pick: area if present and not
+  # all-NA, else intensity), "bcorr" is the blank-corrected counterpart IF
+  # apply_blank_correction() actually added it (no blanks detected ->
+  # silently falls back to raw, matching the note under the toggle).
+  .resolve_signal_col <- function(matches) {
+    base <- if ("area" %in% names(matches) && any(!is.na(matches$area))) "area" else "intensity"
+    bcorr <- paste0(base, "_bcorr")
+    if (identical(input$signal_basis, "bcorr") && bcorr %in% names(matches)) bcorr else base
+  }
+
+  # Maps the "Reference timepoint" dropdown (Statistical Analysis sidebar)
+  # to the value quantify_metabolites()/multi_trend_summary() expect:
+  # NULL (auto -- earliest timepoint) when left on "Auto", else the
+  # explicit numeric timepoint the user picked.
+  .resolve_reference_timepoint <- function() {
+    val <- input$stats_reference_timepoint %||% ""
+    if (!nzchar(val)) NULL else suppressWarnings(as.numeric(val))
+  }
+
   .recompute_stats_and_quant <- function() {
     meta <- batch_meta_data()
     bres <- rv$batch_ms_results
     if (is.null(meta) || nrow(meta) == 0 || is.null(bres) || nrow(bres$ms1_matches) == 0) {
       return(invisible(NULL))
     }
+    # Add intensity_bcorr/area_bcorr alongside the raw columns (no-op if no
+    # reagent_blank/matrix_blank samples are found) -- every consumer below
+    # picks raw or corrected via .resolve_signal_col() and the toggle.
+    bres$ms1_matches <- apply_blank_correction(bres$ms1_matches, meta)
+    sig_col <- .resolve_signal_col(bres$ms1_matches)
     rv$sample_meta <- meta
 
     has_group <- !is.null(meta$group) && any(nzchar(meta$group))
@@ -2399,7 +2494,7 @@ server <- function(input, output, session) {
           ga %in% groups && gb %in% groups && ga != gb) c(ga, gb) else groups[1:2]
     }
 
-    abund <- build_abundance_matrix(bres$ms1_matches)
+    abund <- build_abundance_matrix(bres$ms1_matches, signal_col = sig_col)
     stats_res <- tryCatch({
       if (has_time) {
         sm <- meta[, c("sample", "timepoint")]
@@ -2427,9 +2522,7 @@ server <- function(input, output, session) {
     # Same comparison, but on kind-level (composition-class) totals instead
     # of per-metabolite abundance -- reuses the same compare_*() functions
     # unmodified (see build_kind_abundance_matrix() in R/statistics.R).
-    signal_col <- if ("area" %in% names(bres$ms1_matches) &&
-                       any(!is.na(bres$ms1_matches$area))) "area" else "intensity"
-    kind_abund <- build_kind_abundance_matrix(bres$ms1_matches, signal_col = signal_col)
+    kind_abund <- build_kind_abundance_matrix(bres$ms1_matches, signal_col = sig_col)
     kind_stats_res <- tryCatch({
       if (has_time) {
         sm <- meta[, c("sample", "timepoint")]
@@ -2466,7 +2559,9 @@ server <- function(input, output, session) {
         absolute_met_ids = input$absolute_quant_mets,
         mode = if (has_time) "time_series" else "group",
         control_group = if (has_time) NULL else input$control_group,
-        weighting = input$calibration_weighting)
+        reference_timepoint = if (has_time) .resolve_reference_timepoint() else NULL,
+        weighting = input$calibration_weighting,
+        signal_col = sig_col)
     }, error = function(e) {
       rv$status_text <- paste0(rv$status_text,
         "WARNING: quantification failed: ", conditionMessage(e), "\n")
@@ -2482,7 +2577,7 @@ server <- function(input, output, session) {
     # (excludes standards/QC/blanks, joins group/timepoint -- see
     # degradation_summary()'s sample_meta argument).
     bres$degradation <- tryCatch(
-      degradation_summary(bres$ms1_matches, sample_meta = meta),
+      degradation_summary(bres$ms1_matches, sample_meta = meta, signal_col = sig_col),
       error = function(e) {
         rv$status_text <- paste0(rv$status_text,
           "WARNING: degradation summary failed: ", conditionMessage(e), "\n")
@@ -2517,6 +2612,32 @@ server <- function(input, output, session) {
     mode_txt <- if (has_time) "Time-course (Timepoint filled)" else "Group comparison (Group filled)"
     tags$p(style = "font-size: 10.5px; color: #1f2430;",
            "Auto-detected: ", tags$b(mode_txt))
+  })
+
+  # Tells the user, right under the toggle, whether "Blank-corrected" will
+  # actually do anything -- compute_blank_signal() looks at the LIVE batch
+  # sample table (Sample Type edits + RB/MB name detection), not just what
+  # the last "Run Statistical Analysis" click saw.
+  output$signal_basis_note <- renderUI({
+    bres <- rv$batch_ms_results
+    meta <- batch_meta_data()
+    if (is.null(bres) || is.null(bres$ms1_matches) || nrow(bres$ms1_matches) == 0 ||
+        is.null(meta) || nrow(meta) == 0) {
+      return(tags$p(style = "font-size: 10px; color: #6c757d; margin-top: -6px;",
+                    "No batch results yet."))
+    }
+    blank <- compute_blank_signal(bres$ms1_matches, meta)
+    if (nzchar(blank$note) && all(blank$table$n_blank == 0)) {
+      tags$p(style = "font-size: 10px; color: #6c757d; margin-top: -6px;",
+             "No reagent_blank/matrix_blank samples detected (by Sample Type or RB/MB in name).")
+    } else {
+      n_met <- sum(blank$table$n_blank > 0)
+      is_blank <- meta$sample_type %in% c("reagent_blank", "matrix_blank") |
+        !is.na(.detect_blank_type_from_name(meta$sample))
+      n_blank_samples <- length(unique(meta$sample[is_blank]))
+      tags$p(style = "font-size: 10px; color: #1f7a3d; margin-top: -6px;",
+             sprintf("Applies to %d metabolite(s), from %d blank sample(s).", n_met, n_blank_samples))
+    }
   })
 
   # Post-hoc, R-side charge-state re-aggregation (mirroring charge_group.py's
@@ -3215,6 +3336,29 @@ server <- function(input, output, session) {
                  stringsAsFactors = FALSE)
     }))
   })
+  # Only metabolites that actually got a fit_calibration_curve() attempt
+  # (selected under "Calibration & Quantification (Advanced)") -- same
+  # source .calibration_curves_display() reads, so the selector and the
+  # table below always agree on which metabolites exist here.
+  output$calib_curve_selector <- renderUI({
+    cc <- rv$quant_results$calibration_curves
+    req(length(cc) > 0)
+    met_names <- vapply(cc, function(c) c$met_id, character(1))
+    selectInput("calib_curve_met_select", "Metabolite", choices = stats::setNames(names(cc), met_names))
+  })
+
+  output$plot_calibration_curve <- renderPlot({
+    cc <- rv$quant_results$calibration_curves
+    req(length(cc) > 0, input$calib_curve_met_select)
+    curve <- cc[[input$calib_curve_met_select]]
+    req(curve)
+    abs_tbl <- rv$quant_results$absolute
+    quant_points <- if (!is.null(abs_tbl) && nrow(abs_tbl) > 0) {
+      abs_tbl[abs_tbl$met_id == input$calib_curve_met_select, ]
+    } else NULL
+    plot_calibration_curve(curve, quant_points = quant_points)
+  })
+
   output$calibration_curves_table <- DT::renderDT({
     DT::datatable(.calibration_curves_display(), rownames = FALSE,
                   options = list(pageLength = 15, scrollX = TRUE)) |>
@@ -3631,7 +3775,8 @@ server <- function(input, output, session) {
     long <- .time_course_long()
     if (nrow(long) == 0) return(data.frame())
     met_ids <- if (length(input$tc_met_ids) > 0) input$tc_met_ids else NULL
-    multi_trend_summary(long, met_ids = met_ids, normalize = isTRUE(input$tc_normalize))
+    multi_trend_summary(long, met_ids = met_ids, normalize = isTRUE(input$tc_normalize),
+                         reference_timepoint = .resolve_reference_timepoint())
   })
 
   output$time_course_note <- renderUI({
@@ -3646,7 +3791,8 @@ server <- function(input, output, session) {
   })
 
   output$plot_time_course_trend <- renderPlot({
-    plot_multi_trend(.time_course_summary(), normalize = isTRUE(input$tc_normalize))
+    plot_multi_trend(.time_course_summary(), normalize = isTRUE(input$tc_normalize),
+                      reference_timepoint = .resolve_reference_timepoint())
   })
 
   output$time_course_table <- DT::renderDT({
@@ -3674,6 +3820,7 @@ server <- function(input, output, session) {
     }
     met_ids <- if (length(input$mv_met_ids) > 0) input$mv_met_ids else NULL
     run_pca(bres$ms1_matches, sample_meta = rv$sample_meta, met_ids = met_ids,
+            signal_col = .resolve_signal_col(bres$ms1_matches),
             log_transform = isTRUE(input$mv_log), scale = isTRUE(input$mv_scale))
   })
 
@@ -3687,6 +3834,7 @@ server <- function(input, output, session) {
     k <- suppressWarnings(as.integer(input$mv_k))
     if (is.na(k) || k < 2) k <- 2
     run_hclust(bres$ms1_matches, sample_meta = rv$sample_meta, met_ids = met_ids,
+               signal_col = .resolve_signal_col(bres$ms1_matches),
                log_transform = isTRUE(input$mv_log), scale = isTRUE(input$mv_scale), k = k)
   })
 
@@ -3753,16 +3901,36 @@ server <- function(input, output, session) {
     filename = function() paste0(input$output_prefix, "_data_matrix_wide.csv"),
     content = function(file) {
       req(rv$batch_ms_results)
-      utils::write.csv(build_abundance_matrix(rv$batch_ms_results$ms1_matches), file, row.names = FALSE)
+      m <- rv$batch_ms_results$ms1_matches
+      utils::write.csv(build_abundance_matrix(m, signal_col = .resolve_signal_col(m)), file, row.names = FALSE)
     }
   )
   output$dl_data_matrix_long <- downloadHandler(
     filename = function() paste0(input$output_prefix, "_data_matrix_long.csv"),
     content = function(file) {
       req(rv$batch_ms_results, rv$sample_meta)
-      abund <- build_abundance_matrix(rv$batch_ms_results$ms1_matches)
+      m <- rv$batch_ms_results$ms1_matches
+      abund <- build_abundance_matrix(m, signal_col = .resolve_signal_col(m))
       utils::write.csv(abundance_long(abund, rv$sample_meta), file, row.names = FALSE)
     }
+  )
+
+  .blank_correction_table <- reactive({
+    req(rv$batch_ms_results, nrow(rv$batch_ms_results$ms1_matches) > 0)
+    meta <- batch_meta_data()
+    req(nrow(meta) > 0)
+    compute_blank_signal(rv$batch_ms_results$ms1_matches, meta)$table
+  })
+
+  output$blank_correction_table <- DT::renderDT({
+    tbl <- .blank_correction_table()
+    req(nrow(tbl) > 0)
+    DT::datatable(tbl, rownames = FALSE, options = list(pageLength = 10, scrollX = TRUE))
+  })
+
+  output$dl_blank_correction_csv <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_blank_values.csv"),
+    content = function(file) utils::write.csv(.blank_correction_table(), file, row.names = FALSE)
   )
   output$dl_unmatched_csv <- downloadHandler(
     filename = function() paste0(input$output_prefix, "_unidentified_peaks.csv"),

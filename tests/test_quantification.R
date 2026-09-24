@@ -109,6 +109,41 @@ stopifnot(!is.na(qc_row$percent_re))
 stopifnot(abs(qc_row$percent_re) < 15)
 cat("QC sample gets a percent_re against its own nominal concentration: PASS\n")
 
+## ---- plot_calibration_curve() -----------------------------------------------
+cat("\n--- plot_calibration_curve() ---\n")
+abs_res_full <- quantify_absolute(all_matches, "PARENT", all_meta, weighting = "1/x2")
+curve_full <- abs_res_full$curves[["PARENT"]]
+quant_full <- abs_res_full$quant
+
+p_fit <- plot_calibration_curve(curve_full, quant_points = quant_full)
+stopifnot(inherits(p_fit, "gg"))
+stopifnot(grepl("PARENT", p_fit$labels$title))
+stopifnot(grepl("R\\^2", p_fit$labels$subtitle))
+cat("plot_calibration_curve() returns a ggplot titled/subtitled with the fit stats: PASS\n")
+
+# A failed/empty fit (no standards) must plot without erroring, titled with
+# the reason instead of a real curve.
+p_empty <- plot_calibration_curve(empty_curve)
+stopifnot(inherits(p_empty, "gg"))
+stopifnot(identical(p_empty$labels$title, empty_curve$note))
+cat("A failed fit plots an empty ggplot titled with its own note, not an error: PASS\n")
+
+# NULL input (metabolite never attempted at all) must also degrade gracefully.
+p_null <- plot_calibration_curve(NULL)
+stopifnot(inherits(p_null, "gg"))
+cat("NULL curve_result doesn't error: PASS\n")
+
+# A curve restored from a saved Analysis State has $model stripped (see
+# .strip_for_analysis_state() in app.R) but keeps intercept/slope/points --
+# the plot must still render the real curve, not fall back to "no curve".
+curve_stripped <- curve_full
+curve_stripped$model <- NULL
+p_stripped <- plot_calibration_curve(curve_stripped, quant_points = quant_full)
+stopifnot(inherits(p_stripped, "gg"))
+stopifnot(!identical(p_stripped$labels$title, "No calibration curve to plot"))
+stopifnot(grepl("PARENT", p_stripped$labels$title))
+cat("A curve with $model stripped (post-restore) still plots the real curve: PASS\n")
+
 unk_row <- quant[quant$sample == "unk_1", ]
 stopifnot(is.na(unk_row$percent_re))  # unknowns have no nominal concentration to compare against
 cat("Unknown (study) samples have no percent_re (no nominal to compare to): PASS\n")
@@ -132,6 +167,24 @@ cat("Relative signal at t0 (mean", round(mean(t0), 2), "), at t2 (mean", round(m
 stopifnot(abs(mean(t0) - 1) < 1e-6)
 stopifnot(abs(mean(t2) - 4) < 1e-6)
 cat("Baseline (time 0) normalizes to 1.0, later timepoint recovers 4x injected fold: PASS\n")
+
+## ---- quantify_relative(): reference_timepoint override ---------------------
+# Real-world motivation: "earliest timepoint" is only the same thing as
+# "pre-dose" when pre-dose happens to be coded as the smallest number --
+# reference_timepoint lets a caller say explicitly which timepoint is the
+# baseline instead. Same fixture, but baseline moves to timepoint 1.
+cat("\n--- quantify_relative(reference_timepoint = 1) ---\n")
+rel_ts_ref1 <- quantify_relative(ts_matches, "DEG1", ts_meta, mode = "time_series",
+                                  reference_timepoint = 1, signal_col = "intensity")
+r0 <- rel_ts_ref1$relative_signal[rel_ts_ref1$timepoint == "0"]
+r1 <- rel_ts_ref1$relative_signal[rel_ts_ref1$timepoint == "1"]
+r2 <- rel_ts_ref1$relative_signal[rel_ts_ref1$timepoint == "2"]
+cat("Relative signal at t0 (mean", round(mean(r0), 2), "), t1 (mean", round(mean(r1), 2),
+    "), t2 (mean", round(mean(r2), 2), ")\n")
+stopifnot(abs(mean(r0) - 0.5) < 1e-6)
+stopifnot(abs(mean(r1) - 1) < 1e-6)
+stopifnot(abs(mean(r2) - 2) < 1e-6)
+cat("Baseline correctly moves to timepoint 1, not the earliest (0): PASS\n")
 
 ## ---- quantify_relative(): group mode relative to control ------------------
 cat("\n--- quantify_relative(mode = 'group') ---\n")

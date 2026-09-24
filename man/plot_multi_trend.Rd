@@ -4,13 +4,18 @@
 \alias{plot_multi_trend}
 \title{Plot a multi-metabolite time-course trend}
 \usage{
-plot_multi_trend(trend_summary, normalize = TRUE)
+plot_multi_trend(trend_summary, normalize = TRUE, reference_timepoint = NULL)
 }
 \arguments{
 \item{trend_summary}{A \code{\link[=multi_trend_summary]{multi_trend_summary()}} result.}
 
 \item{normalize}{Whether \code{trend_summary} was built with
 \code{normalize = TRUE} -- only affects the y-axis label.}
+
+\item{reference_timepoint}{The \code{reference_timepoint} (if any) that
+\code{trend_summary} was normalized against -- only affects the y-axis
+label (\code{NULL} labels it "earliest timepoint", matching
+\code{\link[=multi_trend_summary]{multi_trend_summary()}}'s own default).}
 }
 \value{
 A ggplot object.

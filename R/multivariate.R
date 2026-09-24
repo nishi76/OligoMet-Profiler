@@ -40,7 +40,7 @@
   }
 
   sig_col <- signal_col %||% .auto_signal_col(bm)
-  abund <- if (sig_col == "area") build_abundance_matrix_area(bm) else build_abundance_matrix(bm)
+  abund <- build_abundance_matrix(bm, signal_col = sig_col)
   if (nrow(abund) == 0) {
     empty$note <- "no metabolites matched"
     return(empty)
