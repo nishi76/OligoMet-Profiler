@@ -193,3 +193,96 @@ plot_degradation_composition <- function(degradation) {
     ggplot2::theme_minimal(base_size = 11, base_family = "Liberation Sans") +
     ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, hjust = 1))
 }
+
+## ---- Degradation relative to an earlier timepoint ----------------------------
+#' Parent loss and % degradation relative to a reference timepoint
+#'
+#' Summarizes [degradation_summary()]'s `per_sample` table by timepoint
+#' (and by group/arm, when one is present) and expresses each timepoint
+#' against the reference timepoint of the SAME arm and against the
+#' immediately preceding timepoint:
+#'
+#' * `pct_parent_remaining` = 100 x mean parent signal / mean parent signal
+#'   at the reference timepoint; `pct_parent_loss` = 100 - that.
+#' * `delta_pct_degradation` = mean % degradation minus the reference
+#'   timepoint's mean % degradation (percentage points). This one is
+#'   ratio-based, so it is robust to injection-to-injection signal drift
+#'   that a raw parent-signal ratio is not.
+#' * `pct_parent_change_vs_previous` = 100 x (mean parent signal / mean
+#'   parent signal at the previous timepoint - 1).
+#'
+#' @param per_sample `degradation_summary(...)$per_sample`, which carries
+#'   `timepoint` (and `group`) when `sample_meta` was supplied.
+#' @param reference_timepoint Numeric timepoint to compare against. `NULL`
+#'   uses the earliest timepoint of each arm.
+#' @return A data.frame, one row per (group, timepoint), or an empty
+#'   data.frame when there is no numeric timepoint information.
+#' @export
+degradation_vs_reference <- function(per_sample, reference_timepoint = NULL) {
+  if (is.null(per_sample) || nrow(per_sample) == 0 || !"timepoint" %in% names(per_sample)) {
+    return(data.frame())
+  }
+  d <- per_sample
+  d$timepoint <- suppressWarnings(as.numeric(d$timepoint))
+  d <- d[!is.na(d$timepoint), , drop = FALSE]
+  if (nrow(d) == 0) return(data.frame())
+  d$group <- if ("group" %in% names(d)) ifelse(is.na(d$group), "", as.character(d$group)) else ""
+
+  rows <- lapply(split(d, d$group), function(g) {
+    tps <- sort(unique(g$timepoint))
+    agg <- do.call(rbind, lapply(tps, function(t) {
+      s <- g[g$timepoint == t, , drop = FALSE]
+      data.frame(group = s$group[1], timepoint = t, n = nrow(s),
+                 mean_parent_signal = mean(s$parent_signal, na.rm = TRUE),
+                 sd_parent_signal = if (nrow(s) > 1) stats::sd(s$parent_signal, na.rm = TRUE) else NA_real_,
+                 mean_pct_degradation = mean(s$pct_degradation, na.rm = TRUE),
+                 sd_pct_degradation = if (nrow(s) > 1) stats::sd(s$pct_degradation, na.rm = TRUE) else NA_real_,
+                 stringsAsFactors = FALSE)
+    }))
+    ref_t <- if (is.null(reference_timepoint) || is.na(reference_timepoint)) min(tps) else reference_timepoint
+    ref <- agg[agg$timepoint == ref_t, , drop = FALSE]
+    ref_parent <- if (nrow(ref) > 0) ref$mean_parent_signal[1] else NA_real_
+    ref_degr <- if (nrow(ref) > 0) ref$mean_pct_degradation[1] else NA_real_
+    agg$reference_timepoint <- ref_t
+    agg$pct_parent_remaining <- if (is.finite(ref_parent) && ref_parent > 0)
+      round(100 * agg$mean_parent_signal / ref_parent, 2) else NA_real_
+    agg$pct_parent_loss <- round(100 - agg$pct_parent_remaining, 2)
+    agg$delta_pct_degradation <- round(agg$mean_pct_degradation - ref_degr, 2)
+    prev <- c(NA_real_, utils::head(agg$mean_parent_signal, -1))
+    agg$pct_parent_change_vs_previous <- ifelse(is.finite(prev) & prev > 0,
+                                                round(100 * (agg$mean_parent_signal / prev - 1), 2),
+                                                NA_real_)
+    agg
+  })
+  out <- do.call(rbind, rows)
+  rownames(out) <- NULL
+  out
+}
+
+#' Plot parent remaining vs. time
+#'
+#' @param deg_ref Output of [degradation_vs_reference()].
+#' @return A ggplot object: % parent remaining (relative to the reference
+#'   timepoint) against timepoint, one line per group.
+#' @export
+plot_degradation_vs_reference <- function(deg_ref) {
+  if (is.null(deg_ref) || nrow(deg_ref) == 0 || all(is.na(deg_ref$pct_parent_remaining))) {
+    return(ggplot2::ggplot() + ggplot2::theme_void() +
+             ggplot2::labs(title = "No timepoint information to plot degradation over time"))
+  }
+  d <- deg_ref
+  d$group <- ifelse(nzchar(d$group), d$group, "all samples")
+  n_grp <- length(unique(d$group))
+  ggplot2::ggplot(d, ggplot2::aes(x = .data$timepoint, y = .data$pct_parent_remaining,
+                                  color = .data$group, group = .data$group)) +
+    ggplot2::geom_hline(yintercept = 100, linetype = "dotted", color = "#B7B2A7") +
+    ggplot2::geom_line(linewidth = 0.8) +
+    ggplot2::geom_point(size = 2.5) +
+    ggplot2::scale_color_manual(values = grDevices::colorRampPalette(
+      c("#0279EE", "#FF9400", "#75A025", "#FD9BED", "#E9ED4C"))(n_grp), name = NULL) +
+    ggplot2::labs(x = "Timepoint", y = "% parent remaining",
+                  title = "Parent remaining relative to reference timepoint",
+                  subtitle = paste0("Reference timepoint: ",
+                                    paste(unique(d$reference_timepoint), collapse = ", "))) +
+    ggplot2::theme_minimal(base_size = 11, base_family = "Liberation Sans")
+}

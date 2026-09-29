@@ -46,7 +46,7 @@ if (!is.null(.module_dir)) {
                "chemistry_dict.R", "oligo_io.R",
                "metabolites.R", "mass_isotope.R", "fragments.R",
                "ms_matching.R", "spectra_io.R", "batch_ms_processing.R", "statistics.R",
-               "degradation.R", "multivariate.R", "blank_correction.R",
+               "degradation.R", "multivariate.R", "blank_correction.R", "data_matrix.R",
                "build_workbook.R", "build_report.R",
                "export_acquisition.R", "export_spectral.R", "mirror_plot.R",
                "agent_tools.R", "agent_core.R")) {
@@ -882,16 +882,50 @@ ui <- fluidPage(
       fluidRow(
         column(4,
           tags$div(class = "sidebar-section",
+            tags$h5("Data Source"),
+            radioButtons("data_source", NULL,
+                         choices = c("Raw MS files (peak picking + MS1/MS2 matching)" = "raw",
+                                     "Pre-processed data matrix (skip peak picking)" = "matrix"),
+                         selected = "raw"),
+            conditionalPanel(
+              condition = "input.data_source == 'matrix'",
+              fileInput("dm_file", "Data matrix (.csv, .tsv, .txt, .xlsx)",
+                        accept = c(".csv", ".tsv", ".txt", ".xlsx", ".xls")),
+              radioButtons("dm_format", "Layout",
+                           choices = c("Auto-detect" = "auto",
+                                       "Wide (metabolites x samples)" = "wide",
+                                       "Long (one row per metabolite x sample)" = "long"),
+                           selected = "auto"),
+              selectInput("dm_parent_met",
+                          .with_info("Parent (intact) species",
+                            "Used as the parent for % degradation. Auto-picked from a ",
+                            "kind = parent column or the generated library, else the ",
+                            "metabolite with the most total signal."),
+                          choices = character(0)),
+              uiOutput("dm_status"),
+              tags$p(style = "font-size: 10.5px; color: #6c757d;",
+                     "Wide: met_id (optional met_name, kind) plus one numeric column per ",
+                     "sample. Long: sample, met_id, intensity/area (optional group, ",
+                     "timepoint, sample_type, concentration). Both are exactly what the ",
+                     "Data Matrix downloads write, so an identification run exported once ",
+                     "can be re-analyzed here without re-running the Python pipeline. ",
+                     "Generating a library first (a saved session JSON is enough) fills ",
+                     "in metabolite names and classes; it is optional.")
+            )
+          ),
+          tags$div(class = "sidebar-section",
             tags$h5("Sample Metadata"),
             fluidRow(
-              column(6, downloadButton("dl_batch_meta_template", "Download CSV template",
+              column(6, downloadButton("dl_batch_meta_template", "Download template",
                                         class = "btn-outline-secondary btn-sm w-100")),
-              column(6, fileInput("batch_meta_csv", NULL, accept = ".csv",
-                                   placeholder = "Upload filled-in sample info CSV..."))
+              column(6, fileInput("batch_meta_csv", NULL,
+                                   accept = c(".csv", ".tsv", ".txt", ".xlsx", ".xls"),
+                                   placeholder = "Upload sample info (.csv/.tsv/.xlsx)..."))
             ),
             tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -10px;",
                    "Columns: sample, group, timepoint, sample_type, concentration. ",
-                   "Timepoint must be numeric (0, 4, 24) -- flagged live below if not."),
+                   "Timepoint must be numeric (0, 4, 24) -- flagged live below if not. ",
+                   "Can be uploaded before or after the data."),
             uiOutput("batch_meta_upload_status"),
             DT::DTOutput("sample_meta_table"),
             uiOutput("sample_meta_timepoint_warn"),
@@ -902,11 +936,21 @@ ui <- fluidPage(
                    "before running -- leave both blank to only extract and match ",
                    "features, with no statistics.")
           ),
-          tags$div(class = "sidebar-section",
-            tags$h5("Processing Options"),
-            tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -6px;",
-                   "Re-uses the same noise-threshold and confirmation settings as ",
-                   "Empirical MS2 Library -- set there before running here.")
+          conditionalPanel(
+            condition = "input.data_source == 'raw'",
+            tags$div(class = "sidebar-section",
+              tags$h5("Processing Options"),
+              tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -6px;",
+                     "Re-uses the same noise-threshold and confirmation settings as ",
+                     "Empirical MS2 Library -- set there before running here."),
+              checkboxInput("batch_force_rerun",
+                            "Force re-run of peak picking and matching", value = FALSE),
+              tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -8px;",
+                     "Off (default): once raw files are processed (here or via Generate ",
+                     "Empirical MS2 Library), Run Batch Processing reuses those results and ",
+                     "only recomputes statistics and quantification from the current sample ",
+                     "table. Files or processing settings that changed trigger a full re-run.")
+            )
           ),
           tags$details(class = "adv-panel", open = NA,
             tags$summary("Calibration & Quantification"),
@@ -931,14 +975,24 @@ ui <- fluidPage(
             )
           ),
           conditionalPanel(
-            condition = "output.library_ready == 'true'",
+            condition = "input.data_source == 'raw' && output.library_ready == 'true'",
             actionButton("run_phase2", "Run Batch Processing",
                          class = "btn-primary btn-lg w-100")
           ),
           conditionalPanel(
-            condition = "output.library_ready != 'true'",
+            condition = "input.data_source == 'raw' && output.library_ready != 'true'",
             tags$p(style = "font-size: 11px; color: #6c757d;",
-                   "Run \"Generate Library\" on the Library Generation tab first.")
+                   "Run \"Generate Library\" on the Library Generation tab first, or ",
+                   "switch Data Source to a pre-processed data matrix.")
+          ),
+          conditionalPanel(
+            condition = "input.data_source == 'matrix'",
+            actionButton("run_matrix_analysis", "Analyze Data Matrix",
+                         class = "btn-primary btn-lg w-100"),
+            tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: 4px;",
+                   "Runs statistics, calibration curves, back-calculated concentrations, ",
+                   "relative quantification, and degradation on the uploaded matrix. ",
+                   "No peak picking, no Python.")
           )
         ),
 
@@ -950,7 +1004,15 @@ ui <- fluidPage(
                 tags$div(style = "padding-top: 12px;",
                   DT::DTOutput("batch_matches_table"),
                   tags$div(style = "height: 8px;"),
-                  downloadButton("dl_batch_tsv", "Download combined features (.tsv)", class = "btn-outline-primary"),
+                  fluidRow(
+                    column(4, downloadButton("dl_batch_tsv", "Combined features (.tsv)", class = "btn-outline-primary w-100")),
+                    column(4, downloadButton("dl_bp_matrix_wide", "Data matrix -- wide (.csv)", class = "btn-primary w-100")),
+                    column(4, downloadButton("dl_bp_matrix_long", "Data matrix -- long (.csv)", class = "btn-primary w-100"))
+                  ),
+                  tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: 4px;",
+                    "Export the data matrix once identification is done, then re-load it ",
+                    "any time with Data Source = pre-processed data matrix -- no re-run of ",
+                    "peak picking or matching needed. Raw signal (not blank-corrected)."),
                   tags$hr(),
                   tags$h6("MS2 Mirror Plot"),
                   tags$p(style = "font-size: 12px; color: #6c757d;",
@@ -961,7 +1023,8 @@ ui <- fluidPage(
               conditionalPanel(
                 condition = "output.batch_ready != 'true'",
                 tags$p(style = "padding-top: 12px; color: #6c757d;",
-                       "Upload files (Empirical MS2 Library tab) and click Run Batch Processing to see results here.")
+                       "Upload files (Empirical MS2 Library tab) and click Run Batch Processing, ",
+                       "or load a pre-processed data matrix, to see results here.")
               )
             ),
             tabPanel("Unidentified Peaks",
@@ -978,6 +1041,7 @@ ui <- fluidPage(
               conditionalPanel(
                 condition = "output.quant_ready == 'true'",
                 tags$div(style = "padding-top: 12px;",
+                  uiOutput("quant_notes"),
                   tags$h6("Calibration curve plot"),
                   uiOutput("calib_curve_selector"),
                   plotOutput("plot_calibration_curve", height = "380px"),
@@ -1024,7 +1088,18 @@ ui <- fluidPage(
                   tags$h6("Top degradant species"),
                   DT::DTOutput("degradation_top_table"),
                   tags$div(style = "height: 8px;"),
-                  downloadButton("dl_degradation_csv", "Download degradation summary (.csv)", class = "btn-outline-primary")
+                  downloadButton("dl_degradation_csv", "Download degradation summary (.csv)", class = "btn-outline-primary"),
+                  tags$hr(),
+                  tags$h6("Degradation relative to an earlier timepoint"),
+                  tags$p(style = "font-size: 11px; color: #6c757d;",
+                    "Per group and timepoint: % parent remaining and % parent loss against ",
+                    "the reference timepoint (Statistical Analysis tab, default = earliest), ",
+                    "the change in % degradation in percentage points, and the parent change ",
+                    "against the previous timepoint. Needs numeric Timepoint values."),
+                  plotOutput("plot_degradation_vs_ref", height = "300px"),
+                  DT::DTOutput("degradation_vs_ref_table"),
+                  tags$div(style = "height: 8px;"),
+                  downloadButton("dl_degradation_vs_ref_csv", "Download degradation vs reference (.csv)", class = "btn-outline-primary")
                 )
               )
             )
@@ -1324,7 +1399,7 @@ server <- function(input, output, session) {
     batch_features = NULL, batch_ms_results = NULL,
     sample_meta = NULL, stats_results = NULL, kind_stats_results = NULL,
     quant_results = NULL,
-    library_ready = FALSE,
+    library_ready = FALSE, library_version = 0L, batch_signature = NULL,
     agent_messages = list(), agent_ctx = list(), agent_busy = FALSE
   )
 
@@ -1406,14 +1481,7 @@ server <- function(input, output, session) {
   # case "standard" fit_calibration_curve()/.is_study_sample() match
   # against, silently broke calibration-curve fitting with no error --
   # the CSV path already normalized this, direct cell edits didn't).
-  .map_sample_type <- function(x) {
-    norm <- gsub("^_|_$", "", gsub("[^a-z0-9]+", "_", tolower(trimws(x))))
-    canon <- c(unknown = "unknown", standard = "standard",
-               quality_control = "quality_control", qc = "quality_control",
-               reagent_blank = "reagent_blank", blank = "reagent_blank",
-               matrix_blank = "matrix_blank")
-    unname(canon[norm])
-  }
+  .map_sample_type <- function(x) normalize_sample_type(x)
 
   # .detect_blank_type_from_name() also exists in R/chemistry_dict.R, but
   # (same reason as the .is_study_sample() copy further down) app.R runs
@@ -1442,9 +1510,7 @@ server <- function(input, output, session) {
 
   observeEvent(input$batch_files, {
     samples <- tools::file_path_sans_ext(input$batch_files$name)
-    batch_meta_data(data.frame(sample = samples, group = "", timepoint = "",
-                                sample_type = .seed_sample_type(samples), concentration = "",
-                                stringsAsFactors = FALSE))
+    .set_sample_list(samples)
   })
 
   # Local-folder alternative to the upload above (see the UI section and
@@ -1458,9 +1524,7 @@ server <- function(input, output, session) {
                           full.names = TRUE, ignore.case = TRUE)
       if (length(paths) > 0) {
         samples <- tools::file_path_sans_ext(basename(paths))
-        batch_meta_data(data.frame(sample = samples, group = "", timepoint = "",
-                                    sample_type = .seed_sample_type(samples), concentration = "",
-                                    stringsAsFactors = FALSE))
+        .set_sample_list(samples)
       }
     }
   }, ignoreInit = TRUE)
@@ -1638,32 +1702,16 @@ server <- function(input, output, session) {
   })
 
   # Merges by `sample` name, not row position -- the sample list already on
-  # the table (derived from the actual uploaded/local files) stays
-  # authoritative for WHICH samples exist; the CSV only supplies values for
-  # group/timepoint/sample_type, so it can be partial or reordered safely.
-  observeEvent(input$batch_meta_csv, {
-    current <- batch_meta_data()
-    if (nrow(current) == 0) {
-      batch_meta_upload_status(
-        "WARNING: upload batch files (or set a local folder) first, so there's a sample list to merge the CSV onto.")
-      return()
-    }
-    csv <- tryCatch(
-      utils::read.csv(input$batch_meta_csv$datapath, stringsAsFactors = FALSE, colClasses = "character"),
-      error = function(e) NULL)
-    if (is.null(csv)) {
-      batch_meta_upload_status("WARNING: could not read that file as CSV.")
-      return()
-    }
-    names(csv) <- tolower(trimws(names(csv)))
-    if (!"sample" %in% names(csv)) {
-      batch_meta_upload_status("WARNING: CSV needs a 'sample' column matching the uploaded file names.")
-      return()
-    }
+  # the table (derived from the actual uploaded/local files, or from the
+  # columns of an uploaded data matrix) stays authoritative for WHICH
+  # samples exist; the sample info only supplies values for group/
+  # timepoint/sample_type/concentration, so it can be partial or reordered
+  # safely. Returns list(df, msg).
+  .merge_sample_info <- function(current, csv) {
     csv$sample <- trimws(csv$sample)
 
     # Canonicalize sample_type against the controlled vocabulary (see
-    # .map_sample_type() above) so a human-typed CSV isn't rejected over
+    # .map_sample_type() above) so a human-typed sheet isn't rejected over
     # formatting differences. Anything that still doesn't map is kept as
     # typed and flagged, rather than silently coerced to "unknown".
     invalid_types <- character(0)
@@ -1685,10 +1733,9 @@ server <- function(input, output, session) {
       invalid_conc <- unique(csv$concentration[non_numeric])
     }
 
-    # Same treatment as concentration above -- kept as typed (so the CSV
-    # merge doesn't silently drop the value), flagged here in the summary,
-    # and flagged again live via .invalid_timepoints()/the red cell
-    # highlighting once it lands on the table.
+    # Same treatment as concentration above -- kept as typed, flagged here
+    # in the summary, and flagged again live via .invalid_timepoints()/the
+    # red cell highlighting once it lands on the table.
     invalid_time <- character(0)
     if ("timepoint" %in% names(csv)) {
       non_numeric <- nzchar(csv$timepoint) & is.na(suppressWarnings(as.numeric(csv$timepoint)))
@@ -1703,14 +1750,18 @@ server <- function(input, output, session) {
         if (!is.na(val) && nzchar(val)) current[current$sample == s, col] <- val
       }
     }
-    batch_meta_data(current)
 
-    msg <- sprintf("Sample info CSV applied: %d/%d uploaded samples matched.",
+    msg <- sprintf("Sample info applied: %d/%d samples matched.",
                     length(matched), nrow(current))
+    if (length(matched) == 0) {
+      msg <- paste0("WARNING: ", msg, " None of the sample names match -- check spelling, ",
+                    "and that names match the raw file names / data matrix column headers.")
+    }
     if (length(unmatched_csv) > 0) {
       msg <- paste0(msg, " Ignored ", length(unmatched_csv),
-                    " CSV row(s) with no matching uploaded file: ",
-                    paste(unmatched_csv, collapse = ", "), ".")
+                    " row(s) with no matching sample: ",
+                    paste(utils::head(unmatched_csv, 10), collapse = ", "),
+                    if (length(unmatched_csv) > 10) ", ..." else "", ".")
     }
     if (length(invalid_types) > 0) {
       msg <- paste0(msg, " Sample Type value(s) not in {",
@@ -1725,8 +1776,125 @@ server <- function(input, output, session) {
       msg <- paste0(msg, " Timepoint value(s) not numeric, kept as typed: ",
                     paste(invalid_time, collapse = ", "), ".")
     }
-    batch_meta_upload_status(msg)
+    list(df = current, msg = msg)
+  }
+
+  # Sample info uploaded before any data is kept here and applied as soon
+  # as a sample list exists (raw files, a local folder, or a data matrix),
+  # so the upload order doesn't matter.
+  pending_sample_info <- reactiveVal(NULL)
+
+  # Seeds the sample table from a fresh sample list, then layers on any
+  # sample info carried inside the data (a long data matrix) and any
+  # separately uploaded sample info sheet, in that order.
+  .set_sample_list <- function(samples, embedded_meta = NULL) {
+    meta <- data.frame(sample = samples, group = "", timepoint = "",
+                       sample_type = .seed_sample_type(samples), concentration = "",
+                       stringsAsFactors = FALSE)
+    msgs <- character(0)
+    if (!is.null(embedded_meta) && nrow(embedded_meta) > 0) {
+      meta <- .merge_sample_info(meta, embedded_meta)$df
+    }
+    info <- pending_sample_info()
+    if (!is.null(info) && nrow(info) > 0) {
+      res <- .merge_sample_info(meta, info)
+      meta <- res$df
+      msgs <- c(msgs, res$msg)
+    }
+    batch_meta_data(meta)
+    batch_meta_upload_status(if (length(msgs) > 0) msgs[1] else NULL)
+    invisible(meta)
+  }
+
+  observeEvent(input$batch_meta_csv, {
+    info <- tryCatch(
+      read_sample_info(input$batch_meta_csv$datapath, name = input$batch_meta_csv$name),
+      error = function(e) e)
+    if (inherits(info, "error")) {
+      batch_meta_upload_status(paste0("WARNING: could not read the sample info file -- ",
+                                      conditionMessage(info)))
+      return()
+    }
+    pending_sample_info(info)
+    current <- batch_meta_data()
+    if (nrow(current) == 0) {
+      batch_meta_upload_status(sprintf(paste0(
+        "Sample info loaded (%d rows). It will be applied as soon as raw files ",
+        "or a data matrix are loaded."), nrow(info)))
+      return()
+    }
+    res <- .merge_sample_info(current, info)
+    batch_meta_data(res$df)
+    batch_meta_upload_status(res$msg)
   })
+
+  ## ---- Pre-processed data matrix (skips peak picking / matching) -----------
+  # The uploaded matrix is converted once (read_data_matrix() in
+  # R/data_matrix.R) into the same long ms1_matches shape a raw-file batch
+  # run produces, so every downstream tab -- statistics, calibration curves,
+  # back-calculated concentrations, relative quantification, degradation,
+  # PCA -- runs on it unchanged. No library, Python, or MS files needed.
+  dm_raw <- reactiveVal(NULL)
+  dm_status_msg <- reactiveVal(NULL)
+
+  output$dm_status <- renderUI({
+    msg <- dm_status_msg()
+    if (is.null(msg)) return(NULL)
+    color <- if (startsWith(msg, "ERROR") || startsWith(msg, "WARNING")) "#a3231b" else "#2e7d32"
+    tags$p(style = paste0("font-size: 11px; color: ", color, "; margin: -4px 0 6px;"), msg)
+  })
+
+  .analyze_matrix <- function(parent_met_id = input$dm_parent_met) {
+    res <- dm_raw()
+    if (is.null(res)) {
+      dm_status_msg("WARNING: upload a data matrix first.")
+      return(invisible(NULL))
+    }
+    m <- annotate_matrix_metabolites(res$matches, rv$mets, parent_met_id = parent_met_id)
+    rv$batch_features <- NULL
+    rv$batch_signature <- NULL
+    rv$stats_results <- NULL
+    rv$kind_stats_results <- NULL
+    rv$quant_results <- NULL
+    rv$batch_ms_results <- list(ms1_matches = m, ms2_confirmations = NULL, ms2_spectra = list(),
+                                unmatched = data.frame(), degradation = NULL, source = "matrix")
+    rv$status_text <- ""
+    .recompute_stats_and_quant()
+    rv$status_text <- paste0(rv$status_text, sprintf(
+      "Data matrix analyzed: %d metabolites x %d samples (no peak picking run).\n",
+      length(unique(m$met_id)), length(unique(m$sample))))
+    invisible(NULL)
+  }
+
+  .load_data_matrix <- function() {
+    f <- input$dm_file
+    if (is.null(f)) return(invisible(NULL))
+    res <- tryCatch(read_data_matrix(f$datapath, format = input$dm_format %||% "auto", name = f$name),
+                    error = function(e) e)
+    if (inherits(res, "error")) {
+      dm_raw(NULL)
+      dm_status_msg(paste0("ERROR: could not read the data matrix -- ", conditionMessage(res)))
+      return(invisible(NULL))
+    }
+    dm_raw(res)
+    ann <- annotate_matrix_metabolites(res$matches, rv$mets)
+    mi <- unique(ann[, c("met_id", "met_name")])
+    mi <- mi[!duplicated(mi$met_id), ]
+    parent <- guess_parent_met_id(ann)
+    updateSelectInput(session, "dm_parent_met",
+                      choices = stats::setNames(mi$met_id, paste0(mi$met_name, " (", mi$met_id, ")")),
+                      selected = parent)
+    .set_sample_list(res$samples, embedded_meta = res$sample_meta)
+    dm_status_msg(paste0(
+      sprintf("Loaded %s-format matrix: %d metabolites x %d samples.",
+              res$format, nrow(mi), length(res$samples)),
+      if (length(res$notes) > 0) paste0(" ", paste(res$notes, collapse = " ")) else ""))
+    .analyze_matrix(parent_met_id = parent)
+  }
+
+  observeEvent(input$dm_file, .load_data_matrix())
+  observeEvent(input$dm_format, .load_data_matrix(), ignoreInit = TRUE)
+  observeEvent(input$run_matrix_analysis, .analyze_matrix())
 
   ## ---- Quantification controls: keep dropdown choices in sync --------------
   # Absolute-quant metabolite choices come from the library just built
@@ -1734,18 +1902,37 @@ server <- function(input, output, session) {
   # BEFORE the batch run that will act on it. Re-populates whenever a new
   # library is generated; existing selections that are still valid met_ids
   # are preserved across a re-generation rather than silently cleared.
-  observeEvent(rv$mets, {
-    mets <- rv$mets
-    if (is.null(mets) || length(mets) == 0) {
-      updateSelectizeInput(session, "absolute_quant_mets", choices = character(0))
-      return()
+  # Once results exist (a raw-file batch run or an uploaded data matrix),
+  # the choices are the metabolites actually present in them -- a data
+  # matrix may carry metabolites with no library behind it at all.
+  .quantifiable_mets <- reactive({
+    bres <- rv$batch_ms_results
+    if (!is.null(bres) && !is.null(bres$ms1_matches) && nrow(bres$ms1_matches) > 0) {
+      mi <- unique(bres$ms1_matches[, c("met_id", "met_name")])
+      mi <- mi[!duplicated(mi$met_id), ]
+      return(stats::setNames(mi$met_id, paste0(mi$met_name, " (", mi$met_id, ")")))
     }
+    mets <- rv$mets
+    if (is.null(mets) || length(mets) == 0) return(character(0))
     ids <- vapply(mets, function(m) m$id, character(1))
     labels <- vapply(mets, function(m) paste0(m$name, " (", m$id, ")"), character(1))
-    choices <- stats::setNames(ids, labels)
-    keep_selected <- intersect(isolate(input$absolute_quant_mets), ids)
+    stats::setNames(ids, labels)
+  })
+  observeEvent(.quantifiable_mets(), {
+    choices <- .quantifiable_mets()
+    keep_selected <- intersect(isolate(input$absolute_quant_mets), unname(choices))
     updateSelectizeInput(session, "absolute_quant_mets", choices = choices, selected = keep_selected)
   }, ignoreNULL = FALSE)
+
+  # Picking calibrator metabolites, the weighting, or the control group
+  # recomputes quantification on the spot from the results already in
+  # memory -- no second click, and never a re-run of peak picking.
+  observeEvent(list(input$absolute_quant_mets, input$calibration_weighting, input$control_group), {
+    bres <- rv$batch_ms_results
+    if (!is.null(bres) && !is.null(bres$ms1_matches) && nrow(bres$ms1_matches) > 0) {
+      .recompute_stats_and_quant()
+    }
+  }, ignoreInit = TRUE, ignoreNULL = FALSE)
 
   # Control-group choices come from whatever Group values are actually on
   # the sample metadata table right now, so the dropdown never offers a
@@ -2314,6 +2501,7 @@ server <- function(input, output, session) {
       rv$ms_results <- NULL
       rv$batch_features <- NULL
       rv$batch_ms_results <- NULL
+      rv$batch_signature <- NULL
       rv$sample_meta <- NULL
       rv$stats_results <- NULL
       rv$kind_stats_results <- NULL
@@ -2418,6 +2606,7 @@ server <- function(input, output, session) {
       rv$status_text <- paste0(warnings_so_far, status)
       rv$ready <- TRUE
       rv$library_ready <- TRUE
+      rv$library_version <- rv$library_version + 1L
 
     })  # end withProgress
 
@@ -2553,12 +2742,20 @@ server <- function(input, output, session) {
     # quantify_metabolites() in R/statistics.R. Uses the FULL sample_meta
     # (not the sample+group/timepoint slice above), since it also needs
     # sample_type/concentration for the calibration curve half.
+    # No control group picked yet (the dropdown starts empty) -> default to
+    # the first study-sample Group value, rather than skipping relative
+    # quantification altogether.
+    control_group <- input$control_group
+    if (!has_time && (is.null(control_group) || !nzchar(control_group))) {
+      study_groups <- unique(meta$group[nzchar(meta$group) & .is_study_sample(meta$sample_type)])
+      control_group <- if (length(study_groups) > 0) study_groups[1] else NULL
+    }
     quant_res <- tryCatch({
       quantify_metabolites(
         bres$ms1_matches, meta,
         absolute_met_ids = input$absolute_quant_mets,
         mode = if (has_time) "time_series" else "group",
-        control_group = if (has_time) NULL else input$control_group,
+        control_group = if (has_time) NULL else control_group,
         reference_timepoint = if (has_time) .resolve_reference_timepoint() else NULL,
         weighting = input$calibration_weighting,
         signal_col = sig_col)
@@ -2668,9 +2865,56 @@ server <- function(input, output, session) {
   # MS2 Library tab) -- both run the exact same pipeline; which downstream
   # results end up populated just depends on which checkboxes/files are set
   # (enable_ms/enable_batch), same as before this tab split.
+  # Everything that changes what peak picking + matching would produce:
+  # the files themselves, the library, and the processing settings. Two
+  # runs with the same signature give the same features and matches, so
+  # the second one reuses the first instead of re-running the Python
+  # deconvolution and envelope summing.
+  .batch_signature <- function() {
+    f <- .batch_input_files()
+    files <- if (is.null(f) || nrow(f) == 0) "" else {
+      sizes <- if (!is.null(f$size)) f$size else file.size(f$datapath)
+      paste(f$name, sizes, collapse = "|")
+    }
+    ms_file <- if (isTRUE(input$enable_ms) && !is.null(input$ms_file))
+      paste(input$ms_file$name, input$ms_file$size) else ""
+    mets <- rv$mets
+    lib <- if (is.null(mets)) "" else paste(
+      vapply(mets, function(m) paste(m$id, m$name, m$kind, sep = ":"), character(1)),
+      collapse = ",")
+    paste(files, ms_file, lib, rv$library_version,
+          input$enable_ms, input$enable_batch, input$batch_run_ms2,
+          input$batch_deconv_ppm, input$batch_noise_mode, input$batch_sn_threshold,
+          input$batch_min_intensity, input$noise_mode, input$sn_threshold, input$min_intensity,
+          input$ppm_tol, paste(input$adducts, collapse = ","), input$z_min, input$z_max,
+          input$max_oxid, input$h_offset, input$n_iso, input$use_envipat,
+          input$frag_tol_ppm, input$frag_z_max, sep = "#")
+  }
+
   .run_phase2_now <- function() {
     if (!isTRUE(rv$library_ready)) {
       rv$status_text <- "ERROR: generate the library first (\"1. Generate Library\").\n"
+      return()
+    }
+
+    sig <- .batch_signature()
+    reuse <- !isTRUE(input$batch_force_rerun) &&
+      !is.null(rv$batch_ms_results) && !identical(rv$batch_ms_results$source, "matrix") &&
+      identical(rv$batch_signature, sig)
+    if (reuse) {
+      # Same files, library, and settings as the last run: skip peak
+      # picking, envelope summing, and MS1/MS2 matching entirely, and only
+      # recompute statistics/quantification from the current sample table.
+      withProgress(message = "Reusing existing batch results...", value = 0.5, {
+        .recompute_stats_and_quant()
+      })
+      rv$status_text <- paste0(
+        "Reused existing batch results -- peak picking and matching were NOT re-run ",
+        "(same files, library, and settings). Statistics and quantification were ",
+        "recomputed from the current sample table. Tick \"Force re-run\" on the Batch ",
+        "Processing tab to re-process the raw files.\n", rv$status_text)
+      showNotification("Reused existing batch results; recomputed statistics and quantification.",
+                       type = "message", duration = 6)
       return()
     }
 
@@ -2755,6 +2999,7 @@ server <- function(input, output, session) {
       progress_next(prog)
       rv$batch_features <- NULL
       rv$batch_ms_results <- NULL
+      rv$batch_signature <- NULL
       rv$sample_meta <- NULL
       rv$stats_results <- NULL
       rv$kind_stats_results <- NULL
@@ -2864,8 +3109,10 @@ server <- function(input, output, session) {
 
         if (!is.null(batch_out)) {
           rv$batch_features <- batch_out$features
+          batch_out$results$source <- "raw"
           rv$batch_ms_results <- batch_out$results
           rv$sample_meta <- batch_out$meta
+          rv$batch_signature <- sig
 
           .recompute_stats_and_quant()
         }
@@ -3288,7 +3535,13 @@ server <- function(input, output, session) {
     # standard points, no standard-type rows, ...) via its own "note"
     # column, so gating the whole panel on absolute/relative having actual
     # rows used to hide that explanation right when it was most needed.
-    !is.null(q) && (nrow(q$absolute) > 0 || nrow(q$relative) > 0 || length(q$calibration_curves) > 0)
+    # Must be the STRING "true"/"false" like every other *_ready flag: the
+    # conditionalPanel compares output.quant_ready == 'true', and a logical
+    # TRUE arrives in the browser as JSON true, which never equals 'true'
+    # -- that mismatch kept the whole Calibration Curves panel hidden.
+    ok <- !is.null(q) && (nrow(q$absolute) > 0 || nrow(q$relative) > 0 ||
+                          length(q$calibration_curves) > 0 || length(q$notes) > 0)
+    if (ok) "true" else "false"
   })
   outputOptions(output, "quant_ready", suspendWhenHidden = FALSE)
 
@@ -3340,10 +3593,27 @@ server <- function(input, output, session) {
   # (selected under "Calibration & Quantification (Advanced)") -- same
   # source .calibration_curves_display() reads, so the selector and the
   # table below always agree on which metabolites exist here.
+  output$quant_notes <- renderUI({
+    notes <- rv$quant_results$notes
+    if (is.null(notes) || length(notes) == 0) return(NULL)
+    tags$p(style = "font-size: 11px; color: #B45309; margin-bottom: 6px;",
+           paste(notes, collapse = "; "))
+  })
+
   output$calib_curve_selector <- renderUI({
     cc <- rv$quant_results$calibration_curves
-    req(length(cc) > 0)
-    met_names <- vapply(cc, function(c) c$met_id, character(1))
+    if (length(cc) == 0) {
+      return(tags$p(style = "font-size: 12px; color: #a3231b;",
+        "No calibration curve yet: pick the metabolite(s) to calibrate under ",
+        "\"Calibration & Quantification\" in the sidebar, and mark the calibrators ",
+        "in the sample table (Sample Type = standard, with a Concentration). ",
+        "The curve updates as soon as a metabolite is selected."))
+    }
+    m <- rv$batch_ms_results$ms1_matches
+    met_names <- vapply(names(cc), function(id) {
+      nm <- if (!is.null(m)) unique(m$met_name[m$met_id == id])[1] else NA_character_
+      if (is.na(nm) || identical(nm, id)) id else paste0(nm, " (", id, ")")
+    }, character(1))
     selectInput("calib_curve_met_select", "Metabolite", choices = stats::setNames(names(cc), met_names))
   })
 
@@ -3624,6 +3894,29 @@ server <- function(input, output, session) {
                   options = list(pageLength = 10, scrollX = TRUE))
   })
 
+  .degradation_vs_ref <- reactive({
+    deg <- rv$batch_ms_results$degradation
+    if (is.null(deg) || is.null(deg$per_sample) || nrow(deg$per_sample) == 0) return(data.frame())
+    degradation_vs_reference(deg$per_sample, reference_timepoint = .resolve_reference_timepoint())
+  })
+
+  output$plot_degradation_vs_ref <- renderPlot({
+    plot_degradation_vs_reference(.degradation_vs_ref())
+  })
+
+  output$degradation_vs_ref_table <- DT::renderDT({
+    df <- .degradation_vs_ref()
+    req(nrow(df) > 0)
+    DT::datatable(df, rownames = FALSE, options = list(pageLength = 10, scrollX = TRUE)) |>
+      DT::formatRound(c("mean_parent_signal", "sd_parent_signal", "mean_pct_degradation",
+                        "sd_pct_degradation"), digits = 2)
+  })
+
+  output$dl_degradation_vs_ref_csv <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_degradation_vs_reference.csv"),
+    content = function(file) utils::write.csv(.degradation_vs_ref(), file, row.names = FALSE)
+  )
+
   output$dl_degradation_csv <- downloadHandler(
     filename = function() paste0(input$output_prefix, "_degradation_summary.csv"),
     content = function(file) {
@@ -3897,6 +4190,27 @@ server <- function(input, output, session) {
   # genuinely distinct raw-vs-grouped ones (see the Data Matrix tab's own
   # note; the Charge Grouping panel's "Re-run Aggregation" is a placeholder
   # for building a real second, post-hoc-grouped matrix).
+  # Batch Results tab export: always raw signal (area if the run produced
+  # it, else intensity), in exactly the layout read_data_matrix() reads back
+  # -- the hand-off point between identification and matrix-only analysis.
+  output$dl_bp_matrix_wide <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_data_matrix_wide.csv"),
+    content = function(file) {
+      req(rv$batch_ms_results)
+      utils::write.csv(export_data_matrix(rv$batch_ms_results$ms1_matches, format = "wide"),
+                       file, row.names = FALSE, na = "")
+    }
+  )
+  output$dl_bp_matrix_long <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_data_matrix_long.csv"),
+    content = function(file) {
+      req(rv$batch_ms_results)
+      utils::write.csv(export_data_matrix(rv$batch_ms_results$ms1_matches, batch_meta_data(),
+                                          format = "long"),
+                       file, row.names = FALSE, na = "")
+    }
+  )
+
   output$dl_data_matrix_wide <- downloadHandler(
     filename = function() paste0(input$output_prefix, "_data_matrix_wide.csv"),
     content = function(file) {

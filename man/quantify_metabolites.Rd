@@ -46,11 +46,13 @@ own calibration curve. Every other metabolite actually present in
 metabolite -- see \code{\link[=fit_calibration_curve]{fit_calibration_curve()}}.}
 }
 \value{
-\code{list(absolute, calibration_curves, relative)}: \code{absolute} and
-\code{relative} are the \code{quant}/result data.frames from
+\code{list(absolute, calibration_curves, relative, notes)}: \code{absolute}
+and \code{relative} are the \code{quant}/result data.frames from
 \code{\link[=quantify_absolute]{quantify_absolute()}}/\code{\link[=quantify_relative]{quantify_relative()}} respectively;
 \code{calibration_curves} is the named list of fitted curves from
-\code{\link[=quantify_absolute]{quantify_absolute()}}.
+\code{\link[=quantify_absolute]{quantify_absolute()}}; \code{notes} says why the relative half is empty
+when its design prerequisites (control group, timepoints) are missing.
+A missing prerequisite never blocks the calibration curves.
 }
 \description{
 Splits every metabolite present in \code{batch_matches} into the

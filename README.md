@@ -315,6 +315,60 @@ Requires Python 3.9+ with `inst/python/requirements.txt` installed
 (`pip install -r inst/python/requirements.txt`); everything else in the
 package works without it.
 
+## Analysis from a pre-processed data matrix
+
+Peak picking, envelope summing, and MS1/MS2 matching only need to run once.
+After identification, download the data matrix from **Batch Processing >
+Batch Results** (wide or long `.csv`). Every later analysis can start from
+that file. Set **Data Source** to *Pre-processed data matrix*, upload the
+matrix and a sample information sheet, and the app runs statistics,
+calibration curves, back-calculated concentrations of unknowns, relative
+quantification, and degradation against an earlier timepoint on the matrix
+alone. Python and raw files are not needed for this path.
+
+Accepted inputs (`.csv`, `.tsv`, `.txt`, `.xlsx`; `.xls` with `readxl`):
+
+| Layout | Columns |
+|---|---|
+| Wide | `met_id` (optional `met_name`, `kind`), then one numeric column per sample |
+| Long | `sample`, `met_id`, `intensity` or `area`; optional `group`, `timepoint`, `sample_type`, `concentration` |
+| Sample info | `sample`, `group`, `timepoint`, `sample_type`, `concentration` |
+
+Common header variants are recognized (`Sample Name`, `Time`, `Conc`,
+`Type`, `Compound`, `Area`), and sample types such as `Std`, `QC`,
+`Blank`, or `Matrix Blank` map onto the controlled vocabulary. Pick the
+metabolites to calibrate in **Calibration & Quantification**; each one gets
+its own weighted curve from the `standard` rows, and the curve, fit table,
+and back-calculated concentrations update as soon as it is selected. All
+other metabolites are relative-quantified against the control group or the
+reference timepoint. A generated library (or a saved session JSON followed
+by **Generate Library**) is optional and only fills in metabolite names and
+classes. Without it, a `kind` column in the matrix, or an id such as
+`PARENT`, sets the parent for % degradation, and the **Parent (intact)
+species** dropdown overrides it.
+
+A bundled example lives in `inst/extdata/data_matrix_example/`: a
+5-level calibration in duplicate, three QCs, a reagent and a matrix blank,
+and a two-arm incubation (0/4/24/48 h, n = 3), in wide, long, and sample
+information form.
+
+```r
+m  <- read_data_matrix("data_matrix_wide.csv")$matches
+si <- read_sample_info("sample_info.csv")
+q  <- quantify_metabolites(m, si, absolute_met_ids = c("M01", "M02"),
+                           mode = "time_series", weighting = "1/x2")
+q$absolute        # back-calculated concentrations, %RE for standards and QCs
+deg <- degradation_summary(m, sample_meta = si)
+degradation_vs_reference(deg$per_sample)   # % parent remaining vs t0, per arm
+```
+
+With raw files, the app also keeps the processed results for the session.
+Running **Generate Empirical MS2 Library** and then **Run Batch
+Processing** on the same files and settings processes the files once; the
+second click only recomputes statistics and quantification from the current
+sample table. Tick **Force re-run of peak picking and matching** to process
+them again.
+
 ## LLM agent (experimental)
 
 An agent layer inspired by MSAgent (Li, Zhong, Liu *et al.*, bioRxiv 2026,
