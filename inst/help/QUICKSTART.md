@@ -94,6 +94,25 @@ through the batch mode's local-folder input, not file upload. The MS
 Matching sheet reports matches with ppm error, isotope-fit,
 envelope-consistency, and MS2 confirmation scores.
 
+## 6. Start from a data matrix instead of raw files
+
+Once identification has run, download the data matrix from **Batch
+Processing > Batch Results**. Next time, open **Batch Processing**, set
+**Data Source** to *Pre-processed data matrix*, and upload:
+
+1. the matrix (`.csv`, `.tsv`, `.txt`, or `.xlsx`, wide or long), and
+2. the sample information sheet (`sample`, `group`, `timepoint`,
+   `sample_type`, `concentration`). Either file can go first.
+
+Mark calibrators as `sample_type = standard` with a concentration, QCs as
+`quality_control`, blanks as `reagent_blank`/`matrix_blank`. Select the
+metabolites to calibrate under **Calibration & Quantification**. The
+**Calibration Curves** tab shows each curve, its fit, and back-calculated
+concentrations for QCs and unknowns. **Degradation Summary** shows %
+parent remaining and % degradation against the reference timepoint (set on
+the Statistical Analysis tab, default earliest). No peak picking runs on
+this path. Try it with `inst/extdata/data_matrix_example/`.
+
 ---
 
 *OligoMetProfiler — Nishikant Wase, PhD. MIT licence. Research use

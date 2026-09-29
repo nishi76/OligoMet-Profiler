@@ -935,11 +935,13 @@ quantify_relative <- function(batch_matches, met_ids, sample_meta,
 #' @param signal_col Which column to use as signal; `NULL` auto-detects.
 #' @param min_points Minimum calibration standard points required per
 #'   metabolite -- see [fit_calibration_curve()].
-#' @return `list(absolute, calibration_curves, relative)`: `absolute` and
-#'   `relative` are the `quant`/result data.frames from
+#' @return `list(absolute, calibration_curves, relative, notes)`: `absolute`
+#'   and `relative` are the `quant`/result data.frames from
 #'   [quantify_absolute()]/[quantify_relative()] respectively;
 #'   `calibration_curves` is the named list of fitted curves from
-#'   [quantify_absolute()].
+#'   [quantify_absolute()]; `notes` says why the relative half is empty
+#'   when its design prerequisites (control group, timepoints) are missing.
+#'   A missing prerequisite never blocks the calibration curves.
 #' @examples
 #' \dontrun{
 #' quant <- quantify_metabolites(
@@ -958,7 +960,8 @@ quantify_metabolites <- function(batch_matches, sample_meta, absolute_met_ids = 
   mode <- match.arg(mode)
   weighting <- match.arg(weighting)
   if (is.null(batch_matches) || nrow(batch_matches) == 0) {
-    return(list(absolute = data.frame(), calibration_curves = list(), relative = data.frame()))
+    return(list(absolute = data.frame(), calibration_curves = list(), relative = data.frame(),
+                notes = "no matches to quantify"))
   }
 
   all_met_ids <- unique(batch_matches$met_id)
@@ -970,11 +973,35 @@ quantify_metabolites <- function(batch_matches, sample_meta, absolute_met_ids = 
                        signal_col = signal_col, min_points = min_points)
   } else list(quant = data.frame(), curves = list())
 
-  rel_res <- if (length(relative_met_ids) > 0) {
-    quantify_relative(batch_matches, relative_met_ids, sample_meta, mode = mode,
-                       control_group = control_group, reference_timepoint = reference_timepoint,
-                       signal_col = signal_col)
-  } else data.frame()
+  # The relative half has design prerequisites (a control group, or a
+  # timepoint column) that a calibration-only run does not have -- e.g. a
+  # batch of standards with Group/Timepoint left blank. Checked here, and
+  # any failure is caught, so it can never take the calibration curves
+  # above down with it; the reason is returned in `notes` instead.
+  notes <- character(0)
+  rel_res <- data.frame()
+  if (length(relative_met_ids) > 0) {
+    has_col <- function(col) col %in% names(sample_meta) &&
+      any(!is.na(sample_meta[[col]]) & nzchar(as.character(sample_meta[[col]])))
+    if (mode == "group" && (is.null(control_group) || length(control_group) == 0 ||
+                            !nzchar(control_group))) {
+      notes <- c(notes, "relative quantification skipped: no control group selected")
+    } else if (mode == "group" && !has_col("group")) {
+      notes <- c(notes, "relative quantification skipped: no Group values in sample_meta")
+    } else if (mode == "time_series" && !has_col("timepoint")) {
+      notes <- c(notes, "relative quantification skipped: no Timepoint values in sample_meta")
+    } else {
+      rel_res <- tryCatch(
+        quantify_relative(batch_matches, relative_met_ids, sample_meta, mode = mode,
+                           control_group = control_group, reference_timepoint = reference_timepoint,
+                           signal_col = signal_col),
+        error = function(e) {
+          notes <<- c(notes, paste0("relative quantification failed: ", conditionMessage(e)))
+          data.frame()
+        })
+    }
+  }
 
-  list(absolute = abs_res$quant, calibration_curves = abs_res$curves, relative = rel_res)
+  list(absolute = abs_res$quant, calibration_curves = abs_res$curves, relative = rel_res,
+       notes = notes)
 }

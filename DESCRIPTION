@@ -47,7 +47,8 @@ Imports:
     stats,
     utils,
     grDevices,
-    graphics
+    graphics,
+    tools
 Suggests:
     shiny,
     DT,
@@ -58,6 +59,7 @@ Suggests:
     rmarkdown,
     knitr,
     zip,
+    readxl,
     testthat (>= 3.0.0),
     Spectra,
     mzR
