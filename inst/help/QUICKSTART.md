@@ -94,7 +94,19 @@ through the batch mode's local-folder input, not file upload. The MS
 Matching sheet reports matches with ppm error, isotope-fit,
 envelope-consistency, and MS2 confirmation scores.
 
-## 6. Start from a data matrix instead of raw files
+## 6. Quantitation signal: summed XICs
+
+With raw files, **Targeted summed-XIC quantitation** (Batch Processing >
+Processing Options, on by default) sums the XICs of the chosen charge
+states x isotopes and integrates them once per sample, the way Chromeleon
+sums a component's ions. Defaults: 5 charge states (ranked on the
+standards) x 5 isotopes (ranked by theoretical abundance), +/-10 ppm,
++/-0.5 min search window. Open the **XIC Quantitation** tab to see where
+the signal is. If the charge-state distribution differs between standards
+and samples, type a fixed list covering it (e.g. `3-8`) in **Fixed charge
+states**. The counts and the list re-sum instantly.
+
+## 7. Start from a data matrix instead of raw files
 
 Once identification has run, download the data matrix from **Batch
 Processing > Batch Results**. Next time, open **Batch Processing**, set
