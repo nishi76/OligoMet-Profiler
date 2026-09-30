@@ -315,6 +315,60 @@ Requires Python 3.9+ with `inst/python/requirements.txt` installed
 (`pip install -r inst/python/requirements.txt`); everything else in the
 package works without it.
 
+## Targeted summed-XIC quantitation
+
+Identification and quantitation are separate steps. The charge-envelope
+deconvolution finds and identifies metabolites. The quantitative signal
+then comes from a Chromeleon-style summation of ions: for every identified
+metabolite, the extracted-ion chromatograms (XICs) of a fixed ion list
+(charge states x isotope clusters, each within +/-ppm) are summed scan by
+scan and integrated once, over one window with a linear baseline between
+the peak start and end. It is on by default in **Batch Processing >
+Processing Options** (**Targeted summed-XIC quantitation**) and costs one
+extra streaming pass per file.
+
+How the ion list is chosen, per metabolite, then fixed for every sample:
+
+- **Isotopes** are ranked by theoretical abundance of the nominal isotope
+  clusters (fine structure such as 13C2 vs 34S merged). For a 7 kDa
+  phosphorothioate the most abundant cluster is M+4; the monoisotopic peak
+  carries about 2% of the signal.
+- **Charge states** are ranked by summed signal in the calibration
+  standards and QCs (all samples when there are none), or taken from a
+  fixed list such as `3-8`.
+- Every candidate ion (all charges in the library's z range x the 10 most
+  abundant clusters) is extracted and integrated over the shared window, so
+  changing the number of charges or isotopes, or the fixed list, re-sums
+  instantly without re-reading the raw files. Tolerance and RT-window
+  changes re-run the extraction.
+
+The **XIC Quantitation** tab shows a charge x isotope map of where the
+signal is (outlined = summed), the summed chromatograms with each sample's
+integration window, the ion list per metabolite with the share of candidate
+signal it captures, and the per-sample areas. The summed-XIC area replaces
+the envelope area everywhere downstream: calibration curves, relative
+quantification, degradation, statistics, and the data-matrix export.
+
+**How many charge states and isotopes.** Cover the bulk of the charge-state
+distribution in *every* sample type, not only the standards. The
+distribution moves with matrix, mobile phase, and ion-pairing conditions;
+charge is conserved, so a broad set stays proportional to amount when the
+distribution shifts, while a narrow set does not. For a 7 kDa PS oligo:
+
+| Choice | Share of signal summed | Notes |
+|---|---|---|
+| Isotopes: top 3 | ~47% of each envelope | |
+| Isotopes: top 5 | ~71% | default; good S/N gain per ion added |
+| Isotopes: top 7 | ~86% | worth it at the LLOQ |
+| Charges: top 3 | ~60% of the envelope signal | sensitive to distribution shifts |
+| Charges: all states >= ~10% of the base charge state (typically 5-6 for 6-8 kDa) | ~90-95% | recommended |
+
+The bundled example `inst/extdata/xic_example/` (5-level curve, QCs, a
+blank, and four unknowns, two of them with a shifted charge-state
+distribution) shows the effect: automatic top-5 charges (z 4-8, picked on
+the standards) read the shifted unknowns 13% low, while a fixed `3-8`
+recovers them within 1%.
+
 ## Analysis from a pre-processed data matrix
 
 Peak picking, envelope summing, and MS1/MS2 matching only need to run once.

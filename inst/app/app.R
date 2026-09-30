@@ -46,7 +46,7 @@ if (!is.null(.module_dir)) {
                "chemistry_dict.R", "oligo_io.R",
                "metabolites.R", "mass_isotope.R", "fragments.R",
                "ms_matching.R", "spectra_io.R", "batch_ms_processing.R", "statistics.R",
-               "degradation.R", "multivariate.R", "blank_correction.R", "data_matrix.R",
+               "degradation.R", "multivariate.R", "blank_correction.R", "data_matrix.R", "xic_quant.R",
                "build_workbook.R", "build_report.R",
                "export_acquisition.R", "export_spectral.R", "mirror_plot.R",
                "agent_tools.R", "agent_core.R")) {
@@ -209,6 +209,7 @@ options(shiny.maxRequestSize = 20 * 1024^3)  # 20 GB
   "enable_ms", "ppm_tol", "noise_mode", "min_intensity", "sn_threshold",
   "adducts", "frag_tol_ppm", "frag_z_max",
   "enable_batch", "batch_run_ms2", "batch_n_workers", "batch_deconv_ppm",
+  "xic_enable", "xic_n_charges", "xic_n_iso", "xic_charges", "xic_ppm", "xic_rt_window",
   "batch_noise_mode", "batch_min_intensity", "batch_sn_threshold", "batch_dir",
   "man_bases", "man_sugars", "man_linkages"
 )
@@ -248,6 +249,12 @@ options(shiny.maxRequestSize = 20 * 1024^3)  # 20 GB
   frag_z_max     = function(s, v) updateNumericInput(s, "frag_z_max", value = v),
   enable_batch   = function(s, v) updateCheckboxInput(s, "enable_batch", value = v),
   batch_run_ms2  = function(s, v) updateCheckboxInput(s, "batch_run_ms2", value = v),
+  xic_enable     = function(s, v) updateCheckboxInput(s, "xic_enable", value = v),
+  xic_n_charges  = function(s, v) updateNumericInput(s, "xic_n_charges", value = v),
+  xic_n_iso      = function(s, v) updateNumericInput(s, "xic_n_iso", value = v),
+  xic_charges    = function(s, v) updateTextInput(s, "xic_charges", value = v),
+  xic_ppm        = function(s, v) updateNumericInput(s, "xic_ppm", value = v),
+  xic_rt_window  = function(s, v) updateNumericInput(s, "xic_rt_window", value = v),
   batch_n_workers  = function(s, v) updateNumericInput(s, "batch_n_workers", value = v),
   batch_deconv_ppm = function(s, v) updateNumericInput(s, "batch_deconv_ppm", value = v),
   batch_noise_mode = function(s, v) updateRadioButtons(s, "batch_noise_mode", selected = v),
@@ -949,7 +956,35 @@ ui <- fluidPage(
                      "Off (default): once raw files are processed (here or via Generate ",
                      "Empirical MS2 Library), Run Batch Processing reuses those results and ",
                      "only recomputes statistics and quantification from the current sample ",
-                     "table. Files or processing settings that changed trigger a full re-run.")
+                     "table. Files or processing settings that changed trigger a full re-run."),
+              tags$hr(style = "margin: 8px 0;"),
+              checkboxInput("xic_enable",
+                            .with_info("Targeted summed-XIC quantitation",
+                              "Chromeleon-style summation of ions: for every identified metabolite, ",
+                              "the XICs of the chosen charge states x isotope clusters are summed ",
+                              "scan by scan and integrated once, over one window with a linear ",
+                              "baseline. Replaces the single-envelope area as the quantitative signal."),
+                            value = TRUE),
+              conditionalPanel(
+                condition = "input.xic_enable == true",
+                fluidRow(
+                  column(6, numericInput("xic_n_charges", "Charge states to sum", value = 5, min = 1, max = 20)),
+                  column(6, numericInput("xic_n_iso", "Isotopes to sum", value = 5, min = 1, max = 10))
+                ),
+                textInput("xic_charges", "Fixed charge states (optional)", value = "",
+                          placeholder = "e.g. 3-8; blank = top N from the standards"),
+                fluidRow(
+                  column(6, numericInput("xic_ppm", "XIC tolerance (\u00b1ppm)", value = 10, min = 1, max = 50)),
+                  column(6, numericInput("xic_rt_window", "RT search (\u00b1min)", value = 0.5,
+                                         min = 0.05, max = 5, step = 0.05))
+                ),
+                tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -6px;",
+                       "Isotopes are ranked by theoretical abundance; charge states by summed ",
+                       "signal in the calibration standards/QCs, then fixed for every sample. ",
+                       "Changing the counts or the fixed list re-sums instantly (no re-extraction); ",
+                       "tolerance and RT window changes re-run the extraction. See the XIC ",
+                       "Quantitation tab for how much signal each ion carries.")
+              )
             )
           ),
           tags$details(class = "adv-panel", open = NA,
@@ -1025,6 +1060,40 @@ ui <- fluidPage(
                 tags$p(style = "padding-top: 12px; color: #6c757d;",
                        "Upload files (Empirical MS2 Library tab) and click Run Batch Processing, ",
                        "or load a pre-processed data matrix, to see results here.")
+              )
+            ),
+            tabPanel("XIC Quantitation",
+              conditionalPanel(
+                condition = "output.xic_ready == 'true'",
+                tags$div(style = "padding-top: 12px;",
+                  uiOutput("xic_met_selector"),
+                  tags$h6("Where the signal is: charge state x isotope"),
+                  plotOutput("plot_xic_contributions", height = "340px"),
+                  tags$p(style = "font-size: 10.5px; color: #6c757d;",
+                    "Each cell is that ion's share of all extracted candidate signal in the ",
+                    "reference samples (standards/QCs, else all). Outlined cells are the ions ",
+                    "being summed. Aim for a set that covers the bulk of the distribution in ",
+                    "every sample type, not just the standards."),
+                  tags$h6("Summed XIC chromatograms"),
+                  plotOutput("plot_xic_traces", height = "320px"),
+                  tags$hr(),
+                  tags$h6("Ion selection per metabolite"),
+                  DT::DTOutput("xic_selection_table"),
+                  tags$hr(),
+                  tags$h6("Summed-XIC areas (the quantitative signal)"),
+                  DT::DTOutput("xic_quant_table"),
+                  tags$div(style = "height: 8px;"),
+                  fluidRow(
+                    column(6, downloadButton("dl_xic_quant_csv", "Summed-XIC areas (.csv)", class = "btn-outline-primary w-100")),
+                    column(6, downloadButton("dl_xic_ions_csv", "Per-ion areas (.csv)", class = "btn-outline-primary w-100"))
+                  )
+                )
+              ),
+              conditionalPanel(
+                condition = "output.xic_ready != 'true'",
+                tags$p(style = "padding-top: 12px; color: #6c757d;",
+                  "Run Batch Processing on raw files with \"Targeted summed-XIC quantitation\" ",
+                  "ticked to see the ion map, chromatograms, and areas here.")
               )
             ),
             tabPanel("Unidentified Peaks",
@@ -1908,7 +1977,7 @@ server <- function(input, output, session) {
   .quantifiable_mets <- reactive({
     bres <- rv$batch_ms_results
     if (!is.null(bres) && !is.null(bres$ms1_matches) && nrow(bres$ms1_matches) > 0) {
-      mi <- unique(bres$ms1_matches[, c("met_id", "met_name")])
+      mi <- unique(.qm(bres)[, c("met_id", "met_name")])
       mi <- mi[!duplicated(mi$met_id), ]
       return(stats::setNames(mi$met_id, paste0(mi$met_name, " (", mi$met_id, ")")))
     }
@@ -1927,7 +1996,8 @@ server <- function(input, output, session) {
   # Picking calibrator metabolites, the weighting, or the control group
   # recomputes quantification on the spot from the results already in
   # memory -- no second click, and never a re-run of peak picking.
-  observeEvent(list(input$absolute_quant_mets, input$calibration_weighting, input$control_group), {
+  observeEvent(list(input$absolute_quant_mets, input$calibration_weighting, input$control_group,
+                    input$xic_n_charges, input$xic_n_iso, .xic_charges_d(), input$xic_enable), {
     bres <- rv$batch_ms_results
     if (!is.null(bres) && !is.null(bres$ms1_matches) && nrow(bres$ms1_matches) > 0) {
       .recompute_stats_and_quant()
@@ -2656,17 +2726,43 @@ server <- function(input, output, session) {
     if (!nzchar(val)) NULL else suppressWarnings(as.numeric(val))
   }
 
+  # The table every statistics/quantification consumer reads: summed-XIC
+  # areas when targeted XIC quantitation ran, else the identification
+  # matches (envelope areas, or an uploaded data matrix).
+  .qm <- function(bres = rv$batch_ms_results) {
+    if (!is.null(bres$quant_matches) && nrow(bres$quant_matches) > 0) bres$quant_matches
+    else bres$ms1_matches
+  }
+  .xic_charges_d <- debounce(reactive(input$xic_charges %||% ""), 800)
+
   .recompute_stats_and_quant <- function() {
     meta <- batch_meta_data()
     bres <- rv$batch_ms_results
     if (is.null(meta) || nrow(meta) == 0 || is.null(bres) || nrow(bres$ms1_matches) == 0) {
       return(invisible(NULL))
     }
+    # Summed-XIC areas become the quantitative signal when the XIC step ran:
+    # re-summed here from the stored per-ion areas with the CURRENT charge/
+    # isotope settings, so changing them never re-reads a raw file.
+    bres$quant_matches <- NULL
+    if (isTRUE(input$xic_enable) && !is.null(bres$xic) && nrow(bres$xic$ions) > 0) {
+      xs <- summarize_xic_quant(bres$xic$ions, meta,
+                                n_charges = input$xic_n_charges %||% 5,
+                                n_isotopes = input$xic_n_iso %||% 5,
+                                charges = parse_charge_spec(.xic_charges_d()))
+      bres$xic$summary <- xs
+      if (nrow(xs$quant) > 0) bres$quant_matches <- xs$quant
+    }
     # Add intensity_bcorr/area_bcorr alongside the raw columns (no-op if no
     # reagent_blank/matrix_blank samples are found) -- every consumer below
     # picks raw or corrected via .resolve_signal_col() and the toggle.
-    bres$ms1_matches <- apply_blank_correction(bres$ms1_matches, meta)
-    sig_col <- .resolve_signal_col(bres$ms1_matches)
+    if (!is.null(bres$quant_matches)) {
+      bres$quant_matches <- apply_blank_correction(bres$quant_matches, meta)
+    } else {
+      bres$ms1_matches <- apply_blank_correction(bres$ms1_matches, meta)
+    }
+    qm <- .qm(bres)
+    sig_col <- .resolve_signal_col(qm)
     rv$sample_meta <- meta
 
     has_group <- !is.null(meta$group) && any(nzchar(meta$group))
@@ -2683,7 +2779,7 @@ server <- function(input, output, session) {
           ga %in% groups && gb %in% groups && ga != gb) c(ga, gb) else groups[1:2]
     }
 
-    abund <- build_abundance_matrix(bres$ms1_matches, signal_col = sig_col)
+    abund <- build_abundance_matrix(qm, signal_col = sig_col)
     stats_res <- tryCatch({
       if (has_time) {
         sm <- meta[, c("sample", "timepoint")]
@@ -2711,7 +2807,7 @@ server <- function(input, output, session) {
     # Same comparison, but on kind-level (composition-class) totals instead
     # of per-metabolite abundance -- reuses the same compare_*() functions
     # unmodified (see build_kind_abundance_matrix() in R/statistics.R).
-    kind_abund <- build_kind_abundance_matrix(bres$ms1_matches, signal_col = sig_col)
+    kind_abund <- build_kind_abundance_matrix(qm, signal_col = sig_col)
     kind_stats_res <- tryCatch({
       if (has_time) {
         sm <- meta[, c("sample", "timepoint")]
@@ -2752,7 +2848,7 @@ server <- function(input, output, session) {
     }
     quant_res <- tryCatch({
       quantify_metabolites(
-        bres$ms1_matches, meta,
+        qm, meta,
         absolute_met_ids = input$absolute_quant_mets,
         mode = if (has_time) "time_series" else "group",
         control_group = if (has_time) NULL else control_group,
@@ -2774,7 +2870,7 @@ server <- function(input, output, session) {
     # (excludes standards/QC/blanks, joins group/timepoint -- see
     # degradation_summary()'s sample_meta argument).
     bres$degradation <- tryCatch(
-      degradation_summary(bres$ms1_matches, sample_meta = meta, signal_col = sig_col),
+      degradation_summary(qm, sample_meta = meta, signal_col = sig_col),
       error = function(e) {
         rv$status_text <- paste0(rv$status_text,
           "WARNING: degradation summary failed: ", conditionMessage(e), "\n")
@@ -2818,12 +2914,12 @@ server <- function(input, output, session) {
   output$signal_basis_note <- renderUI({
     bres <- rv$batch_ms_results
     meta <- batch_meta_data()
-    if (is.null(bres) || is.null(bres$ms1_matches) || nrow(bres$ms1_matches) == 0 ||
+    if (is.null(bres) || is.null(.qm(bres)) || nrow(.qm(bres)) == 0 ||
         is.null(meta) || nrow(meta) == 0) {
       return(tags$p(style = "font-size: 10px; color: #6c757d; margin-top: -6px;",
                     "No batch results yet."))
     }
-    blank <- compute_blank_signal(bres$ms1_matches, meta)
+    blank <- compute_blank_signal(.qm(bres), meta)
     if (nzchar(blank$note) && all(blank$table$n_blank == 0)) {
       tags$p(style = "font-size: 10px; color: #6c757d; margin-top: -6px;",
              "No reagent_blank/matrix_blank samples detected (by Sample Type or RB/MB in name).")
@@ -2888,7 +2984,8 @@ server <- function(input, output, session) {
           input$batch_min_intensity, input$noise_mode, input$sn_threshold, input$min_intensity,
           input$ppm_tol, paste(input$adducts, collapse = ","), input$z_min, input$z_max,
           input$max_oxid, input$h_offset, input$n_iso, input$use_envipat,
-          input$frag_tol_ppm, input$frag_z_max, sep = "#")
+          input$frag_tol_ppm, input$frag_z_max,
+          input$xic_enable, input$xic_ppm, input$xic_rt_window, sep = "#")
   }
 
   .run_phase2_now <- function() {
@@ -3091,6 +3188,33 @@ server <- function(input, output, session) {
             n_iso = input$n_iso, use_envipat = input$use_envipat,
             frag_tol_ppm = input$frag_tol_ppm, frag_z_range = 1:input$frag_z_max,
             sample_meta = batch_meta_data())
+
+          # Targeted summed-XIC quantitation: a second streaming pass over
+          # the same files, only for metabolites identified above. Failure
+          # here keeps the identification results and falls back to the
+          # envelope areas, with a warning.
+          batch_results$xic <- NULL
+          if (isTRUE(input$xic_enable) && nrow(batch_results$ms1_matches) > 0) {
+            incProgress(0, detail = "Targeted summed-XIC extraction")
+            batch_results$xic <- tryCatch({
+              tg <- build_xic_targets(mets, batch_results$ms1_matches, dict, z_range = z_range,
+                                      n_iso_candidates = 10, h_offset = input$h_offset,
+                                      use_envipat = input$use_envipat)
+              x <- run_xic_quantitation(resolved_paths, tg, ppm = input$xic_ppm %||% 10,
+                                        rt_window = input$xic_rt_window %||% 0.5,
+                                        n_workers = input$batch_n_workers,
+                                        progress = function(msg) incProgress(0, detail = msg))
+              x$ions$sample <- unname(name_map[x$ions$sample])
+              x$traces$sample <- unname(name_map[x$traces$sample])
+              x
+            }, error = function(e) {
+              message("Targeted XIC quantitation failed:\n", conditionMessage(e))
+              rv$status_text <- paste0(rv$status_text,
+                "WARNING: targeted XIC quantitation failed, using envelope areas instead: ",
+                conditionMessage(e), "\n")
+              NULL
+            })
+          }
 
           list(features = feats, results = batch_results, meta = batch_meta_data())
         }, error = function(e) {
@@ -3593,6 +3717,71 @@ server <- function(input, output, session) {
   # (selected under "Calibration & Quantification (Advanced)") -- same
   # source .calibration_curves_display() reads, so the selector and the
   # table below always agree on which metabolites exist here.
+  ## ---- XIC Quantitation tab ---------------------------------------------------
+  .xic_summary <- reactive({
+    x <- rv$batch_ms_results$xic
+    if (is.null(x) || is.null(x$summary)) return(NULL)
+    x$summary
+  })
+  output$xic_ready <- reactive({
+    xs <- .xic_summary()
+    if (!is.null(xs) && nrow(xs$selection) > 0) "true" else "false"
+  })
+  outputOptions(output, "xic_ready", suspendWhenHidden = FALSE)
+
+  output$xic_met_selector <- renderUI({
+    xs <- .xic_summary()
+    req(xs, nrow(xs$selection) > 0)
+    sel <- xs$selection
+    choices <- stats::setNames(sel$met_id, paste0(sel$met_name, " (", sel$met_id, ")"))
+    keep <- isolate(input$xic_met_select)
+    selectInput("xic_met_select", "Metabolite", choices = choices,
+                selected = if (!is.null(keep) && keep %in% sel$met_id) keep else sel$met_id[1])
+  })
+
+  output$plot_xic_contributions <- renderPlot({
+    xs <- .xic_summary()
+    req(xs, input$xic_met_select)
+    plot_xic_contributions(xs$contributions, input$xic_met_select)
+  })
+
+  output$plot_xic_traces <- renderPlot({
+    xs <- .xic_summary()
+    req(xs, input$xic_met_select)
+    plot_xic_traces(rv$batch_ms_results$xic$traces, xs$quant, input$xic_met_select)
+  })
+
+  output$xic_selection_table <- DT::renderDT({
+    xs <- .xic_summary()
+    req(xs)
+    DT::datatable(xs$selection, rownames = FALSE, options = list(pageLength = 10, scrollX = TRUE)) |>
+      DT::formatRound(c("rt_expected", "pct_candidate_signal"), digits = 2)
+  })
+
+  output$xic_quant_table <- DT::renderDT({
+    xs <- .xic_summary()
+    req(xs, nrow(xs$quant) > 0)
+    DT::datatable(xs$quant, rownames = FALSE,
+                  options = list(pageLength = 10, scrollX = TRUE)) |>
+      DT::formatRound(c("area", "intensity", "sn"), digits = 1) |>
+      DT::formatRound(c("rt", "rt_start", "rt_end"), digits = 3)
+  })
+
+  output$dl_xic_quant_csv <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_summed_xic_areas.csv"),
+    content = function(file) {
+      xs <- .xic_summary(); req(xs)
+      utils::write.csv(xs$quant, file, row.names = FALSE)
+    }
+  )
+  output$dl_xic_ions_csv <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_xic_per_ion_areas.csv"),
+    content = function(file) {
+      x <- rv$batch_ms_results$xic; req(x)
+      utils::write.csv(x$ions, file, row.names = FALSE)
+    }
+  )
+
   output$quant_notes <- renderUI({
     notes <- rv$quant_results$notes
     if (is.null(notes) || length(notes) == 0) return(NULL)
@@ -3609,7 +3798,7 @@ server <- function(input, output, session) {
         "in the sample table (Sample Type = standard, with a Concentration). ",
         "The curve updates as soon as a metabolite is selected."))
     }
-    m <- rv$batch_ms_results$ms1_matches
+    m <- .qm()
     met_names <- vapply(names(cc), function(id) {
       nm <- if (!is.null(m)) unique(m$met_name[m$met_id == id])[1] else NA_character_
       if (is.na(nm) || identical(nm, id)) id else paste0(nm, " (", id, ")")
@@ -3966,11 +4155,11 @@ server <- function(input, output, session) {
     if (sr$mode == "two_group") {
       plot_volcano(sr$result)
     } else if (sr$mode == "time_series") {
-      abund <- build_abundance_matrix(rv$batch_ms_results$ms1_matches)
+      abund <- build_abundance_matrix(.qm(), signal_col = .auto_signal_col(.qm()))
       long <- abundance_long(abund, .study_sample_meta()[, c("sample", "timepoint")])
       plot_trend(long, input$stats_met_select)
     } else {
-      abund <- build_abundance_matrix(rv$batch_ms_results$ms1_matches)
+      abund <- build_abundance_matrix(.qm(), signal_col = .auto_signal_col(.qm()))
       long <- abundance_long(abund, .study_sample_meta()[, c("sample", "group")])
       plot_group_boxplot(long, input$stats_met_select)
     }
@@ -4032,15 +4221,17 @@ server <- function(input, output, session) {
       updateSelectizeInput(session, "mv_met_ids", choices = character(0))
       return()
     }
-    met_info <- unique(bres$ms1_matches[, c("met_id", "met_name")])
+    qm <- .qm(bres)
+    met_info <- unique(qm[, c("met_id", "met_name")])
+    met_info <- met_info[!duplicated(met_info$met_id), ]
     choices <- stats::setNames(met_info$met_id, paste0(met_info$met_name, " (", met_info$met_id, ")"))
 
     # Time Course default: top few metabolites by total signal, so the
     # trend plot isn't empty (nothing selected) or unreadable (every
     # metabolite at once) the first time this tab is opened.
-    sig_col <- if ("area" %in% names(bres$ms1_matches) && any(!is.na(bres$ms1_matches$area))) "area" else "intensity"
+    sig_col <- if ("area" %in% names(qm) && any(!is.na(qm$area))) "area" else "intensity"
     tot <- stats::aggregate(stats::as.formula(paste(sig_col, "~ met_id")),
-                             data = bres$ms1_matches, FUN = sum, na.rm = TRUE)
+                             data = qm, FUN = sum, na.rm = TRUE)
     top_default <- tot$met_id[order(-tot[[sig_col]])][seq_len(min(6, nrow(tot)))]
     keep_tc <- intersect(isolate(input$tc_met_ids), met_info$met_id)
     updateSelectizeInput(session, "tc_met_ids", choices = choices,
@@ -4060,7 +4251,7 @@ server <- function(input, output, session) {
     meta$timepoint <- suppressWarnings(as.numeric(meta$timepoint))
     meta <- meta[!is.na(meta$timepoint), c("sample", "timepoint")]
     if (nrow(meta) == 0) return(data.frame())
-    abund <- build_abundance_matrix(bres$ms1_matches)
+    abund <- build_abundance_matrix(.qm(bres), signal_col = .auto_signal_col(.qm(bres)))
     abundance_long(abund, meta)
   })
 
@@ -4112,8 +4303,8 @@ server <- function(input, output, session) {
                   dropped_zero_variance = character(0), note = "no batch results yet"))
     }
     met_ids <- if (length(input$mv_met_ids) > 0) input$mv_met_ids else NULL
-    run_pca(bres$ms1_matches, sample_meta = rv$sample_meta, met_ids = met_ids,
-            signal_col = .resolve_signal_col(bres$ms1_matches),
+    run_pca(.qm(bres), sample_meta = rv$sample_meta, met_ids = met_ids,
+            signal_col = .resolve_signal_col(.qm(bres)),
             log_transform = isTRUE(input$mv_log), scale = isTRUE(input$mv_scale))
   })
 
@@ -4126,8 +4317,8 @@ server <- function(input, output, session) {
     met_ids <- if (length(input$mv_met_ids) > 0) input$mv_met_ids else NULL
     k <- suppressWarnings(as.integer(input$mv_k))
     if (is.na(k) || k < 2) k <- 2
-    run_hclust(bres$ms1_matches, sample_meta = rv$sample_meta, met_ids = met_ids,
-               signal_col = .resolve_signal_col(bres$ms1_matches),
+    run_hclust(.qm(bres), sample_meta = rv$sample_meta, met_ids = met_ids,
+               signal_col = .resolve_signal_col(.qm(bres)),
                log_transform = isTRUE(input$mv_log), scale = isTRUE(input$mv_scale), k = k)
   })
 
@@ -4197,7 +4388,7 @@ server <- function(input, output, session) {
     filename = function() paste0(input$output_prefix, "_data_matrix_wide.csv"),
     content = function(file) {
       req(rv$batch_ms_results)
-      utils::write.csv(export_data_matrix(rv$batch_ms_results$ms1_matches, format = "wide"),
+      utils::write.csv(export_data_matrix(.qm(), format = "wide"),
                        file, row.names = FALSE, na = "")
     }
   )
@@ -4205,7 +4396,7 @@ server <- function(input, output, session) {
     filename = function() paste0(input$output_prefix, "_data_matrix_long.csv"),
     content = function(file) {
       req(rv$batch_ms_results)
-      utils::write.csv(export_data_matrix(rv$batch_ms_results$ms1_matches, batch_meta_data(),
+      utils::write.csv(export_data_matrix(.qm(), batch_meta_data(),
                                           format = "long"),
                        file, row.names = FALSE, na = "")
     }
@@ -4215,7 +4406,7 @@ server <- function(input, output, session) {
     filename = function() paste0(input$output_prefix, "_data_matrix_wide.csv"),
     content = function(file) {
       req(rv$batch_ms_results)
-      m <- rv$batch_ms_results$ms1_matches
+      m <- .qm()
       utils::write.csv(build_abundance_matrix(m, signal_col = .resolve_signal_col(m)), file, row.names = FALSE)
     }
   )
@@ -4223,7 +4414,7 @@ server <- function(input, output, session) {
     filename = function() paste0(input$output_prefix, "_data_matrix_long.csv"),
     content = function(file) {
       req(rv$batch_ms_results, rv$sample_meta)
-      m <- rv$batch_ms_results$ms1_matches
+      m <- .qm()
       abund <- build_abundance_matrix(m, signal_col = .resolve_signal_col(m))
       utils::write.csv(abundance_long(abund, rv$sample_meta), file, row.names = FALSE)
     }
@@ -4233,7 +4424,7 @@ server <- function(input, output, session) {
     req(rv$batch_ms_results, nrow(rv$batch_ms_results$ms1_matches) > 0)
     meta <- batch_meta_data()
     req(nrow(meta) > 0)
-    compute_blank_signal(rv$batch_ms_results$ms1_matches, meta)$table
+    compute_blank_signal(.qm(), meta)$table
   })
 
   output$blank_correction_table <- DT::renderDT({
