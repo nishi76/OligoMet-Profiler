@@ -1,5 +1,5 @@
-sample,true_concentration,csd
-U1,20,normal
-U2,80,normal
-U3,200,shifted
-U4,300,shifted
+sample,true_concentration,csd,is_note
+U1,20,normal,
+U2,80,normal,IS under-spiked to 35%
+U3,200,shifted,
+U4,300,shifted,

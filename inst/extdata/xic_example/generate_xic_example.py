@@ -13,7 +13,7 @@ chromatography, CSD, and noise. Fixed seeds, so the output is reproducible.
 Design (sample_meta.csv):
   * 5-level calibration, n=2 (1, 5, 25, 100, 500 ng/mL), sample_type standard
   * QCs at 3, 50, 400 ng/mL
-  * one reagent blank (RB_01)
+  * one zero blank (RB_01): matrix + internal standard, no analyte
   * four unknowns (U1..U4 at 20, 80, 200, 300 ng/mL) carrying 10% of their
     parent amount as the 3' N-1 metabolite. U3 and U4 have a SHIFTED CSD
     (z=3 up, z=7/8 down), the way a different matrix or ion-pairing
@@ -21,6 +21,13 @@ Design (sample_meta.csv):
     matters.
 CSD modelled on a real 7 kDa PS-oligo full scan: z3..z9 relative apex
 0.42, 0.55, 0.64, 0.88, 1.00, 0.58, 0.13.
+
+Internal standard: an analog 16-mer gapmer (IS01 in theoretical_clusters.json,
+second record of sequences.fasta) spiked at a constant amount into every
+sample except U2, where it is under-spiked to 35% (an IS pipetting error the
+IS response monitor should flag). Every injection also gets a random volume
+factor (0.8-1.2) that scales analyte and IS alike -- the variability an IS
+corrects for.
 """
 from __future__ import annotations
 
@@ -77,10 +84,15 @@ def ions_for(species, amount, csd):
     return out
 
 
-def build_file(path, parent_amt, n1_amt, csd, seed):
+IS_AMOUNT = 150.0
+
+
+def build_file(path, parent_amt, n1_amt, csd, seed, is_frac=1.0):
     rng = random.Random(seed)
-    parent, n1 = THEO[0], THEO[1]
-    ions = ions_for(parent, parent_amt, csd) + (ions_for(n1, n1_amt, csd) if n1_amt > 0 else [])
+    parent, n1, istd = THEO[0], THEO[1], THEO[2]
+    vol = rng.uniform(0.8, 1.2)  # injection-volume factor, common to every species
+    ions = ions_for(parent, parent_amt * vol, csd) + (ions_for(n1, n1_amt * vol, csd) if n1_amt > 0 else [])
+    ions += ions_for(istd, IS_AMOUNT * is_frac * vol, csd)
     # fixed chemical-background ions for this file (random m/z, flat in time)
     bg = [(rng.uniform(600, 2450), rng.lognormvariate(math.log(2500), 0.6)) for _ in range(25)]
     spectra = []
@@ -117,14 +129,16 @@ def main():
                             ("U4", 300, CSD_SHIFTED)):
         plan.append((name, conc, 0.1 * conc, csd, "unknown", ""))
     for name, amt, n1, csd, stype, conc in plan:
-        build_file(os.path.join(HERE, f"{name}.mzML"), amt, n1, csd, seed)
+        build_file(os.path.join(HERE, f"{name}.mzML"), amt, n1, csd, seed,
+                   is_frac=0.35 if name == "U2" else 1.0)
         rows.append(f"{name},,,{stype},{conc}")
         seed += 1
     with open(os.path.join(HERE, "sample_meta.csv"), "w") as f:
         f.write("\n".join(rows) + "\n")
     # true concentrations of the unknowns, for checking back-calculation
     with open(os.path.join(HERE, "unknown_truth.csv"), "w") as f:
-        f.write("sample,true_concentration,csd\nU1,20,normal\nU2,80,normal\nU3,200,shifted\nU4,300,shifted\n")
+        f.write("sample,true_concentration,csd,is_note\nU1,20,normal,\nU2,80,normal,IS under-spiked to 35%\n"
+                "U3,200,shifted,\nU4,300,shifted,\n")
 
 
 with open(os.path.join(HERE, "theoretical_clusters.json")) as _f:

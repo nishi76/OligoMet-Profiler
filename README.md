@@ -369,6 +369,53 @@ distribution) shows the effect: automatic top-5 charges (z 4-8, picked on
 the standards) read the shifted unknowns 13% low, while a fixed `3-8`
 recovers them within 1%.
 
+## Internal standard
+
+Enter the analyte and its internal standard(s) together as a multi-record
+FASTA, pasted into the sequence box or loaded from a `.fasta`/`.txt` file:
+
+```
+>ION582
+Te-sGe-sCe-s...
+>ION582 analog IS
+Ae-sGe-s...
+```
+
+A record is an internal standard when its name holds a standalone `IS`,
+`SIL`, `ISTD`, `IntStd`, `IS1` token or the phrase "internal standard"
+(case-insensitive; Ionis-style `ISIS 420915` stays an analyte), or when the
+header says `role=IS`. `5'-<conj>`/`3'-<conj>` tags in a header set that
+record's conjugates. The Library Generation tab shows how each record was
+read before anything runs. One analyte per run.
+
+- **Library.** The analyte gets its full metabolite library; each IS is one
+  entry (`IS01`, `IS02`, ...) with its mass from its own sequence and no
+  metabolites. An IS with the same mass as one of the analyte's metabolites,
+  or close enough that isotope envelopes overlap, is reported.
+- **Quantitation.** Every metabolite is divided by its IS's signal in the
+  same sample (response ratio). One global IS (sidebar, defaults to the
+  first IS) serves every metabolite unless the **Internal Standard** tab
+  assigns a different IS to specific metabolites. The Signal basis gains
+  *IS-normalized* and *Blank-corrected + IS-normalized*, and switches to
+  IS-normalized when an IS appears. Calibration curves are then fitted on
+  the response ratio; relative quantification, degradation, statistics and
+  PCA use it too. The IS itself is never blank-corrected (a zero blank
+  contains IS), and it is left out of % degradation, class sums, statistics
+  and the calibrator list.
+- **IS response monitoring.** The Internal Standard tab plots each
+  sample's IS response as % of the mean of the standards and QCs, in sample
+  table order, and flags anything outside the acceptance window (default
+  50-150%, editable) or with no IS peak. Blanks are listed, not evaluated.
+- **Data matrices.** A row with kind `IS`/`ISTD`/`internal standard`, or an
+  IS token in its id or name, is recognised on upload; any row can also be
+  picked as the global IS.
+
+The summed-XIC example (`inst/extdata/xic_example/`) includes an analog IS
+(`sequences.fasta`), a +/-20% injection-volume spread, and one sample with an
+under-spiked IS. On raw area the curve gives r^2 0.977 and QC errors up to
+25%; on the IS response ratio r^2 0.9997 and QC errors under 2%, and the
+under-spiked sample is flagged at 35% of the reference IS response.
+
 ## Analysis from a pre-processed data matrix
 
 Peak picking, envelope summing, and MS1/MS2 matching only need to run once.

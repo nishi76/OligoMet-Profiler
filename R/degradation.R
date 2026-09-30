@@ -100,6 +100,8 @@ degradation_summary <- function(ms1_matches, top_n = 10, sample_meta = NULL, sig
     return(empty)
   }
   m <- ms1_matches[!is.na(ms1_matches[[signal_col]]), ]
+  # An internal standard is neither parent nor degradant.
+  if ("kind" %in% names(m)) m <- m[is.na(m$kind) | m$kind != "internal_standard", ]
 
   if (!is.null(sample_meta) && "sample_type" %in% names(sample_meta)) {
     keep_samples <- sample_meta$sample[.is_study_sample(sample_meta$sample_type)]

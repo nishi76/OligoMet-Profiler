@@ -297,6 +297,14 @@ annotate_matrix_metabolites <- function(matches, mets = NULL, parent_met_id = NU
     matches$kind[need_kind] <- lib_kind[hit[need_kind]]
   }
 
+  # Internal standards: an IS-like kind value ("IS", "ISTD", "internal
+  # standard") or, with no kind, an IS token in the id/name (see
+  # detect_is_role()). Checked before parent inference.
+  k_norm <- gsub("[^a-z]", "", tolower(matches$kind))
+  matches$kind[!is.na(k_norm) & k_norm %in% c("is", "istd", "internalstandard", "sil")] <- "internal_standard"
+  no_kind <- is.na(matches$kind) | !nzchar(matches$kind)
+  is_like <- no_kind & (detect_is_role(matches$met_id) | detect_is_role(matches$met_name))
+  matches$kind[is_like] <- "internal_standard"
   still <- is.na(matches$kind) | !nzchar(matches$kind)
   looks_parent <- grepl("^(parent|intact|flp|full[ _-]?length)", matches$met_id, ignore.case = TRUE) |
     grepl("^(parent|intact|flp|full[ _-]?length)", matches$met_name, ignore.case = TRUE)
@@ -314,13 +322,17 @@ annotate_matrix_metabolites <- function(matches, mets = NULL, parent_met_id = NU
 #'
 #' @param matches `read_data_matrix()$matches`, optionally annotated.
 #' @return A single `met_id`: the one with `kind == "parent"` if present,
-#'   else the one with the highest total signal.
+#'   else the non-IS metabolite with the highest total signal.
 #' @export
 guess_parent_met_id <- function(matches) {
   if (is.null(matches) || nrow(matches) == 0) return(NA_character_)
   if ("kind" %in% names(matches)) {
     p <- unique(matches$met_id[!is.na(matches$kind) & matches$kind == "parent"])
     if (length(p) > 0) return(p[1])
+  }
+  if ("kind" %in% names(matches)) {
+    keep <- is.na(matches$kind) | matches$kind != "internal_standard"
+    if (any(keep)) matches <- matches[keep, , drop = FALSE]
   }
   sig <- if ("intensity" %in% names(matches)) "intensity" else "area"
   tot <- tapply(matches[[sig]], matches$met_id, sum, na.rm = TRUE)

@@ -126,6 +126,11 @@ parse_oligodistiller <- function(seq, dict = STANDARD_DICT,
 parse_fasta <- function(seq, dict = STANDARD_DICT) {
   lines <- strsplit(trimws(seq), "\n")[[1]]
   lines <- trimws(lines)
+  # First record only: a multi-record FASTA (analyte + internal standards)
+  # is split by parse_sequence_set(); concatenating every record's lines
+  # here would silently build one chimeric sequence.
+  hdr_idx <- which(startsWith(lines, ">"))
+  if (length(hdr_idx) > 1) lines <- lines[seq_len(hdr_idx[2] - 1)]
   header <- lines[startsWith(lines, ">")]
   seq_lines <- lines[nzchar(lines) & !startsWith(lines, ">")]
   if (length(seq_lines) == 0)

@@ -46,7 +46,7 @@ if (!is.null(.module_dir)) {
                "chemistry_dict.R", "oligo_io.R",
                "metabolites.R", "mass_isotope.R", "fragments.R",
                "ms_matching.R", "spectra_io.R", "batch_ms_processing.R", "statistics.R",
-               "degradation.R", "multivariate.R", "blank_correction.R", "data_matrix.R", "xic_quant.R",
+               "degradation.R", "multivariate.R", "blank_correction.R", "data_matrix.R", "xic_quant.R", "internal_standard.R",
                "build_workbook.R", "build_report.R",
                "export_acquisition.R", "export_spectral.R", "mirror_plot.R",
                "agent_tools.R", "agent_core.R")) {
@@ -487,6 +487,14 @@ ui <- fluidPage(
                             "starts with 'OH-' = OligoDistiller, otherwise triplet."),
                           value = .EXAMPLE_SEQS[[1]]$seq, rows = 3,
                           placeholder = "e.g. Te-sSe-sAe-sSe-... or OH-Am*-Gm*-...-OH or a pasted FASTA record"),
+            fileInput("seq_file", NULL, accept = c(".fasta", ".fa", ".fas", ".txt"),
+                      buttonLabel = "Load sequences (.fasta/.txt)...", placeholder = ""),
+            tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -10px;",
+                   "One analyte plus internal standards as multi-record FASTA: each record ",
+                   "starts with '>name'. A name with an IS, SIL, ISTD or 'internal standard' ",
+                   "token (or 'role=IS' in the header) is an internal standard: its mass comes ",
+                   "from its own sequence and no metabolites are generated for it."),
+            uiOutput("sequence_roles"),
             fluidRow(
               column(8, selectInput("example_seq", NULL,
                         choices = c("Choose an example..." = "", names(.EXAMPLE_SEQS)),
@@ -1002,6 +1010,12 @@ ui <- fluidPage(
                 column(6, selectInput("control_group", "Control group (relative quant)",
                           choices = character(0)))
               ),
+              selectInput("global_is",
+                          .with_info("Internal standard (global)",
+                            "Every metabolite's signal is divided by this IS's signal in the same ",
+                            "sample (response ratio) when Signal basis is IS-normalized. ",
+                            "Per-metabolite assignments are set on the Internal Standard tab."),
+                          choices = c("None" = "none")),
               tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -10px;",
                      "Selected metabolites are absolute-quantified from their own ",
                      "calibration curve (Sample Type = standard rows with a ",
@@ -1143,6 +1157,44 @@ ui <- fluidPage(
                 uiOutput("quant_not_ready_note")
               )
             ),
+            tabPanel("Internal Standard",
+              conditionalPanel(
+                condition = "output.is_ready == 'true'",
+                tags$div(style = "padding-top: 12px;",
+                  uiOutput("is_status_note"),
+                  fluidRow(
+                    column(3, numericInput("is_win_low", "Acceptance low (%)", value = 50, min = 0, max = 100)),
+                    column(3, numericInput("is_win_high", "Acceptance high (%)", value = 150, min = 100, max = 1000)),
+                    column(6, uiOutput("is_monitor_select"))
+                  ),
+                  plotOutput("plot_is_response", height = "320px"),
+                  DT::DTOutput("is_response_table"),
+                  tags$div(style = "height: 8px;"),
+                  downloadButton("dl_is_response_csv", "Download IS response (.csv)", class = "btn-outline-primary"),
+                  tags$hr(),
+                  tags$h6("IS assignment per metabolite"),
+                  tags$p(style = "font-size: 11px; color: #6c757d;",
+                    "Every metabolite uses the global IS (sidebar) unless assigned one here."),
+                  fluidRow(
+                    column(5, selectizeInput("is_ov_mets", "Metabolite(s)", choices = character(0), multiple = TRUE)),
+                    column(3, selectInput("is_ov_is", "Internal standard", choices = character(0))),
+                    column(2, tags$div(style = "margin-top: 32px;",
+                      actionButton("is_ov_add", "Assign", class = "btn-sm btn-primary w-100"))),
+                    column(2, tags$div(style = "margin-top: 32px;",
+                      actionButton("is_ov_clear", "Reset all", class = "btn-sm btn-outline-secondary w-100")))
+                  ),
+                  DT::DTOutput("is_assignment_table"),
+                  uiOutput("is_interference_note")
+                )
+              ),
+              conditionalPanel(
+                condition = "output.is_ready != 'true'",
+                tags$p(style = "padding-top: 12px; color: #6c757d;",
+                  "No internal standard in the results. Add one as a second FASTA record ",
+                  "with 'IS' in its name (Library Generation), or, for a data matrix, give ",
+                  "its row kind = IS or pick it as the global internal standard in the sidebar.")
+              )
+            ),
             tabPanel("Degradation Summary",
               conditionalPanel(
                 condition = "output.batch_ready == 'true'",
@@ -1209,7 +1261,9 @@ ui <- fluidPage(
                         value = 1, min = 0, step = 0.1))
             ),
             radioButtons("signal_basis", "Signal basis",
-                         choices = c("Raw" = "raw", "Blank-corrected" = "bcorr"),
+                         choices = c("Raw" = "raw", "Blank-corrected" = "bcorr",
+                                     "IS-normalized" = "isr",
+                                     "Blank-corrected + IS-normalized" = "bcorr_isr"),
                          selected = "raw", inline = TRUE),
             uiOutput("signal_basis_note")
           ),
@@ -1459,6 +1513,13 @@ ui <- fluidPage(
 ## =============================================================================
 server <- function(input, output, session) {
 
+  # A DT built from a zero-column (or zero-row) data.frame throws in the
+  # browser, and that exception drops every other output in the same
+  # update -- e.g. an empty relative-quantification table blanked the whole
+  # Calibration Curves tab. Every table that can legitimately be empty is
+  # gated on this.
+  .has_rows <- function(d) !is.null(d) && is.data.frame(d) && nrow(d) > 0 && ncol(d) > 0
+
   ## ---- Reactive values -----------------------------------------------------
   rv <- reactiveValues(
     spec = NULL, mets = NULL, dict = NULL, prm = NULL,
@@ -1469,6 +1530,7 @@ server <- function(input, output, session) {
     sample_meta = NULL, stats_results = NULL, kind_stats_results = NULL,
     quant_results = NULL,
     library_ready = FALSE, library_version = 0L, batch_signature = NULL,
+    seq_roles = NULL, is_interference = NULL,
     agent_messages = list(), agent_ctx = list(), agent_busy = FALSE
   )
 
@@ -1977,7 +2039,7 @@ server <- function(input, output, session) {
   .quantifiable_mets <- reactive({
     bres <- rv$batch_ms_results
     if (!is.null(bres) && !is.null(bres$ms1_matches) && nrow(bres$ms1_matches) > 0) {
-      mi <- unique(.qm(bres)[, c("met_id", "met_name")])
+      mi <- unique(.qm_study(bres)[, c("met_id", "met_name")])
       mi <- mi[!duplicated(mi$met_id), ]
       return(stats::setNames(mi$met_id, paste0(mi$met_name, " (", mi$met_id, ")")))
     }
@@ -1997,7 +2059,8 @@ server <- function(input, output, session) {
   # recomputes quantification on the spot from the results already in
   # memory -- no second click, and never a re-run of peak picking.
   observeEvent(list(input$absolute_quant_mets, input$calibration_weighting, input$control_group,
-                    input$xic_n_charges, input$xic_n_iso, .xic_charges_d(), input$xic_enable), {
+                    input$xic_n_charges, input$xic_n_iso, .xic_charges_d(), input$xic_enable,
+                    input$global_is, is_overrides(), input$signal_basis), {
     bres <- rv$batch_ms_results
     if (!is.null(bres) && !is.null(bres$ms1_matches) && nrow(bres$ms1_matches) > 0) {
       .recompute_stats_and_quant()
@@ -2510,24 +2573,35 @@ server <- function(input, output, session) {
       # Step 2: Parse input
       incProgress(0.10, detail = "Parsing sequence")
       progress_next(prog)
-      spec <- tryCatch(
-        parse_input(seq_str, dict = dict),
+      # One analyte plus optional internal standards (multi-record FASTA);
+      # plain single-sequence text parses exactly as before.
+      seq_set <- tryCatch(
+        parse_sequence_set(seq_str, dict = dict, default_name = input$oligo_name %||% "analyte"),
         error = function(e) {
           rv$status_text <- paste0("ERROR parsing sequence: ", conditionMessage(e), "\n")
           NULL
         }
       )
-      if (is.null(spec)) return()
-      # Override conjugates from dropdowns
-      spec$conj5 <- input$conj5
-      spec$conj3 <- input$conj3
+      if (is.null(seq_set)) return()
+      rv$seq_roles <- seq_set$table
+      if (length(seq_set$problems) > 0) {
+        rv$status_text <- paste0("ERROR parsing sequence:\n  ",
+                                 paste(seq_set$problems, collapse = "\n  "), "\n")
+        return()
+      }
+      spec <- seq_set$analyte$spec
+      has_header <- any(startsWith(strsplit(seq_str, "\n")[[1]], ">"))
+      # Conjugates: a 5'-/3'- tag in the analyte's FASTA header wins,
+      # otherwise the dropdowns apply (as before).
+      if (identical(spec$conj5 %||% "none", "none")) spec$conj5 <- input$conj5
+      if (identical(spec$conj3 %||% "none", "none")) spec$conj3 <- input$conj3
       rv$spec <- spec
 
       # Step 3: Generate metabolites
       incProgress(0.20, detail = "Generating metabolites")
       progress_next(prog)
       met_opts <- list(
-        oligo_name = input$oligo_name,
+        oligo_name = if (has_header) seq_set$analyte$name else input$oligo_name,
         max_3p = input$max_3p,
         max_5p = input$max_5p,
         endo = input$endo,
@@ -2542,6 +2616,23 @@ server <- function(input, output, session) {
         }
       )
       if (is.null(mets)) return()
+      # Internal standards: one library entry each (IS01, IS02, ...), no
+      # metabolites, appended after the analyte's so mets[[1]] stays the
+      # parent everywhere downstream.
+      is_mets <- build_is_metabolites(seq_set$internal_standards, dict = dict)
+      rv$is_interference <- check_is_interference(mets, is_mets, dict = dict)
+      if (length(is_mets) > 0) {
+        mets <- c(mets, is_mets)
+        rv$status_text <- paste0(rv$status_text, sprintf(
+          "Internal standard(s): %s -- no metabolites generated for them.\n",
+          paste(vapply(is_mets, function(m) paste0(m$id, " ", m$name), ""), collapse = "; ")))
+        if (!is.null(rv$is_interference) && nrow(rv$is_interference) > 0) {
+          ii <- rv$is_interference
+          rv$status_text <- paste0(rv$status_text, "WARNING: IS mass conflicts:\n  ",
+            paste(sprintf("%s vs %s (%s, %+.3f Da): %s", ii$is_id, ii$met_id, ii$met_name,
+                          ii$delta_da, ii$message), collapse = "\n  "), "\n")
+        }
+      }
       rv$mets <- mets
 
       # Step 4: Compute parent mass/formula
@@ -2713,8 +2804,12 @@ server <- function(input, output, session) {
   # silently falls back to raw, matching the note under the toggle).
   .resolve_signal_col <- function(matches) {
     base <- if ("area" %in% names(matches) && any(!is.na(matches$area))) "area" else "intensity"
-    bcorr <- paste0(base, "_bcorr")
-    if (identical(input$signal_basis, "bcorr") && bcorr %in% names(matches)) bcorr else base
+    has <- function(cc) cc %in% names(matches) && any(!is.na(matches[[cc]]))
+    want <- switch(input$signal_basis %||% "raw",
+                   bcorr = c("_bcorr"), isr = c("_isr"),
+                   bcorr_isr = c("_bcorr_isr", "_isr", "_bcorr"), "")
+    for (suffix in want) if (nzchar(suffix) && has(paste0(base, suffix))) return(paste0(base, suffix))
+    base
   }
 
   # Maps the "Reference timepoint" dropdown (Statistical Analysis sidebar)
@@ -2733,7 +2828,16 @@ server <- function(input, output, session) {
     if (!is.null(bres$quant_matches) && nrow(bres$quant_matches) > 0) bres$quant_matches
     else bres$ms1_matches
   }
+  # Same table without internal-standard rows: what statistics, PCA,
+  # trends and the calibrator choices work on.
+  .qm_study <- function(bres = rv$batch_ms_results) {
+    q <- .qm(bres)
+    if (is.null(q) || !"kind" %in% names(q)) return(q)
+    q[is.na(q$kind) | q$kind != "internal_standard", , drop = FALSE]
+  }
   .xic_charges_d <- debounce(reactive(input$xic_charges %||% ""), 800)
+  is_overrides <- reactiveVal(data.frame(met_id = character(0), is_id = character(0),
+                                         stringsAsFactors = FALSE))
 
   .recompute_stats_and_quant <- function() {
     meta <- batch_meta_data()
@@ -2744,24 +2848,27 @@ server <- function(input, output, session) {
     # Summed-XIC areas become the quantitative signal when the XIC step ran:
     # re-summed here from the stored per-ion areas with the CURRENT charge/
     # isotope settings, so changing them never re-reads a raw file.
-    bres$quant_matches <- NULL
+    base <- bres$ms1_matches
     if (isTRUE(input$xic_enable) && !is.null(bres$xic) && nrow(bres$xic$ions) > 0) {
       xs <- summarize_xic_quant(bres$xic$ions, meta,
                                 n_charges = input$xic_n_charges %||% 5,
                                 n_isotopes = input$xic_n_iso %||% 5,
                                 charges = parse_charge_spec(.xic_charges_d()))
       bres$xic$summary <- xs
-      if (nrow(xs$quant) > 0) bres$quant_matches <- xs$quant
+      if (nrow(xs$quant) > 0) base <- xs$quant
     }
     # Add intensity_bcorr/area_bcorr alongside the raw columns (no-op if no
-    # reagent_blank/matrix_blank samples are found) -- every consumer below
-    # picks raw or corrected via .resolve_signal_col() and the toggle.
-    if (!is.null(bres$quant_matches)) {
-      bres$quant_matches <- apply_blank_correction(bres$quant_matches, meta)
-    } else {
-      bres$ms1_matches <- apply_blank_correction(bres$ms1_matches, meta)
+    # reagent_blank/matrix_blank samples are found), then the IS response
+    # ratios (_isr) -- every consumer below picks raw, corrected, or
+    # IS-normalized via .resolve_signal_col() and the Signal basis toggle.
+    qm <- apply_blank_correction(base, meta)
+    gis <- input$global_is %||% "none"
+    if (!identical(gis, "none") && gis %in% qm$met_id) {
+      qm$kind[qm$met_id == gis] <- "internal_standard"  # a matrix row picked as IS
+      qm <- apply_is_normalization(qm, gis, overrides = is_overrides())
     }
-    qm <- .qm(bres)
+    bres$quant_matches <- qm
+    qm <- qm[is.na(qm$kind) | qm$kind != "internal_standard", , drop = FALSE]
     sig_col <- .resolve_signal_col(qm)
     rv$sample_meta <- meta
 
@@ -3717,6 +3824,155 @@ server <- function(input, output, session) {
   # (selected under "Calibration & Quantification (Advanced)") -- same
   # source .calibration_curves_display() reads, so the selector and the
   # table below always agree on which metabolites exist here.
+  ## ---- Sequence input: FASTA/txt upload + live role table -------------------
+  observeEvent(input$seq_file, {
+    txt <- tryCatch(paste(readLines(input$seq_file$datapath, warn = FALSE), collapse = "\n"),
+                    error = function(e) NULL)
+    if (!is.null(txt)) updateTextAreaInput(session, "seq", value = txt)
+  })
+
+  .seq_set_preview <- reactive({
+    txt <- input$seq %||% ""
+    if (!grepl(">", txt, fixed = TRUE)) return(NULL)  # plain single sequence: nothing to show
+    tryCatch(parse_sequence_set(txt, default_name = input$oligo_name %||% "analyte"),
+             error = function(e) NULL)
+  })
+  output$sequence_roles <- renderUI({
+    set <- .seq_set_preview()
+    if (is.null(set)) return(NULL)
+    tb <- set$table
+    rows <- lapply(seq_len(nrow(tb)), function(i) tags$tr(
+      tags$td(tb$name[i]),
+      tags$td(if (tb$role[i] == "internal_standard") tags$b("internal standard") else "analyte"),
+      tags$td(tb$role_source[i]),
+      tags$td(ifelse(is.na(tb$length[i]), "-", paste0(tb$length[i], "-mer"))),
+      tags$td(ifelse(is.na(tb$mono_mass[i]), "-", sprintf("%.4f", tb$mono_mass[i]))),
+      tags$td(style = "color:#a3231b;", tb$problem[i])))
+    tagList(
+      tags$table(class = "table table-sm", style = "font-size: 11px; margin-bottom: 4px;",
+        tags$thead(tags$tr(tags$th("Record"), tags$th("Role"), tags$th("How"), tags$th("Length"),
+                           tags$th("Mono mass (Da)"), tags$th(""))),
+        tags$tbody(rows)),
+      if (length(set$problems) > 0)
+        tags$p(style = "font-size: 11px; color: #a3231b; font-weight: 600;",
+               paste(set$problems, collapse = "; ")))
+  })
+
+  ## ---- Internal standard: choices, overrides, monitoring ---------------------
+  .is_choices <- reactive({
+    q <- .qm()
+    if (is.null(q) || nrow(q) == 0) return(list(is = character(0), other = character(0), labels = character(0)))
+    mi <- unique(q[, c("met_id", "met_name", "kind")])
+    mi <- mi[!duplicated(mi$met_id), ]
+    lab <- stats::setNames(paste0(mi$met_name, " (", mi$met_id, ")"), mi$met_id)
+    list(is = mi$met_id[!is.na(mi$kind) & mi$kind == "internal_standard"],
+         other = mi$met_id[is.na(mi$kind) | mi$kind != "internal_standard"], labels = lab)
+  })
+  # Global IS dropdown: library/matrix internal standards first, then any
+  # other row (a data matrix without a kind column can still name its IS).
+  # Defaults to the first internal standard as soon as one appears.
+  observeEvent(.is_choices(), {
+    ch <- .is_choices()
+    cur <- isolate(input$global_is) %||% "none"
+    choices <- list("None" = "none")
+    if (length(ch$is) > 0) choices[["Internal standards"]] <- stats::setNames(ch$is, ch$labels[ch$is])
+    if (length(ch$other) > 0) choices[["Other rows"]] <- stats::setNames(ch$other, ch$labels[ch$other])
+    sel <- if (cur %in% c(ch$is, ch$other)) cur else if (length(ch$is) > 0) ch$is[1] else "none"
+    updateSelectInput(session, "global_is", choices = choices, selected = sel)
+    .switch_basis_to_is(sel)
+    updateSelectInput(session, "is_ov_is", choices = stats::setNames(ch$is, ch$labels[ch$is]))
+    updateSelectizeInput(session, "is_ov_mets", choices = stats::setNames(ch$other, ch$labels[ch$other]))
+  }, ignoreNULL = FALSE)
+
+  # First time an IS is in play (auto-selected or picked), switch the
+  # Signal basis to IS-normalized once; the user can switch it back.
+  is_basis_set <- reactiveVal(FALSE)
+  .switch_basis_to_is <- function(is_id) {
+    basis <- isolate(input$signal_basis) %||% "raw"
+    if (!identical(is_id, "none") && !isTRUE(isolate(is_basis_set())) && basis %in% c("raw", "bcorr")) {
+      updateRadioButtons(session, "signal_basis",
+                         selected = if (identical(basis, "bcorr")) "bcorr_isr" else "isr")
+      is_basis_set(TRUE)
+    }
+  }
+  observeEvent(input$global_is, .switch_basis_to_is(input$global_is), ignoreInit = TRUE)
+
+  observeEvent(input$is_ov_add, {
+    req(length(input$is_ov_mets) > 0, nzchar(input$is_ov_is %||% ""))
+    ov <- is_overrides()
+    ov <- ov[!ov$met_id %in% input$is_ov_mets, , drop = FALSE]
+    is_overrides(rbind(ov, data.frame(met_id = input$is_ov_mets, is_id = input$is_ov_is,
+                                      stringsAsFactors = FALSE)))
+    updateSelectizeInput(session, "is_ov_mets", selected = character(0))
+  })
+  observeEvent(input$is_ov_clear, {
+    is_overrides(data.frame(met_id = character(0), is_id = character(0), stringsAsFactors = FALSE))
+  })
+
+  output$is_ready <- reactive({
+    gis <- input$global_is %||% "none"
+    if (!identical(gis, "none") || length(.is_choices()$is) > 0) "true" else "false"
+  })
+  outputOptions(output, "is_ready", suspendWhenHidden = FALSE)
+
+  output$is_monitor_select <- renderUI({
+    ch <- .is_choices()
+    ids <- unique(c(setdiff(input$global_is %||% "none", "none"), ch$is, is_overrides()$is_id))
+    req(length(ids) > 0)
+    selectInput("is_monitor_id", "IS to monitor", choices = stats::setNames(ids, ch$labels[ids]),
+                selected = isolate(input$is_monitor_id) %||% ids[1])
+  })
+
+  .is_response <- reactive({
+    q <- .qm(); id <- input$is_monitor_id
+    req(q, id)
+    lo <- input$is_win_low %||% 50; hi <- input$is_win_high %||% 150
+    is_response_summary(q, batch_meta_data(), id, window = c(lo, hi),
+                        signal_col = .auto_signal_col(q))
+  })
+  output$plot_is_response <- renderPlot(plot_is_response(.is_response()))
+  output$is_response_table <- DT::renderDT({
+    d <- .is_response()
+    req(nrow(d) > 0)
+    DT::datatable(d, rownames = FALSE, options = list(pageLength = 10, scrollX = TRUE)) |>
+      DT::formatRound("is_signal", digits = 0) |>
+      DT::formatStyle("status", color = DT::styleEqual(c("low", "high", "IS not detected"),
+                                                        rep("#a3231b", 3)),
+                      fontWeight = DT::styleEqual(c("low", "high", "IS not detected"), rep("600", 3)))
+  })
+  output$dl_is_response_csv <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_is_response.csv"),
+    content = function(file) utils::write.csv(.is_response(), file, row.names = FALSE)
+  )
+  output$is_status_note <- renderUI({
+    d <- tryCatch(.is_response(), error = function(e) NULL)
+    if (is.null(d) || nrow(d) == 0) return(NULL)
+    bad <- d$sample[d$status %in% c("low", "high", "IS not detected")]
+    basis <- input$signal_basis %||% "raw"
+    txt <- paste0(
+      if (basis %in% c("isr", "bcorr_isr")) "Quantitation uses IS-normalized response ratios. "
+      else "Signal basis is not IS-normalized; switch it on the Statistical Analysis tab. ",
+      if (length(bad) > 0) sprintf("%d sample(s) outside the IS acceptance window or without IS: %s. Their ratios are not reliable.",
+                                   length(bad), paste(bad, collapse = ", "))
+      else "Every evaluated sample is inside the IS acceptance window.")
+    tags$p(style = paste0("font-size: 12px; color: ", if (length(bad) > 0) "#a3231b" else "#1f7a3d", ";"), txt)
+  })
+  output$is_assignment_table <- DT::renderDT({
+    ch <- .is_choices()
+    gis <- input$global_is %||% "none"
+    a <- is_assignment(ch$other, if (identical(gis, "none")) NA_character_ else gis, is_overrides())
+    a$met_name <- ch$labels[a$met_id]
+    DT::datatable(a[, c("met_id", "met_name", "is_id", "assignment")], rownames = FALSE,
+                  options = list(pageLength = 10))
+  })
+  output$is_interference_note <- renderUI({
+    ii <- rv$is_interference
+    if (is.null(ii) || nrow(ii) == 0) return(NULL)
+    tags$p(style = "font-size: 11px; color: #a3231b; margin-top: 8px;",
+           "IS mass conflicts: ", paste(sprintf("%s vs %s %+.3f Da (%s)", ii$is_id, ii$met_id,
+                                                ii$delta_da, ii$message), collapse = "; "))
+  })
+
   ## ---- XIC Quantitation tab ---------------------------------------------------
   .xic_summary <- reactive({
     x <- rv$batch_ms_results$xic
@@ -3829,7 +4085,7 @@ server <- function(input, output, session) {
   )
 
   output$quant_absolute_table <- DT::renderDT({
-    req(rv$quant_results)
+    req(rv$quant_results, .has_rows(rv$quant_results$absolute))
     DT::datatable(rv$quant_results$absolute, rownames = FALSE,
                    options = list(pageLength = 15, scrollX = TRUE)) |>
       DT::formatRound(intersect(c("signal", "concentration_calc", "nominal_concentration",
@@ -3842,7 +4098,7 @@ server <- function(input, output, session) {
   )
 
   output$quant_relative_table <- DT::renderDT({
-    req(rv$quant_results)
+    req(rv$quant_results, .has_rows(rv$quant_results$relative))
     rel <- rv$quant_results$relative
     disp_cols <- setdiff(names(rel), c(".time", ".arm"))
     DT::datatable(rel[, disp_cols, drop = FALSE], rownames = FALSE,
@@ -3974,6 +4230,7 @@ server <- function(input, output, session) {
 
   output$batch_matches_table <- DT::renderDT({
     m <- .batch_matches_display()
+    req(.has_rows(m))
     DT::datatable(m, filter = "top", rownames = FALSE, selection = "single",
                   options = list(pageLength = 10, scrollX = TRUE))
   })
@@ -4054,14 +4311,14 @@ server <- function(input, output, session) {
   })
 
   output$unmatched_table <- DT::renderDT({
-    req(rv$batch_ms_results)
+    req(rv$batch_ms_results, .has_rows(rv$batch_ms_results$unmatched))
     DT::datatable(rv$batch_ms_results$unmatched, filter = "top", rownames = FALSE,
                   options = list(pageLength = 10, scrollX = TRUE))
   })
 
   ## ---- Degradation tab (M4: R/degradation.R) --------------------------------
   output$degradation_per_sample_table <- DT::renderDT({
-    req(rv$batch_ms_results$degradation)
+    req(.has_rows(rv$batch_ms_results$degradation$per_sample))
     DT::datatable(rv$batch_ms_results$degradation$per_sample, rownames = FALSE,
                   options = list(pageLength = 10, scrollX = TRUE))
   })
@@ -4072,13 +4329,13 @@ server <- function(input, output, session) {
   })
 
   output$degradation_composition_table <- DT::renderDT({
-    req(rv$batch_ms_results$degradation)
+    req(.has_rows(rv$batch_ms_results$degradation$composition))
     DT::datatable(rv$batch_ms_results$degradation$composition, rownames = FALSE,
                   options = list(pageLength = 10, scrollX = TRUE))
   })
 
   output$degradation_top_table <- DT::renderDT({
-    req(rv$batch_ms_results$degradation)
+    req(.has_rows(rv$batch_ms_results$degradation$top_degradants))
     DT::datatable(rv$batch_ms_results$degradation$top_degradants, rownames = FALSE,
                   options = list(pageLength = 10, scrollX = TRUE))
   })
@@ -4155,11 +4412,11 @@ server <- function(input, output, session) {
     if (sr$mode == "two_group") {
       plot_volcano(sr$result)
     } else if (sr$mode == "time_series") {
-      abund <- build_abundance_matrix(.qm(), signal_col = .auto_signal_col(.qm()))
+      abund <- build_abundance_matrix(.qm_study(), signal_col = .resolve_signal_col(.qm_study()))
       long <- abundance_long(abund, .study_sample_meta()[, c("sample", "timepoint")])
       plot_trend(long, input$stats_met_select)
     } else {
-      abund <- build_abundance_matrix(.qm(), signal_col = .auto_signal_col(.qm()))
+      abund <- build_abundance_matrix(.qm_study(), signal_col = .resolve_signal_col(.qm_study()))
       long <- abundance_long(abund, .study_sample_meta()[, c("sample", "group")])
       plot_group_boxplot(long, input$stats_met_select)
     }
@@ -4167,6 +4424,7 @@ server <- function(input, output, session) {
 
   output$stats_table <- DT::renderDT({
     df <- .stats_display_table()
+    req(.has_rows(df))
     dt <- DT::datatable(df, rownames = FALSE,
                   options = list(pageLength = 10, scrollX = TRUE))
     # Bold+color any row whose |log2fc| clears the sidebar threshold --
@@ -4221,7 +4479,7 @@ server <- function(input, output, session) {
       updateSelectizeInput(session, "mv_met_ids", choices = character(0))
       return()
     }
-    qm <- .qm(bres)
+    qm <- .qm_study(bres)
     met_info <- unique(qm[, c("met_id", "met_name")])
     met_info <- met_info[!duplicated(met_info$met_id), ]
     choices <- stats::setNames(met_info$met_id, paste0(met_info$met_name, " (", met_info$met_id, ")"))
@@ -4251,7 +4509,7 @@ server <- function(input, output, session) {
     meta$timepoint <- suppressWarnings(as.numeric(meta$timepoint))
     meta <- meta[!is.na(meta$timepoint), c("sample", "timepoint")]
     if (nrow(meta) == 0) return(data.frame())
-    abund <- build_abundance_matrix(.qm(bres), signal_col = .auto_signal_col(.qm(bres)))
+    abund <- build_abundance_matrix(.qm_study(bres), signal_col = .resolve_signal_col(.qm_study(bres)))
     abundance_long(abund, meta)
   })
 
@@ -4303,8 +4561,8 @@ server <- function(input, output, session) {
                   dropped_zero_variance = character(0), note = "no batch results yet"))
     }
     met_ids <- if (length(input$mv_met_ids) > 0) input$mv_met_ids else NULL
-    run_pca(.qm(bres), sample_meta = rv$sample_meta, met_ids = met_ids,
-            signal_col = .resolve_signal_col(.qm(bres)),
+    run_pca(.qm_study(bres), sample_meta = rv$sample_meta, met_ids = met_ids,
+            signal_col = .resolve_signal_col(.qm_study(bres)),
             log_transform = isTRUE(input$mv_log), scale = isTRUE(input$mv_scale))
   })
 
@@ -4317,8 +4575,8 @@ server <- function(input, output, session) {
     met_ids <- if (length(input$mv_met_ids) > 0) input$mv_met_ids else NULL
     k <- suppressWarnings(as.integer(input$mv_k))
     if (is.na(k) || k < 2) k <- 2
-    run_hclust(.qm(bres), sample_meta = rv$sample_meta, met_ids = met_ids,
-               signal_col = .resolve_signal_col(.qm(bres)),
+    run_hclust(.qm_study(bres), sample_meta = rv$sample_meta, met_ids = met_ids,
+               signal_col = .resolve_signal_col(.qm_study(bres)),
                log_transform = isTRUE(input$mv_log), scale = isTRUE(input$mv_scale), k = k)
   })
 
