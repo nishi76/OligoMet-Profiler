@@ -123,6 +123,7 @@ build_kind_abundance_matrix <- function(batch_matches, signal_col = "intensity")
   if (is.null(batch_matches) || nrow(batch_matches) == 0) return(data.frame())
   if (!signal_col %in% names(batch_matches)) return(data.frame())
   m <- batch_matches[!is.na(batch_matches[[signal_col]]), ]
+  m <- m[is.na(m$kind) | m$kind != "internal_standard", ]  # IS is not a composition class
   if (nrow(m) == 0) return(data.frame())
   # Collapse to one row per (sample, met_id) first -- max across charge
   # states/adducts/oxidation levels of the SAME metabolite, the same rule

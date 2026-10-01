@@ -15,7 +15,7 @@
 for (.f in c("about.R", "chemistry_dict.R", "oligo_io.R", "metabolites.R",
              "mass_isotope.R", "fragments.R", "ms_matching.R",
              "batch_ms_processing.R", "degradation.R", "statistics.R",
-             "blank_correction.R", "multivariate.R", "data_matrix.R")) {
+             "blank_correction.R", "multivariate.R", "internal_standard.R", "data_matrix.R")) {
   source(file.path(.pkg_root, "R", .f))
 }
 

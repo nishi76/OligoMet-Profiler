@@ -94,7 +94,17 @@ through the batch mode's local-folder input, not file upload. The MS
 Matching sheet reports matches with ppm error, isotope-fit,
 envelope-consistency, and MS2 confirmation scores.
 
-## 6. Quantitation signal: summed XICs
+## 6. Internal standard
+
+Add the IS as a second FASTA record with IS in its name, e.g.
+`>ION582 analog IS`, or `role=IS` in the header; load both from a `.fasta`
+file if you prefer. The IS gets no metabolites. After processing, the
+global IS in **Calibration & Quantification** defaults to it and Signal basis
+switches to IS-normalized, so curves are fitted on area ratios. Check the
+**Internal Standard** tab for samples outside the 50-150% response window,
+and assign a different IS to individual metabolites there if needed.
+
+## 7. Quantitation signal: summed XICs
 
 With raw files, **Targeted summed-XIC quantitation** (Batch Processing >
 Processing Options, on by default) sums the XICs of the chosen charge
@@ -106,7 +116,7 @@ the signal is. If the charge-state distribution differs between standards
 and samples, type a fixed list covering it (e.g. `3-8`) in **Fixed charge
 states**. The counts and the list re-sum instantly.
 
-## 7. Start from a data matrix instead of raw files
+## 8. Start from a data matrix instead of raw files
 
 Once identification has run, download the data matrix from **Batch
 Processing > Batch Results**. Next time, open **Batch Processing**, set
@@ -120,8 +130,10 @@ Mark calibrators as `sample_type = standard` with a concentration, QCs as
 `quality_control`, blanks as `reagent_blank`/`matrix_blank`. Select the
 metabolites to calibrate under **Calibration & Quantification**. The
 **Calibration Curves** tab shows each curve, its fit, and back-calculated
-concentrations for QCs and unknowns. **Degradation Summary** shows %
-parent remaining and % degradation against the reference timepoint (set on
+concentrations for QCs and unknowns. **Degradation Summary** groups
+replicates by Group and Timepoint (mean, SD, n of % degradation, and class
+composition per condition, with a per-sample view grouped the same way), and
+shows % parent remaining and % degradation against the reference timepoint (set on
 the Statistical Analysis tab, default earliest). No peak picking runs on
 this path. Try it with `inst/extdata/data_matrix_example/`.
 

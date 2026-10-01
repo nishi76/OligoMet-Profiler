@@ -11,7 +11,7 @@ guess_parent_met_id(matches)
 }
 \value{
 A single \code{met_id}: the one with \code{kind == "parent"} if present,
-else the one with the highest total signal.
+else the non-IS metabolite with the highest total signal.
 }
 \description{
 Guess which metabolite in a data matrix is the intact parent

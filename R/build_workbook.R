@@ -369,6 +369,22 @@
                       rows = 2, cols = 1:ncol(degradation$per_sample), gridExpand = TRUE)
   next_row <- nrow(degradation$per_sample) + 4
 
+  # Replicates collapsed by experimental group / timepoint, when the
+  # sample table carried either (see degradation_by_condition()).
+  bc <- tryCatch(degradation_by_condition(degradation), error = function(e) NULL)
+  if (!is.null(bc) && bc$design != "none") {
+    blocks <- list("% Degradation by Group / Timepoint (mean, SD, n)" = bc$per_condition,
+                   "Composition by Class, by Group / Timepoint" = bc$composition[, setdiff(names(bc$composition), "timepoint_lab")])
+    for (ttl in names(blocks)) {
+      tb <- blocks[[ttl]]
+      openxlsx::writeData(wb, "Degradation", ttl, startRow = next_row, colNames = FALSE)
+      openxlsx::addStyle(wb, "Degradation", styles$subheader, rows = next_row, cols = 1:ncol(tb), gridExpand = TRUE)
+      openxlsx::writeData(wb, "Degradation", tb, startRow = next_row + 1, colNames = TRUE)
+      openxlsx::addStyle(wb, "Degradation", styles$header, rows = next_row + 1, cols = 1:ncol(tb), gridExpand = TRUE)
+      next_row <- next_row + nrow(tb) + 3
+    }
+  }
+
   openxlsx::writeData(wb, "Degradation", "Composition by Class",
                        startRow = next_row, colNames = FALSE)
   openxlsx::addStyle(wb, "Degradation", styles$subheader,
