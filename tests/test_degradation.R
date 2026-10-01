@@ -195,4 +195,45 @@ if (length(files) == 0 || is.na(find_python())) {
   }
 }
 
+## ---- degradation_by_condition(): replicates grouped by group / timepoint ----
+cat("\n--- degradation_by_condition() ---\n")
+mkm <- function(sample, met, kind, sig) data.frame(met_id = met, met_name = met, kind = kind,
+  sample = sample, intensity = sig, stringsAsFactors = FALSE)
+cm <- rbind(
+  mkm("a0_1", "P", "parent", 90), mkm("a0_1", "N1", "exo_3p", 10),
+  mkm("a0_2", "P", "parent", 80), mkm("a0_2", "N1", "exo_3p", 20),
+  mkm("a24_1", "P", "parent", 50), mkm("a24_1", "N1", "exo_3p", 40), mkm("a24_1", "F5", "exo_5p", 10),
+  mkm("a24_2", "P", "parent", 50), mkm("a24_2", "N1", "exo_3p", 50),
+  mkm("c0_1", "P", "parent", 95), mkm("c0_1", "N1", "exo_3p", 5),
+  mkm("std1", "P", "parent", 100))
+cmeta <- data.frame(sample = c("a0_1", "a0_2", "a24_1", "a24_2", "c0_1", "std1"),
+                    group = c("act", "act", "act", "act", "ctl", ""),
+                    timepoint = c("0", "0", "24", "24", "0", ""),
+                    sample_type = c(rep("unknown", 5), "standard"), stringsAsFactors = FALSE)
+cd <- degradation_summary(cm, sample_meta = cmeta)
+bc <- degradation_by_condition(cd)
+stopifnot(bc$design == "group_timepoint")
+stopifnot(nrow(bc$per_condition) == 3)
+r <- bc$per_condition[bc$per_condition$group == "act" & bc$per_condition$timepoint == 24, ]
+stopifnot(r$n == 2, abs(r$mean_pct_degradation - 50) < 1e-9, abs(r$sd_pct_degradation - 0) < 1e-9)
+r0 <- bc$per_condition[bc$per_condition$group == "act" & bc$per_condition$timepoint == 0, ]
+stopifnot(abs(r0$mean_pct_degradation - 15) < 1e-9, abs(r0$sd_pct_degradation - sd(c(10, 20))) < 1e-9)
+cat("per-condition mean/SD/n of % degradation: PASS\n")
+f5 <- bc$composition[bc$composition$group == "act" & bc$composition$timepoint == 24 & bc$composition$kind == "exo_5p", ]
+stopifnot(abs(f5$mean_pct_of_total - 5) < 1e-9)  # 10% in one replicate, absent (0%) in the other
+cat("class absent from a replicate counts as 0%: PASS\n")
+stopifnot(!"std1" %in% cd$per_sample$sample)
+cat("calibration standards excluded from conditions: PASS\n")
+cmeta2 <- cmeta; cmeta2$timepoint <- ""
+bg <- degradation_by_condition(degradation_summary(cm, sample_meta = cmeta2))
+stopifnot(bg$design == "group", identical(sort(bg$per_condition$group), c("act", "ctl")),
+          !"timepoint" %in% names(bg$per_condition))
+cat("group-only design: PASS\n")
+stopifnot(degradation_by_condition(degradation_summary(cm))$design == "none")
+cat("no design -> 'none', not an error: PASS\n")
+invisible(plot_degradation_by_condition(cd)); invisible(plot_degradation_by_condition(degradation_summary(cm)))
+invisible(plot_degradation_composition(cd, "condition")); invisible(plot_degradation_composition(cd, "sample"))
+invisible(plot_degradation_composition(degradation_summary(cm), "condition"))
+cat("condition and per-sample plots render (with and without a design): PASS\n")
+
 cat("\n==== All degradation tests passed ====\n")

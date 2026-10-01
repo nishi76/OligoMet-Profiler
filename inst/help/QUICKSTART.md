@@ -130,8 +130,10 @@ Mark calibrators as `sample_type = standard` with a concentration, QCs as
 `quality_control`, blanks as `reagent_blank`/`matrix_blank`. Select the
 metabolites to calibrate under **Calibration & Quantification**. The
 **Calibration Curves** tab shows each curve, its fit, and back-calculated
-concentrations for QCs and unknowns. **Degradation Summary** shows %
-parent remaining and % degradation against the reference timepoint (set on
+concentrations for QCs and unknowns. **Degradation Summary** groups
+replicates by Group and Timepoint (mean, SD, n of % degradation, and class
+composition per condition, with a per-sample view grouped the same way), and
+shows % parent remaining and % degradation against the reference timepoint (set on
 the Statistical Analysis tab, default earliest). No peak picking runs on
 this path. Try it with `inst/extdata/data_matrix_example/`.
 

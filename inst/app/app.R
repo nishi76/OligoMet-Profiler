@@ -1199,17 +1199,30 @@ ui <- fluidPage(
               conditionalPanel(
                 condition = "output.batch_ready == 'true'",
                 tags$div(style = "padding-top: 12px;",
-                  tags$h6("% Degradation per sample"),
-                  DT::DTOutput("degradation_per_sample_table"),
+                  tags$h6("% Degradation by group / timepoint"),
+                  uiOutput("degradation_design_note"),
+                  plotOutput("plot_degradation_by_condition", height = "300px"),
+                  DT::DTOutput("degradation_condition_table"),
                   tags$div(style = "height: 8px;"),
                   tags$h6("Composition by class"),
-                  plotOutput("plot_degradation_composition", height = "300px"),
+                  radioButtons("deg_comp_by", NULL,
+                               choices = c("Per group / timepoint (mean of replicates)" = "condition",
+                                           "Per sample (grouped by condition)" = "sample"),
+                               selected = "condition", inline = TRUE),
+                  plotOutput("plot_degradation_composition", height = "320px"),
                   DT::DTOutput("degradation_composition_table"),
+                  tags$div(style = "height: 8px;"),
+                  tags$h6("% Degradation per sample"),
+                  DT::DTOutput("degradation_per_sample_table"),
                   tags$div(style = "height: 8px;"),
                   tags$h6("Top degradant species"),
                   DT::DTOutput("degradation_top_table"),
                   tags$div(style = "height: 8px;"),
-                  downloadButton("dl_degradation_csv", "Download degradation summary (.csv)", class = "btn-outline-primary"),
+                  fluidRow(
+                    column(4, downloadButton("dl_degradation_csv", "Per sample (.csv)", class = "btn-outline-primary w-100")),
+                    column(4, downloadButton("dl_degradation_condition_csv", "By group / timepoint (.csv)", class = "btn-outline-primary w-100")),
+                    column(4, downloadButton("dl_degradation_composition_csv", "Composition (.csv)", class = "btn-outline-primary w-100"))
+                  ),
                   tags$hr(),
                   tags$h6("Degradation relative to an earlier timepoint"),
                   tags$p(style = "font-size: 11px; color: #6c757d;",
@@ -4323,16 +4336,70 @@ server <- function(input, output, session) {
                   options = list(pageLength = 10, scrollX = TRUE))
   })
 
+  # Degradation by experimental design: replicates collapsed to mean/SD/n
+  # per group, timepoint, or group x timepoint (degradation_by_condition()).
+  .deg_by_condition <- reactive({
+    deg <- rv$batch_ms_results$degradation
+    req(deg)
+    degradation_by_condition(deg)
+  })
+  .deg_comp_by <- reactive({
+    if (identical(input$deg_comp_by, "sample") || .deg_by_condition()$design == "none") "sample" else "condition"
+  })
+  output$degradation_design_note <- renderUI({
+    bc <- .deg_by_condition()
+    txt <- switch(bc$design,
+      none = "No Group or Timepoint in the sample table: fill them in (Batch Processing > Sample Metadata) to group degradation by experimental condition.",
+      group = "Grouped by Group.", timepoint = "Grouped by Timepoint.",
+      group_timepoint = "Grouped by Group x Timepoint.")
+    tags$p(style = paste0("font-size: 11px; color: ", if (bc$design == "none") "#a3231b" else "#6c757d", ";"),
+           txt, if (bc$design != "none") " Calibration standards, QCs and blanks are excluded.")
+  })
+  output$plot_degradation_by_condition <- renderPlot({
+    req(rv$batch_ms_results$degradation)
+    plot_degradation_by_condition(rv$batch_ms_results$degradation)
+  })
+  output$degradation_condition_table <- DT::renderDT({
+    pc <- .deg_by_condition()$per_condition
+    req(.has_rows(pc))
+    DT::datatable(pc, rownames = FALSE, options = list(pageLength = 10, scrollX = TRUE)) |>
+      DT::formatRound(intersect(c("mean_pct_degradation", "sd_pct_degradation", "sem_pct_degradation"),
+                                names(pc)), digits = 2) |>
+      DT::formatRound(intersect(c("mean_parent_signal", "mean_degradant_signal"), names(pc)), digits = 0)
+  })
+
   output$plot_degradation_composition <- renderPlot({
     req(rv$batch_ms_results$degradation)
-    plot_degradation_composition(rv$batch_ms_results$degradation)
+    plot_degradation_composition(rv$batch_ms_results$degradation, by = .deg_comp_by())
   })
 
   output$degradation_composition_table <- DT::renderDT({
+    if (.deg_comp_by() == "condition") {
+      cc <- .deg_by_condition()$composition
+      req(.has_rows(cc))
+      cc$timepoint_lab <- NULL
+      return(DT::datatable(cc, rownames = FALSE, options = list(pageLength = 10, scrollX = TRUE)) |>
+               DT::formatRound(intersect(c("mean_pct_of_total", "sd_pct_of_total", "mean_pct_of_degradants"),
+                                         names(cc)), digits = 2))
+    }
     req(.has_rows(rv$batch_ms_results$degradation$composition))
     DT::datatable(rv$batch_ms_results$degradation$composition, rownames = FALSE,
                   options = list(pageLength = 10, scrollX = TRUE))
   })
+
+  output$dl_degradation_condition_csv <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_degradation_by_condition.csv"),
+    content = function(file) utils::write.csv(.deg_by_condition()$per_condition, file, row.names = FALSE)
+  )
+  output$dl_degradation_composition_csv <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_degradation_composition.csv"),
+    content = function(file) {
+      cc <- if (.deg_comp_by() == "condition") .deg_by_condition()$composition
+            else rv$batch_ms_results$degradation$composition
+      cc$timepoint_lab <- NULL
+      utils::write.csv(cc, file, row.names = FALSE)
+    }
+  )
 
   output$degradation_top_table <- DT::renderDT({
     req(.has_rows(rv$batch_ms_results$degradation$top_degradants))

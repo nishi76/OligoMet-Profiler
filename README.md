@@ -461,6 +461,7 @@ q  <- quantify_metabolites(m, si, absolute_met_ids = c("M01", "M02"),
 q$absolute        # back-calculated concentrations, %RE for standards and QCs
 deg <- degradation_summary(m, sample_meta = si)
 degradation_vs_reference(deg$per_sample)   # % parent remaining vs t0, per arm
+degradation_by_condition(deg)              # mean/SD/n per group x timepoint, incl. class composition
 ```
 
 With raw files, the app also keeps the processed results for the session.
