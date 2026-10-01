@@ -1089,7 +1089,17 @@ ui <- fluidPage(
                     "being summed. Aim for a set that covers the bulk of the distribution in ",
                     "every sample type, not just the standards."),
                   tags$h6("Summed XIC chromatograms"),
-                  plotOutput("plot_xic_traces", height = "320px"),
+                  fluidRow(
+                    column(3, selectInput("xic_color_by", "Colour by",
+                                          choices = c("Sample type" = "sample_type", "Group" = "group",
+                                                      "Sample (max 6)" = "sample"))),
+                    column(6, selectizeInput("xic_trace_samples", "Samples", choices = character(0),
+                                             multiple = TRUE,
+                                             options = list(placeholder = "All samples"))),
+                    column(3, tags$div(style = "margin-top: 30px;",
+                      checkboxInput("xic_trace_smooth", "Smoothed (SG 7 pt)", value = FALSE)))
+                  ),
+                  plotOutput("plot_xic_traces", height = "380px"),
                   tags$hr(),
                   tags$h6("Ion selection per metabolite"),
                   DT::DTOutput("xic_selection_table"),
@@ -4017,8 +4027,17 @@ server <- function(input, output, session) {
   output$plot_xic_traces <- renderPlot({
     xs <- .xic_summary()
     req(xs, input$xic_met_select)
-    plot_xic_traces(rv$batch_ms_results$xic$traces, xs$quant, input$xic_met_select)
+    plot_xic_traces(rv$batch_ms_results$xic$traces, xs$quant, input$xic_met_select,
+                    samples = input$xic_trace_samples, sample_meta = batch_meta_data(),
+                    color_by = input$xic_color_by %||% "sample_type",
+                    smoothed = isTRUE(input$xic_trace_smooth))
   })
+  observeEvent(rv$batch_ms_results$xic, {
+    tr <- rv$batch_ms_results$xic$traces
+    smp <- if (!is.null(tr)) unique(tr$sample) else character(0)
+    updateSelectizeInput(session, "xic_trace_samples", choices = smp,
+                         selected = intersect(isolate(input$xic_trace_samples), smp))
+  }, ignoreNULL = FALSE)
 
   output$xic_selection_table <- DT::renderDT({
     xs <- .xic_summary()

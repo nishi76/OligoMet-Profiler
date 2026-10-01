@@ -313,38 +313,114 @@ summarize_xic_quant <- function(ions, sample_meta = NULL, n_charges = 5, n_isoto
 
 ## ---- Plots -------------------------------------------------------------------------
 
+# Colour-blind-safe categorical order (Okabe-Ito, black dropped), checked
+# with a CVD validator: worst adjacent deutan Delta E 9.6. Assigned in this
+# fixed order, never cycled -- a 7th series is not given a recycled colour.
+.OKABE_ITO <- c("#0072B2", "#E69F00", "#009E73", "#D55E00", "#56B4E9", "#CC79A7")
+
+# 7-point quadratic Savitzky-Golay smoothing -- the same filter the XIC
+# integrator uses to find apex and peak edges (areas use the raw trace).
+.sg7 <- function(y) {
+  if (length(y) < 7) return(y)
+  k <- c(-2, 3, 6, 7, 6, 3, -2) / 21
+  out <- stats::filter(y, k, sides = 2)
+  out[is.na(out)] <- y[is.na(out)]
+  as.numeric(out)
+}
+
 #' Plot summed XIC traces with their integration windows
 #'
 #' @param traces `run_xic_quantitation()$traces`.
 #' @param quant `summarize_xic_quant()$quant` (for the integration windows).
 #' @param met_id Metabolite to show.
 #' @param samples Optional subset of samples.
+#' @param sample_meta Optional sample table (`sample`, `sample_type`,
+#'   `group`) for colouring by sample type or group.
+#' @param color_by `"sample_type"` (default), `"group"`, or `"sample"`. A
+#'   colour-blind-safe palette of six colours is used in a fixed order;
+#'   colouring by sample shows at most six samples, so no colour repeats.
+#' @param smoothed Draw the 7-point Savitzky-Golay trace the integrator uses
+#'   for peak finding instead of the raw summed trace.
 #' @return A ggplot object.
 #' @export
-plot_xic_traces <- function(traces, quant, met_id, samples = NULL) {
+plot_xic_traces <- function(traces, quant, met_id, samples = NULL, sample_meta = NULL,
+                            color_by = c("sample_type", "group", "sample"), smoothed = FALSE) {
+  color_by <- match.arg(color_by)
   tr <- traces[traces$target_id == met_id, , drop = FALSE]
-  if (!is.null(samples)) tr <- tr[tr$sample %in% samples, , drop = FALSE]
+  if (!is.null(samples) && length(samples) > 0) tr <- tr[tr$sample %in% samples, , drop = FALSE]
   if (nrow(tr) == 0) {
     return(ggplot2::ggplot() + ggplot2::theme_void() +
              ggplot2::labs(title = "No XIC trace for this metabolite"))
   }
-  win <- quant[quant$met_id == met_id & quant$sample %in% unique(tr$sample), , drop = FALSE]
-  n_s <- length(unique(tr$sample))
-  p <- ggplot2::ggplot(tr, ggplot2::aes(x = .data$rt, y = .data$intensity, color = .data$sample))
-  if (nrow(win) > 0) {
-    p <- p + ggplot2::geom_rect(data = win, inherit.aes = FALSE,
-      ggplot2::aes(xmin = .data$rt_start, xmax = .data$rt_end, ymin = -Inf, ymax = Inf,
-                   fill = .data$sample), alpha = 0.06, show.legend = FALSE)
+  note <- NULL
+  smp <- unique(tr$sample)
+  if (color_by == "sample" && length(smp) > length(.OKABE_ITO)) {
+    note <- sprintf("Showing the first %d of %d samples -- pick samples to compare, or colour by sample type.",
+                    length(.OKABE_ITO), length(smp))
+    smp <- smp[seq_along(.OKABE_ITO)]
+    tr <- tr[tr$sample %in% smp, , drop = FALSE]
   }
-  p + ggplot2::geom_line(linewidth = 0.6) +
-    ggplot2::scale_color_manual(values = grDevices::colorRampPalette(
-      c("#0279EE", "#FF9400", "#75A025", "#FD9BED", "#E9ED4C"))(n_s),
-      name = NULL, aesthetics = c("colour", "fill")) +
-    ggplot2::labs(x = "Retention time (min)", y = "Summed XIC intensity (all candidate ions)",
+  tr <- tr[order(tr$sample, tr$rt), , drop = FALSE]
+  if (smoothed) tr$intensity <- stats::ave(tr$intensity, tr$sample, FUN = .sg7)
+
+  lookup <- function(col) {
+    if (is.null(sample_meta) || !col %in% names(sample_meta)) return(rep("", nrow(tr)))
+    v <- sample_meta[[col]][match(tr$sample, sample_meta$sample)]
+    ifelse(is.na(v) | !nzchar(v), "", v)
+  }
+  tr$.col <- switch(color_by,
+    sample = tr$sample,
+    sample_type = { v <- lookup("sample_type"); ifelse(nzchar(v), gsub("_", " ", v), "unassigned") },
+    group = { v <- lookup("group"); ifelse(nzchar(v), v, "no group") })
+  lv <- unique(tr$.col)
+  if (color_by == "sample_type") {
+    pref <- c("standard", "quality control", "unknown", "reagent blank", "matrix blank", "unassigned")
+    lv <- c(intersect(pref, lv), setdiff(lv, pref))
+  }
+  if (length(lv) > length(.OKABE_ITO)) {
+    keep <- lv[seq_len(length(.OKABE_ITO) - 1)]
+    tr$.col[!tr$.col %in% keep] <- "other"
+    lv <- c(keep, "other")
+    note <- c(note, "More categories than distinct colours: the rest are shown as 'other'.")
+  }
+  pal <- stats::setNames(.OKABE_ITO[seq_along(lv)], lv)
+  if ("other" %in% lv) pal["other"] <- "#8A8A8A"
+  tr$.col <- factor(tr$.col, levels = lv)
+
+  win <- quant[quant$met_id == met_id & quant$sample %in% unique(tr$sample), , drop = FALSE]
+  p <- ggplot2::ggplot(tr, ggplot2::aes(x = .data$rt, y = .data$intensity,
+                                        color = .data$.col, group = .data$sample))
+  if (nrow(win) > 0 && any(!is.na(win$rt_start))) {
+    # One light band for the integration window (median start/end across
+    # the shown samples) rather than one overlapping band per sample.
+    p <- p + ggplot2::annotate("rect", xmin = stats::median(win$rt_start, na.rm = TRUE),
+                               xmax = stats::median(win$rt_end, na.rm = TRUE),
+                               ymin = -Inf, ymax = Inf, fill = "#1f2430", alpha = 0.05)
+  }
+  p + ggplot2::geom_hline(yintercept = 0, color = "#9AA0A6", linewidth = 0.4) +
+    ggplot2::geom_line(linewidth = 1.1, lineend = "round", linejoin = "round", alpha = 0.95) +
+    ggplot2::scale_color_manual(values = pal, name = NULL) +
+    ggplot2::scale_y_continuous(labels = function(x) format(x, scientific = TRUE, digits = 2),
+                                expand = ggplot2::expansion(mult = c(0, 0.05))) +
+    ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = 0.01)) +
+    ggplot2::labs(x = "Retention time (min)", y = "Summed XIC intensity",
                   title = paste0("Summed XIC -- ", met_id),
-                  subtitle = "Shaded: integration window per sample") +
-    ggplot2::theme_minimal(base_size = 11, base_family = "Liberation Sans") +
-    ggplot2::theme(legend.position = if (n_s > 12) "none" else "right")
+                  subtitle = paste(c(
+                    paste0(if (smoothed) "Savitzky-Golay smoothed (7 pt, as used for peak finding)" else "Raw summed trace",
+                           "; shaded = integration window (median across shown samples)"),
+                    note), collapse = "\n")) +
+    ggplot2::theme_minimal(base_size = 12, base_family = "Liberation Sans") +
+    ggplot2::theme(
+      plot.background = ggplot2::element_rect(fill = "white", color = NA),
+      panel.background = ggplot2::element_rect(fill = "white", color = NA),
+      panel.grid.major.x = ggplot2::element_blank(),
+      panel.grid.minor = ggplot2::element_blank(),
+      panel.grid.major.y = ggplot2::element_line(color = "#EEEEEE", linewidth = 0.3),
+      axis.line.x = ggplot2::element_line(color = "#5F6368", linewidth = 0.4),
+      axis.ticks = ggplot2::element_line(color = "#5F6368", linewidth = 0.3),
+      axis.text = ggplot2::element_text(color = "#3C4043"),
+      plot.subtitle = ggplot2::element_text(color = "#5F6368", size = 9.5),
+      legend.position = "right", legend.key.width = ggplot2::unit(18, "pt"))
 }
 
 #' Plot the charge-state x isotope contribution map

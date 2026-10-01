@@ -149,6 +149,14 @@ if (!py_ok) {
   check("every other non-blank sample is inside the 50-150% window",
         all(mon$status[!mon$sample %in% c("U2", "RB_01")] == "ok") &&
           mon$status[mon$sample == "RB_01"] == "blank (not evaluated)")
+  for (cb in c("sample_type", "group", "sample")) {
+    invisible(ggplot2::ggplot_build(plot_xic_traces(x$traces, isr$qm, "M01", sample_meta = meta, color_by = cb)))
+  }
+  invisible(ggplot2::ggplot_build(plot_xic_traces(x$traces, isr$qm, "M01", samples = c("U1", "U3"),
+                                                  sample_meta = meta, color_by = "sample", smoothed = TRUE)))
+  p6 <- plot_xic_traces(x$traces, isr$qm, "M01", sample_meta = meta, color_by = "sample")
+  check("trace plot: colour by type/group/sample and SG smoothing render; never more than 6 colours",
+        length(unique(ggplot2::ggplot_build(p6)$data[[3]]$colour)) <= 6)
   deg <- degradation_summary(isr$qm, sample_meta = meta)
   check("IS left out of degradation composition", !any(deg$composition$kind == "internal_standard"))
 }
