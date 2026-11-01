@@ -47,7 +47,7 @@ if (!is.null(.module_dir)) {
                "metabolites.R", "mass_isotope.R", "fragments.R",
                "ms_matching.R", "spectra_io.R", "batch_ms_processing.R", "statistics.R",
                "degradation.R", "multivariate.R", "blank_correction.R", "data_matrix.R", "xic_quant.R", "internal_standard.R",
-               "structure_annotation.R", "regulatory_report.R",
+               "structure_annotation.R", "regulatory_report.R", "report_evidence.R",
                "build_workbook.R", "build_report.R",
                "export_acquisition.R", "export_spectral.R", "mirror_plot.R",
                "agent_tools.R", "agent_core.R")) {
@@ -5233,6 +5233,8 @@ server <- function(input, output, session) {
       spec = rv$spec, mets = rv$mets, dict = rv$dict %||% STANDARD_DICT,
       matches = if (!is.null(bres)) bres$ms1_matches else NULL,
       ms2_confirmations = if (!is.null(bres)) bres$ms2_confirmations else NULL,
+      ms2_spectra = if (!is.null(bres)) bres$ms2_spectra else NULL,
+      features = rv$batch_features,
       abundance = tryCatch(.batch_parent_rel(), error = function(e) NULL),
       degradation = if (!is.null(bres)) bres$degradation else NULL,
       quant = rv$quant_results,
@@ -5243,7 +5245,8 @@ server <- function(input, output, session) {
                     signal_basis = input$signal_basis %||% "raw",
                     xic_enabled = isTRUE(input$xic_enable) && !is.null(bres) && !is.null(bres$xic),
                     xic_n_charges = input$xic_n_charges, xic_n_iso = input$xic_n_iso,
-                    global_is = input$global_is %||% "none")
+                    global_is = input$global_is %||% "none",
+                    h_offset = input$h_offset %||% 0, use_envipat = isTRUE(input$use_envipat %||% TRUE))
     )
   }
   .reg_prefix <- function() {
@@ -5254,13 +5257,19 @@ server <- function(input, output, session) {
   output$dl_reg_report_html <- downloadHandler(
     filename = function() paste0(.reg_prefix(), "_metID_report.html"),
     content = function(file) {
-      writeLines(build_regulatory_report_html(.reg_context()), file)
+      withProgress(message = "Building report",
+                   detail = "re-reading raw files for metabolite spectra", value = 0.3, {
+        writeLines(build_regulatory_report_html(.reg_context()), file)
+      })
     }
   )
   output$dl_reg_report_docx <- downloadHandler(
     filename = function() paste0(.reg_prefix(), "_metID_report.docx"),
     content = function(file) {
-      build_regulatory_report_docx(.reg_context(), file)
+      withProgress(message = "Building report",
+                   detail = "re-reading raw files for metabolite spectra", value = 0.3, {
+        build_regulatory_report_docx(.reg_context(), file)
+      })
     }
   )
 

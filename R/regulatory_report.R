@@ -750,22 +750,125 @@
     if (!is.null(pathway_txt)) P(sprintf("At %s the degradant signal was distributed as follows. ", if (has_time) fmt_t(last_t) else "each condition"), pathway_txt, ".")
   }
 
-  H2("Structural Characterization")
-  struct_ids <- if (!is.null(rep_mets)) head(rep_mets, 6) else NULL
-  n_struct <- 0L
-  if (!is.null(struct_ids) && !is.null(ctx$spec)) {
-    P("Structure maps show each reported species against the parent sequence: retained residues are drawn with their sugar chemistry, removed residues are greyed out, and backbone linkages are marked (solid: phosphorothioate; dotted: phosphodiester).")
-    for (i in seq_len(nrow(struct_ids))) {
-      lm <- lib_lookup(struct_ids$met_id[i], struct_ids$met_name[i], struct_ids$kind[i])
-      if (is.null(lm)) next
-      svg <- tryCatch(annotate_metabolite_svg(lm, parent = ctx$spec, dict = dict), error = function(e) NULL)
-      if (is.null(svg)) next
-      if (nzchar(lib_prefix) && !identical(lib_prefix, ta) && !grepl("^\\[", ta)) svg <- gsub(lib_prefix, ta, svg, fixed = TRUE)
-      SVG(svg, sprintf("Structure map: %s (%s).", struct_ids$met_name[i], tolower(.reg_kind_label(struct_ids$kind[i]))))
-      n_struct <- n_struct + 1L
+  H2("Metabolite Characterization")
+  char_ids <- if (!is.null(rep_mets)) head(rep_mets, params$max_characterized %||% 15) else NULL
+  raw_ms <- !is.null(matches) && "obs_mz" %in% names(matches)
+  ev <- if (raw_ms && !is.null(char_ids) && nrow(char_ids) > 0) {
+    tryCatch(collect_metabolite_evidence(char_ids$met_id, matches, ctx$features, ctx$mets, dict,
+                                         study_samples = ab$study, ms2_confirmations = ms2c,
+                                         ms2_spectra = ctx$ms2_spectra, h_offset = params$h_offset %||% 0,
+                                         use_envipat = params$use_envipat %||% TRUE,
+                                         ppm = params$ppm_tol %||% 10, extract = !isFALSE(ctx$extract_raw)),
+             error = function(e) list())
+  } else list()
+  n_raw <- sum(vapply(ev, function(e) !is.null(e$spectrum), logical(1)))
+  if (!is.null(char_ids) && nrow(char_ids) > 0) {
+    P("Each reported species is documented below: its sequence and position in the parent, molecular formula and masses, the precursor ion and charge states used for identification, the originating sample (the study sample with the strongest signal), ",
+      if (raw_ms) "the extracted-ion chromatogram and apex MS1 isotope pattern re-read from that sample's raw data file, the charge-state envelope, " else "the theoretical isotope distribution, ",
+      "the MS/MS spectrum where acquired, and a structure map against the parent (retained residues drawn with their sugar chemistry, removed residues greyed out; solid linkage: phosphorothioate, dotted: phosphodiester).")
+    if (raw_ms && n_raw == 0 && length(ev) > 0)
+      NOTE("The raw data files were not available when this report was generated (or Python could not read them), so chromatograms and acquired MS1 spectra are omitted; the matched m/z values and theoretical patterns are shown.")
+    if (!raw_ms)
+      NOTE("Results were imported from a pre-processed data matrix, so observed m/z values, charge states and spectra are not available; theoretical values are shown for each species.")
+    parent_bases <- ctx$spec$bases
+    z_all <- seq(params$z_min %||% 3, params$z_max %||% 12)
+    for (i in seq_len(nrow(char_ids))) {
+      r <- char_ids[i, ]
+      lm <- lib_lookup(r$met_id, r$met_name, r$kind)
+      e <- ev[[r$met_id]]
+      info <- if (!is.null(lm)) tryCatch(metabolite_mass_info(lm, dict), error = function(x) NULL) else NULL
+      if (i > 1) BREAK()
+      H3(r$met_name)
+      pos_txt <- ""
+      if (!is.null(lm) && !is.null(parent_bases)) {
+        L <- length(lm$bases)
+        hit <- which(vapply(seq_len(max(0, length(parent_bases) - L + 1)), function(st)
+          identical(parent_bases[st:(st + L - 1)], lm$bases), logical(1)))
+        if (length(hit) == 1) pos_txt <- sprintf(" (positions %d-%d of the parent)", hit, hit + L - 1)
+      }
+      # originating sample: from the match evidence, else the abundance matrix
+      orig <- if (!is.null(e)) e$row$sample else if (!is.null(ab)) {
+        rr <- match(r$met_id, ab$mat$met_id)
+        v <- as.numeric(ab$mat[rr, ab$study]); if (all(is.na(v))) NA else ab$study[which.max(v)]
+      } else NA
+      orig_txt <- if (is.na(orig)) "-" else {
+        sf <- sframe[sframe$sample == orig, ]
+        ctxt <- paste(c(if (nrow(sf) && nzchar(sf$condition)) sf$condition, if (nrow(sf) && nzchar(sf$timepoint)) paste0("t = ", fmt_t(sf$timepoint))), collapse = ", ")
+        sig_v <- if (!is.null(ab)) as.numeric(ab$mat[match(r$met_id, ab$mat$met_id), orig]) else NA
+        sprintf("%s%s%s", orig, if (nzchar(ctxt)) paste0(" (", ctxt, ")") else "",
+                if (!is.na(sig_v)) paste0("; response ", .reg_fix(sig_v, 0)) else "")
+      }
+      kv <- list(
+        Class = .reg_kind_label(r$kind),
+        `Sequence (5'->3')` = if (!is.null(lm)) paste0(paste(.reg_base_letter(lm$bases), collapse = ""), pos_txt) else "-",
+        Length = if (!is.null(lm)) sprintf("%d nucleotides", lm$n) else "-",
+        `Molecular formula (free acid)` = info$formula_str %||% "-",
+        `Monoisotopic / average mass (Da)` = if (!is.null(info)) sprintf("%.4f / %.2f", info$mono_mass, info$avg_mass) else "-")
+      if (!is.null(e)) {
+        rw <- e$row
+        if (identical(rw$adduct, "H") && rw$k_oxid == 0 && !is.null(info)) {
+          meas <- rw$obs_mz * rw$z + rw$z * .PROTON - (params$h_offset %||% 0)
+          kv[["Measured monoisotopic mass (Da)"]] <- sprintf("%.4f (%+.1f ppm)", meas, (meas - info$mono_mass) / info$mono_mass * 1e6)
+        }
+        kv[["Precursor ion"]] <- sprintf("%s: theoretical m/z %.4f, observed m/z %.4f (%+.1f ppm)%s",
+          .ev_ion_label(rw$z, rw$adduct), rw$theo_mz, rw$obs_mz, rw$ppm_error,
+          if (rw$k_oxid > 0) sprintf("; %d PS->PO desulfurization", rw$k_oxid) else "")
+        kv[["Charge states observed"]] <- paste(sprintf("%d- (m/z %.4f)", e$envelope$z, e$envelope$obs_mz), collapse = ", ")
+        if (!is.na(rw$rt)) kv[["Retention time (apex)"]] <- sprintf("%.2f min", rw$rt)
+        if (!is.null(rw$iso_fit) && !is.na(rw$iso_fit)) kv[["Isotope pattern fit"]] <- sprintf("%.2f (0-1; cosine similarity x fraction of isotopes matched)", rw$iso_fit)
+        if (nrow(e$envelope) >= 2) {
+          ec <- tryCatch(envelope_consistency(matches[matches$met_id == r$met_id & matches$sample == rw$sample &
+                                                      matches$adduct == rw$adduct & matches$k_oxid == rw$k_oxid, , drop = FALSE],
+                                              h_offset = params$h_offset %||% 0), error = function(x) NULL)
+          if (!is.null(ec) && nrow(ec) > 0 && !is.na(ec$mass_cv_ppm[1]))
+            kv[["Charge-state mass agreement"]] <- sprintf("%d charge states, neutral-mass CV %.2f ppm", ec$n_z[1], ec$mass_cv_ppm[1])
+        }
+      } else if (!is.null(info)) {
+        zz <- z_all[((info$mono_mass - z_all * .PROTON) / z_all) >= 400 & ((info$mono_mass - z_all * .PROTON) / z_all) <= 2000]
+        if (length(zz)) kv[["Theoretical precursor m/z"]] <- paste(sprintf("%d- %.4f", zz, (info$mono_mass - zz * .PROTON) / zz), collapse = "; ")
+      }
+      kv[["Originating sample"]] <- orig_txt
+      kv[["Detected in"]] <- sprintf("%d of %d study samples", r$n_detected, r$n_study)
+      kv[["MS/MS"]] <- if (!is.null(e) && !is.null(e$ms2)) {
+        cf <- e$ms2$conf
+        sprintf("%s: score %.1f, %d fragment ion(s) matched (%.0f%% sequence coverage), %d PS diagnostic ion(s); %s, sample %s",
+                if (isTRUE(cf$confident)) "confirmed" else "acquired, not confirmed",
+                cf$confirmation_score, cf$n_frag_matches, 100 * cf$coverage, cf$n_diagnostics %||% 0L,
+                .ev_ion_label(cf$z, cf$adduct), cf$sample)
+      } else if (ms2_ran) "no MS/MS spectrum acquired for this precursor" else "not acquired"
+      kvdf <- data.frame(Item = names(kv), Value = unlist(kv, use.names = FALSE), stringsAsFactors = FALSE)
+      TAB(kvdf, sprintf("Identification evidence for %s.", r$met_name), widths = c(1.9, 4.37), header = FALSE)
+
+      if (!is.null(e)) {
+        FIG(plot_evidence_xic(e), sprintf("Extracted-ion chromatogram of %s, %s, in %s.", r$met_name, .ev_ion_label(e$row$z, e$row$adduct), e$row$sample), h = 2.2)
+        FIG(plot_evidence_isotopes(e, params$ppm_tol %||% 10), sprintf("MS1 isotope pattern of %s at the chromatographic apex, observed against theoretical.", r$met_name), h = 2.7)
+        FIG(plot_evidence_envelope(e), sprintf("Charge-state envelope of %s in %s.", r$met_name, e$row$sample), h = 2.2)
+        if (!is.null(e$ms2))
+          FIG(tryCatch(plot_mirror_spectrum(e$ms2$data, title = sprintf("%s, %s precursor, sample %s", r$met_name,
+                                                                        .ev_ion_label(e$ms2$conf$z, e$ms2$conf$adduct), e$ms2$conf$sample)),
+                       error = function(x) NULL),
+              sprintf("MS/MS spectrum of %s: acquired (top) against predicted fragment ions (bottom).", r$met_name), h = 3.2)
+      } else if (!is.null(info)) {
+        zz <- z_all[((info$mono_mass - z_all * .PROTON) / z_all) >= 400]
+        zt <- if (length(zz)) zz[which.min(abs((info$mono_mass - zz * .PROTON) / zz - 1100))] else NA
+        if (!is.na(zt)) {
+          te <- list(row = data.frame(z = zt, adduct = "H", theo_mz = (info$mono_mass - zt * .PROTON) / zt, sample = "-"),
+                     theo_iso = .ev_nominal_isotopes(info$formula_str, zt, (info$mono_mass - zt * .PROTON) / zt,
+                                                     params$h_offset %||% 0, params$use_envipat %||% TRUE))
+          FIG(plot_evidence_isotopes(te), sprintf("Theoretical isotope distribution of %s, %s.", r$met_name, .ev_ion_label(zt)), h = 2.5)
+        }
+      }
+      if (!is.null(lm) && !is.null(ctx$spec)) {
+        svg <- tryCatch(annotate_metabolite_svg(lm, parent = ctx$spec, dict = dict), error = function(x) NULL)
+        if (!is.null(svg)) {
+          if (nzchar(lib_prefix) && !identical(lib_prefix, ta) && !grepl("^\\[", ta)) svg <- gsub(lib_prefix, ta, svg, fixed = TRUE)
+          SVG(svg, sprintf("Structure map: %s (%s).", r$met_name, tolower(.reg_kind_label(r$kind))))
+        }
+      }
     }
+  } else {
+    P("No reported metabolites to characterize.")
   }
-  if (n_struct == 0L) P("Generate a metabolite library for the test article to embed structure maps.")
 
   # ===================== 7. Discussion =====================
   H1("Discussion")

@@ -12,7 +12,8 @@
 })
 for (.f in c("about.R", "chemistry_dict.R", "oligo_io.R", "metabolites.R",
              "mass_isotope.R", "structure_annotation.R", "statistics.R",
-             "degradation.R", "regulatory_report.R")) {
+             "degradation.R", "fragments.R", "export_spectral.R", "mirror_plot.R", "batch_ms_processing.R", "xic_quant.R",
+             "regulatory_report.R", "report_evidence.R")) {
   source(file.path(.pkg_root, "R", .f))
 }
 check <- function(label, ok) {
@@ -68,6 +69,18 @@ check("methods document the quantitation (adduct handling, aggregation)",
       grepl("Signal aggregation and quantitation", html) &&
         grepl("deprotonated [M-zH]", html, fixed = TRUE) &&
         grepl("Adduct handling", html, fixed = TRUE))
+check("each reported metabolite gets an identification-evidence table",
+      grepl("Identification evidence for", html, fixed = TRUE) &&
+        grepl("Sequence (5'-&gt;3')", html, fixed = TRUE))
+check("without raw m/z, the characterization falls back to theoretical values",
+      grepl("Theoretical precursor m/z", html, fixed = TRUE) &&
+        grepl("Theoretical isotope distribution", html, fixed = TRUE))
+check("% of parent excludes non-study samples (blank with tiny parent signal)", local({
+  m2 <- rbind(matches, mk("blank", pid, "parent", 1), mk("blank", e3, "exo_3p", 50))
+  sm2 <- rbind(smeta, data.frame(sample = "blank", matrix = "plasma", timepoint = "", sample_type = "reagent_blank"))
+  ab <- .reg_abundance(m2, .reg_sample_frame(unique(m2$sample), sm2), 0.1)
+  ab$per_met$max_pct[ab$per_met$met_id == e3] < 100
+}))
 check("empty context still produces a valid HTML shell (placeholders)",
       grepl("</html>", build_regulatory_report_html(list()), fixed = TRUE))
 
