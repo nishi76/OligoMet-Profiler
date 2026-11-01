@@ -1,0 +1,983 @@
+---
+title: "OligoMet Profiler: In-Silico Metabolite Identification for Therapeutic Oligonucleotides"
+author:
+- name: Nishikant Wase, PhD
+  email: nishikant.wase@gmail.com
+  affiliation: Research Scientist, Thermo Fisher Scientific (author and developer)
+date: "`r Sys.Date()`"
+package: OligoMetProfiler
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+abstract: >
+  OligoMetProfiler generates theoretical metabolite libraries, molecular
+  formulas, negative-ESI charge envelopes, isotope patterns,
+  phosphorothioate (PS) oxidation series, McLuckey MS/MS fragment ions,
+  and PRM inclusion lists for any therapeutic oligonucleotide -- DNA,
+  RNA, 2'-O-methyl, 2'-fluoro, MOE, cEt, LNA, mixed PO/PS backbones, and
+  fully custom chemistry via dictionary overrides. It optionally matches
+  the theoretical library against acquired MS data (mzML/mzXML or peak
+  lists), exports a seven-sheet Excel workbook and an HTML/PDF report,
+  and writes targeted mass lists formatted for the Thermo Orbitrap
+  Exploris Method Editor. This vignette walks through the complete
+  workflow: sequence input in three notations, the chemistry dictionary
+  and custom overrides, metabolite library generation, mass and envelope
+  calculation, fragment ion prediction, acquisition method export, MS
+  data matching, and the Shiny dashboard.
+vignette: >
+  %\VignetteIndexEntry{OligoMet Profiler: In-Silico Metabolite Identification for Therapeutic Oligonucleotides}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+  FOR RESEARCH USE ONLY: not for diagnostic, clinical, or
+  regulatory submission use. All outputs are computed
+  predictions, not measurements, and must be confirmed
+  experimentally; the software is provided without warranty
+  and the author accepts no liability for its use.
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+# Introduction
+
+Metabolite identification for therapeutic oligonucleotides (antisense
+oligonucleotides, siRNA, and related modalities) requires predicting the
+masses of every plausible biotransformation product before any of them
+can be found in LC-MS data. Exonucleases chew nucleotides from the 3'
+and 5' termini, endonucleases cleave internal linkages,
+phosphorothioate (PS) backbones progressively desulfurize to
+phosphodiester (PO) *in vivo* and *in vitro*, and each of these species
+ionizes as a multi-charge negative-ESI envelope with sodium, potassium,
+and ammonium adduct satellites. Doing this by hand in a spreadsheet is
+error-prone and does not scale past a handful of metabolites.
+
+`OligoMetProfiler` automates the whole chain. Given a sequence and its
+chemistry (sugars, linkages, terminal conjugates), it produces:
+
+* **Theoretical metabolite library** -- parent, 3'/5' exonuclease
+  truncation ladders, and endonuclease internal fragments.
+* **Masses and formulas** -- elemental formula, monoisotopic mass, and
+  average mass for every metabolite, assembled from a validated
+  chemistry dictionary.
+* **Charge envelopes** -- $[M - zH]^{z-}$ m/z values across a
+  configurable charge-state range, with H/Na/K/NH~4~ adduct variants.
+* **Isotope patterns** -- top-N isotope peaks per charge state, via
+  `enviPat` when installed or a built-in convolution engine otherwise.
+* **PS oxidation series** -- the -15.977 Da PS-to-PO desulfurization
+  ladder at each oxidation level.
+* **McLuckey MS/MS fragment ions** -- a, a-B, b, b-B, c, d, w, x, y, z
+  terminal ions plus internal fragments, with PS diagnostic ions,
+  following the nomenclature of McLuckey and co-workers.
+* **Acquisition support** -- a PRM inclusion list, plus Orbitrap
+  Exploris Method Editor-formatted MS1 inclusion and MS2 PRM target
+  lists.
+* **Reporting** -- a seven-sheet Excel workbook and an HTML/PDF report
+  with summary plots.
+* **MS matching (optional)** -- import mzML/mzXML or peak lists, match
+  MS1 features against the library with ppm tolerance, score isotope
+  fit and envelope consistency, and confirm hits via MS/MS fragment
+  matching.
+
+The methodology is grounded in four published approaches: SynONIM
+(Lippens *et al.*, JASMS 2024) for synthetic oligonucleotide
+modification and impurity nomenclature, the eluforsen metabolite
+profiling study (Kim *et al.*, Mol Ther Nucleic Acids 2019) for the
+LC-MS/MS workflow and PS diagnostic ions, OligoDistiller (Liu *et
+al.*, Anal Chem 2025) for McLuckey fragment annotation and isotope
+envelope fitting, and the FMVS automatic metabolite identification
+method (Ye *et al.*, J Chromatogr B 2025) for confirmation scoring.
+
+Four approved oligonucleotide therapeutics are added as working examples, one per modality class in Takakusa *et al.* (2023):
+**nusinersen** (antisense SSO), **inotersen** (antisense gapmer),
+**patisiran** (siRNA delivered by lipid nanoparticle) and **givosiran**
+(GalNAc-conjugated siRNA). The two antisense examples double as the
+formula engine's regression anchors -- the pipeline reproduces their
+published free-acid molecular formulas exactly. They are illustrations,
+not default targets: every function in this vignette runs on any
+sequence you give it.
+
+# Installation
+
+Install directly from GitHub:
+
+```{r install, eval = FALSE}
+# install.packages("remotes")
+remotes::install_github("nishi76/OligoMet-Profiler")
+```
+
+The hard dependencies (`openxlsx`, `ggplot2`, `xml2`, `xfun`) are
+installed automatically. Two optional packages improve specific steps:
+
+* `enviPat` -- higher-accuracy isotope patterns (a built-in convolution
+  engine is used when it is absent);
+* `rmarkdown` -- required only for rendering HTML/PDF reports.
+
+The Shiny dashboard additionally uses `shiny`, `DT`, `bslib`, and
+`shinyFiles`; those are pulled in by `install_packages.R` in the
+repository root, or install them manually.
+
+```{r library}
+library(OligoMetProfiler)
+```
+
+# Quick start
+
+A complete run on a 16-mer gapmer ASO -- 2'-O-methyl wings, DNA gap,
+all-PS backbone -- takes four calls:
+
+```{r quickstart}
+seq_str <- "Gm-sTm-sCm-sTm-sCm-sTd-sCd-sTd-sCd-sTd-sTd-sCm-sTm-sCm-sTm-sGm"
+
+spec <- parse_input(seq_str)
+mets <- generate_metabolites(spec, opts = list(
+  oligo_name = "demo", max_3p = 5, max_5p = 5, endo = TRUE))
+
+info <- metabolite_mass_info(mets[[1]])
+cat("Parent formula:", info$formula_str,
+    "\nMonoisotopic mass:", round(info$mono_mass, 4), "Da\n")
+
+length(mets)   # parent + truncations + endonuclease fragments
+```
+
+The Excel workbook and HTML report wrap everything downstream of this
+into single calls (`build_workbook()`, `build_report()`); they are
+covered in the *Outputs* section below.
+
+# From analytical documentation to an input string
+
+The pipeline needs three pieces of information *per nucleotide
+position*, plus anything attached to the ends. All of it is normally
+on the documentation that accompanies the oligonucleotide -- a
+Certificate of Analysis (CoA), a synthesis report, a patent sequence
+listing, or a BioPharma Finder sequence-editor export:
+
+1. **Base sequence** (5' to 3'). Watch for 5-methylcytosine: CoAs
+   write it as `mC`, `5-Me-C`, `C*`, or a footnote such as "all
+   cytosines are 5-methyl". Its base code here is `S`, not `C` -- the
+   two differ by CH~2~ (14.016 Da) per site.
+2. **Sugar at each position**, often given as a design shorthand:
+   "5-10-5 MOE gapmer" means 5 MOE positions, 10 DNA, 5 MOE;
+   "2'-OMe/2'-F alternating" alternates `m` and `f`.
+3. **Backbone linkages** -- "full phosphorothioate" is the common case
+   for ASOs; mixed backbones are listed per position or as a pattern
+   ("PS wings, PO gap"). An *n*-mer has *n - 1* linkages.
+4. **Terminal conjugates** (GalNAc, cholesterol, amino linkers,
+   phosphate caps, dyes) -- absent unless stated.
+
+To construct the triplet string, write one dash-separated token per
+position, 5' to 3', as `[incoming linkage][BASE][sugar]`, leaving the
+linkage prefix off the first token.
+
+Take inotersen as a worked case. Its published description reads:
+
+> 20-mer antisense oligonucleotide targeting the TTR 3'UTR (bases
+> 618-637), sequence 5'-TCTTGGTTACATGAAATCCC-3'. A 5-10-5 gapmer:
+> positions 1-5 and 16-20 are 2'-MOE, positions 6-15 are 2'-deoxy.
+> Fully phosphorothioate backbone. All cytosines are 5-methylcytosine.
+
+Translating position by position:
+
+| Position | Base (from CoA) | Base code | Sugar | Incoming linkage | Token |
+|---:|---|---|---|---|---|
+| 1 | T | `T` | 2'-MOE -> `e` | (none, 5' end) | `Te` |
+| 2 | 5-Me-C | `S` | 2'-MOE -> `e` | PS -> `s` | `sSe` |
+| 6 | G | `G` | DNA -> `d` (gap starts) | PS -> `s` | `sGd` |
+| 16 | A | `A` | 2'-MOE -> `e` (wing resumes) | PS -> `s` | `sAe` |
+| 20 | 5-Me-C | `S` | 2'-MOE -> `e` | PS -> `s` | `sSe` |
+
+Joined up, that is the `INOTERSEN_TRIPLET` constant shipped with the
+package:
+
+```{r coa-example}
+spec_coa <- parse_input(INOTERSEN_TRIPLET)
+spec_coa$n
+paste(spec_coa$bases, collapse = "")
+paste(spec_coa$sugars, collapse = "")
+```
+
+The proof that the translation is right is the molecular formula: the
+assembled formula matches the one on the approved product labelling
+exactly.
+
+```{r coa-check}
+info_coa <- metabolite_mass_info(list(
+  bases = spec_coa$bases, sugars = spec_coa$sugars,
+  linkages = spec_coa$linkages, conj5 = "none", conj3 = "none"))
+info_coa$formula_str
+INOTERSEN_FORMULA            # published free-acid formula
+round(info_coa$avg_mass, 2)  # published average MW: 7183.08
+```
+
+Two traps are worth calling out, because both change the mass and
+neither is obvious from the letter sequence alone. Writing `C` instead
+of `S` for a 5-methylcytosine loses CH~2~ (14.016 Da) *per site* -- in
+inotersen that is five sites, a 70 Da error. And an *n*-mer has
+*n - 1* linkages, so the last token never carries an outgoing bond.
+
+The parser enforces the obvious sanity checks -- token count equals
+oligo length, every token after the first starts with a linkage code,
+and any code missing from the dictionary is named in the error
+message. Modifications without a built-in code are added as custom
+overrides with their elemental formula (see *Custom chemistry
+overrides* below). The package's `inst/help/QUICKSTART.md`
+carries a condensed version of this guide with the full code tables.
+
+## The four bundled reference drugs
+
+One approved therapeutic per modality class ships with the package,
+covering the chemistries you are most likely to meet:
+
+```{r reference-table}
+do.call(rbind, lapply(REFERENCE_OLIGOS, function(r) data.frame(
+  drug = r$name, brand = r$brand, modality = r$modality,
+  nt = r$length, chemistry = r$chemistry, stringsAsFactors = FALSE)))
+```
+
+Each is available as a triplet string (`NUSINERSEN_TRIPLET`,
+`INOTERSEN_TRIPLET`, `PATISIRAN_SENSE_TRIPLET`,
+`GIVOSIRAN_SENSE_TRIPLET`) and through the `REFERENCE_OLIGOS` registry,
+which also carries the terminal conjugates that triplet notation cannot
+express:
+
+```{r reference-run}
+for (r in REFERENCE_OLIGOS) {
+  sp <- parse_input(r$triplet)
+  info <- metabolite_mass_info(list(
+    bases = sp$bases, sugars = sp$sugars, linkages = sp$linkages,
+    conj5 = r$conj5, conj3 = r$conj3))
+  cat(sprintf("%-26s %-20s %2d nt  %-38s %10.4f Da\n",
+              r$name, r$modality, sp$n, info$formula_str, info$mono_mass))
+}
+```
+
+Note what distinguishes each modality, since these are exactly the
+features that drive metabolite prediction:
+
+* **nusinersen** -- uniform 2'-MOE and a fully PS backbone. Sugar-modified
+  throughout, so it degrades by exonuclease nibbling from the termini
+  rather than internal cleavage.
+* **inotersen** -- a 5-10-5 gapmer, MOE wings around a DNA gap. The gap is
+  the endonuclease-susceptible region, so `endo_sites = "gap"` matches
+  its real biotransformation route.
+* **patisiran** (sense strand) -- an all-phosphodiester siRNA with a dTdT
+  overhang. No PS means no oxidation series to model (`max_oxid` has
+  nothing to act on).
+* **givosiran** (sense strand) -- alternating 2'-OMe/2'-F, PS only at the
+  two 5'-terminal linkages, and a trivalent GalNAc at the 3' end. The
+  conjugate rides on the parent and on 5' truncations, but is lost from
+  3' truncations that cut past it.
+
+Duplex drugs are given as their sense strand: this pipeline profiles one
+strand at a time, so run each strand of an siRNA separately.
+
+# Sequence input notations
+
+`parse_input()` auto-detects three input formats. All three reduce to
+the same internal representation: parallel vectors of bases, sugars,
+and linkages (5' to 3'), plus optional 5'/3' conjugate codes.
+
+## Triplet notation
+
+Each dash-separated token is `[linkage][base][sugar]`. The first (5')
+token has no linkage prefix; the prefix on token *i* is the incoming
+bond from position *i - 1*.
+
+```{r triplet}
+spec <- parse_input(
+  "Gm-sTm-sCm-sTm-sCm-sTd-sCd-sTd-sCd-sTd-sTd-sCm-sTm-sCm-sTm-sGm")
+spec$n
+paste(spec$bases, collapse = "")
+paste(spec$sugars, collapse = "")
+```
+
+Breaking the example down:
+
+* `Gm` -- position 1: base G, sugar `m` (2'-OMe), no incoming linkage.
+* `sTm` -- position 2: base T, sugar `m`, PS bond from position 1.
+* `sTd` -- position 6: base T, sugar `d` (DNA), PS bond from position 5.
+
+Linkage codes are `o` or `p` for phosphodiester and `s` for
+phosphorothioate. `p` matches Thermo BioPharma Finder's sequence-editor
+notation, so triplet strings copied from BPF (e.g. `Ad-pTd-pCd-pAd`)
+parse directly.
+
+## OligoDistiller notation
+
+Wrapped in `OH-...-OH`, with `*` marking a PS *outgoing* bond and the
+sugar as a suffix on the base:
+
+```{r oligodistiller}
+spec_od <- parse_input(
+  "OH-Gm*-Tm*-Cm*-Tm*-Cm*-Td*-Cd*-Td*-Cd*-Td*-Td*-Cm*-Tm*-Cm*-Tm*-Gm-OH")
+identical(spec_od$bases, spec$bases)
+```
+
+Sugar suffixes: `m` = 2'-OMe, `f` = 2'-F, `d` = DNA, `r` = RNA,
+`e` = MOE.
+
+## Three-line notation (bases / sugars / linkages)
+
+The layout a chemical analysis file or a BioPharma Finder sequence entry
+gives you directly, and the one the dashboard's **Manual sequence entry**
+panel uses. One code per position for bases and sugars; one per *bond*
+for linkages, so an n-mer has n-1 of them.
+
+```{r three-line}
+spec_3l <- parse_three_line(
+  bases    = "TSASTTTSATAATGSTGG",
+  sugars   = "eeeeeeeeeeeeeeeeee",
+  linkages = "sssssssssssssssss")
+format_triplet(spec_3l)
+```
+
+A field holding a single code is applied to every position, which is the
+common case for a uniformly modified drug -- `sugars = "e"` and
+`linkages = "s"` give exactly the result above. Multi-character codes
+(`MOE`, `cEt`, `LNA`) need a separator: `"MOE-MOE-d-d"`, `"A,G,S,T"`.
+
+`format_three_line()` renders any spec back to the three lines, and
+`format_biopharma_fasta()` writes it as a FASTA record for BioPharma
+Finder's Sequence Manager:
+
+```{r bpf-fasta}
+cat(format_biopharma_fasta(spec_3l, name = "nusinersen"))
+```
+
+See `inst/help/SEQUENCE_GUIDE.md` (or the dashboard's Help panel) for a
+walkthrough aimed at readers who have
+not worked with oligonucleotide notation before.
+
+## Structured input
+
+An R list with explicit parallel vectors -- use this when you need
+terminal conjugates or full programmatic control. `linkages[i]` is the
+bond from position *i* to *i + 1*; the last entry is `NA` (no outgoing
+bond at the 3' terminus).
+
+```{r structured}
+my_spec <- parse_input(list(
+  bases    = c("A", "C", "G", "U", "A", "G", "U", "C", "A", "C", "G", "U"),
+  sugars   = c("m", "f", "m", "f", "m", "f", "m", "f", "m", "f", "m", "f"),
+  linkages = c("s", "s", "s", "s", "s", "s", "s", "s", "s", "s", "s", NA),
+  conj5    = "none",
+  conj3    = "GalNAc"
+))
+my_spec$conj3
+```
+
+`validate_spec()` checks any parsed spec against the dictionary and
+reports unknown codes before you get halfway through a run.
+
+# The chemistry dictionary
+
+Every module resolves base, sugar, linkage, and conjugate codes through
+a chemistry dictionary. `STANDARD_DICT` is the built-in default:
+
+```{r dict-peek}
+# A couple of representative entries
+STANDARD_DICT[["m"]]$name
+STANDARD_DICT[["s"]]$name
+format_formula(STANDARD_DICT[["G"]]$formula)
+```
+
+## Built-in codes
+
+Bases: `A` (adenine), `G` (guanine), `C` (cytosine), `T` (thymine),
+`U` (uracil), `S` (5-methylcytosine), `D` (2,6-diaminopurine),
+`I` (hypoxanthine/inosine).
+
+Sugars: `d` (2'-deoxyribose), `r` (ribose), `m` (2'-O-methylribose),
+`f` (2'-fluororibose), `FANA` (2'-F arabino; isobaric with `f`),
+`e`/`MOE` (2'-O-methoxyethyl), `NMA` (2'-O-[2-(methylamino)-2-oxoethyl]),
+`allyl` (2'-O-allyl), `AP` (2'-O-aminopropyl), `NH2`
+(2'-amino-2'-deoxyribose), `UNA` (unlocked, 2',3'-seco), `GNA` (glycol
+nucleic acid), `LNA`, `ENA` (2'-O,4'-C-ethylene), `cEt` (constrained
+ethyl), `NP` (3'-amino, for N3'->P5' phosphoramidate backbones).
+
+Linkages: `o`/`p` (phosphodiester), `s` (phosphorothioate), `u`
+(PS stereochemistry variant), the alkyl phosphonates `mp` (methyl),
+`prp` (propyl), `ibu` (isobutyl), `chx` (cyclohexyl) and `mop`
+(methoxypropyl), `pace`/`tpace` (phosphonoacetate and its thio
+analog), `msp` (mesyl phosphoramidate), and `pgo`/`tmg` (the two
+phosphoryl guanidine variants -- they differ by 2.0157 Da per bond, so
+check which one you have).
+
+Conjugates: 5'/3'-phosphate caps, GalNAc (mono and trivalent cluster),
+cholesterol, C6/C12 amino linkers, TEG, FAM, Cy3, the fatty acids
+`myristoyl`/`palmitoyl`/`stearoyl`/`docosanoyl`, plus the BioPharma
+Finder 5.2 terminal-modification set (biotin, cAG/cAU/ARCA/mCAP cap
+analogs, triantennary GalNAc).
+
+`inst/help/MODIFICATIONS.md` -- the Modifications tab of the
+dashboard's Help panel -- lists every one of these with its residue
+formula and its per-position mass difference from the parent chemistry,
+and explains how to add a modification the dictionary does not have.
+
+Entries flagged `verify = TRUE` (e.g. `cEt`, `LNA`, `ENA`, `msp`,
+`pgo`, `GalNAc3`, dye conjugates) carry best-estimate formulas --
+confirm them against a known mass before relying on them, or override
+them (next section).
+
+## Custom chemistry overrides
+
+Any code can be added or replaced with `build_dictionary()`. Each
+override is a named list carrying a `formula` (named vector or string)
+and an optional `name`; conjugates also take an `attach` mode
+(`replace_H`, `replace_OH`, or `add`).
+
+```{r overrides}
+custom_dict <- build_dictionary(list(
+  # A new base code
+  X = list(formula = c(C = 6, H = 7, N = 5, O = 1),
+           name = "my modified base X"),
+  # A new sugar code, formula as string
+  Q = list(formula = "C10H20O7", name = "my 2'-mod sugar Q"),
+  # Replace a best-estimate entry with a confirmed formula
+  cEt = list(formula = "C7H12O4", name = "constrained ethyl (confirmed)")
+))
+format_formula(custom_dict[["Q"]]$formula)
+```
+
+Pass `dict = custom_dict` to any downstream function, and use the new
+codes in sequences exactly like standard ones (`Gm-sXm-sQm-...`). The
+pipeline trusts custom formulas as given -- there is no external
+validation gate -- so when a reference mass for the full-length oligo
+is available, compare it against the computed parent mass to catch
+transcription errors.
+
+## The formula-engine self-test
+
+`validate_reference()` re-derives the molecular formulas of nusinersen
+and inotersen from their sequences and chemistry, and compares each
+against the free-acid formula on its approved product labelling.
+Between them they exercise MOE and DNA sugars, 5-methylcytosine and
+5-methyluracil bases, and a fully phosphorothioate backbone. It is a
+regression check on the formula engine (run it after editing the
+dictionary), not a validation of whatever sequence you are analyzing:
+
+```{r refaso}
+v <- validate_reference(verbose = FALSE)
+v$ok                       # TRUE only if both formulas reproduce exactly
+vapply(v$all, function(x) x$formula, "")
+vapply(v$all, function(x) round(x$ppm, 6), 0)   # deviation, ppm
+```
+
+# Metabolite library generation
+
+`generate_metabolites()` builds the library from a parsed spec:
+
+```{r metabolites}
+mets <- generate_metabolites(spec, opts = list(
+  oligo_name   = "demo",
+  max_3p       = 5,      # 3' exonuclease ladder depth
+  max_5p       = 5,      # 5' exonuclease ladder depth
+  endo         = TRUE,   # endonuclease internal fragments
+  endo_sites   = "all",  # or "gap" to cleave only in the DNA gap
+  min_frag_len = 3       # discard fragments shorter than this
+))
+head(metabolite_table(mets), 8)
+```
+
+Options worth knowing:
+
+* **`max_3p` / `max_5p`** -- ladder depth. For an *n*-mer, `n - 1`
+  gives the complete series; the default (10) covers the metabolites
+  actually observed in most in vivo studies.
+* **`endo_sites = "gap"`** -- for gapmer ASOs, endonucleases (S1,
+  RNase H-adjacent activities) preferentially cleave within the DNA
+  gap. Restricting cleavage to the gap keeps the library focused and
+  the downstream envelope computation fast.
+* **`min_frag_len`** -- short fragments produce low-m/z, low-charge
+  species that rarely survive LC-MS detection; 3 is a practical floor.
+
+Each metabolite records its own bases/sugars/linkages (so conjugate
+loss on truncation is handled correctly), its kind (`parent`,
+`exo_3p`, `exo_5p`, `endo_5p`/`endo_3p`), PS/PO linkage counts, and a
+human-readable modification label.
+
+# Masses, envelopes, isotopes, and the PS oxidation series
+
+## Mass and formula
+
+```{r massinfo}
+info <- metabolite_mass_info(mets[[1]])
+info$formula_str
+round(info$mono_mass, 6)
+round(info$avg_mass, 4)
+```
+
+The formula is assembled as: sum of bases + sum of sugars + sum of
+internal linkages - (2n - 1) H~2~O + conjugates, accounting for *n*
+glycosidic bonds and *n - 1* internucleotide bonds. This convention is
+validated against the published molecular formulas of nusinersen and
+inotersen (0 ppm on both).
+
+## Charge envelope
+
+Negative ESI, $[M - zH]^{z-}$:
+
+```{r envelope}
+charge_envelope(info$mono_mass, z_range = 4:8)
+```
+
+`h_offset` shifts the neutral mass before charging. Leave it at 0 for
+standard mass spectrometry; a non-zero value exists only to reproduce
+legacy reference workbooks that computed their envelopes from an
+offset neutral mass.
+
+Adduct satellites replace one H with a cation; the shifts are exposed
+via `adduct_shift()`:
+
+```{r adducts}
+sapply(c("Na", "K", "NH4"), adduct_shift)
+```
+
+## Isotope patterns
+
+`isotope_pattern()` returns the top-N isotopologues for a formula.
+With `enviPat` installed it uses enviPat's convolution; otherwise a
+built-in engine takes over (identical selection logic, slightly
+coarser peak merging). Both paths are memoized per formula, so
+repeated calls across charge states are effectively free.
+
+```{r isotopes}
+pat <- isotope_pattern(info$formula_vec, n_top = 5, use_envipat = FALSE)
+pat$mass <- round(pat$mass, 4)
+pat
+```
+
+`isotope_mz_cluster()` converts a pattern into per-charge-state m/z
+values (the monoisotopic peak is always retained even when it is not
+among the most abundant), and `compute_envelope()` produces the full
+tidy table -- one row per (oxidation level, charge state, isotope) --
+that feeds the workbook's Charge Envelopes sheet:
+
+```{r compute-envelope}
+env <- compute_envelope(mets[[1]], z_range = 5:6, n_iso = 3,
+                        max_oxid = 1, use_envipat = FALSE)
+env$mz <- round(env$mz, 4)
+head(env[, c("met_id", "k_oxid", "z", "iso", "mz", "abundance")], 6)
+```
+
+## PS oxidation series
+
+Each PS-to-PO desulfurization replaces one S with one O
+(-15.977 Da). `ps_oxidation_series()` walks the ladder from 0 to
+`min(n_PS, max_oxid)` events:
+
+```{r oxidation}
+ser <- ps_oxidation_series(mets[[1]], max_oxid = 3)
+ser$mono_mass <- round(ser$mono_mass, 4)
+ser[, c("k", "mono_mass", "formula_str")]
+```
+
+Heavily oxidized species are low-abundance in practice; the default
+cap of 6 events covers what is typically observable.
+
+# MS/MS fragment ions
+
+`generate_fragments()` produces McLuckey terminal ions -- a, a-B, b,
+b-B, c, d from the 5' side and w, x, y, z from the 3' side -- and
+`generate_internal_fragments()` adds internal (double-cleavage)
+products:
+
+```{r fragments}
+frags <- generate_fragments(mets[[1]])
+length(frags)
+ft <- fragment_table(frags)
+head(ft[ft$z == 1, c("ion_type", "direction", "cleavage_site",
+                     "frag_length", "mz")], 8)
+```
+
+For PS backbones, `check_ps_diagnostic()` looks for the low-mass PS
+diagnostic ions (94.9362 / 192.9660 series) in an MS2 spectrum, and
+`confirmation_score()` combines fragment coverage, diagnostic ions,
+and mass accuracy into a 0-100 confirmation score per metabolite
+(following the FMVS approach).
+
+# Outputs: workbook, report, acquisition lists
+
+## Excel workbook
+
+`build_workbook()` writes the seven-sheet library workbook: Summary,
+Metabolite Library, Charge Envelopes, PS Oxidation Series, Fragment
+Ions, PRM Inclusion List, and MS Matching.
+
+```{r workbook, eval = FALSE}
+opts <- list(z_range = 3:12, n_iso = 5, max_oxid = 6, h_offset = 0,
+             use_envipat = TRUE, include_internal = TRUE,
+             max_3p = 10, max_5p = 10, endo = TRUE,
+             adducts = c("H", "Na", "K", "NH4"), ppm_tol = 10)
+
+wb_path <- build_workbook(spec, mets, opts = opts,
+                          output_file = "demo_library.xlsx",
+                          output_dir  = ".")
+```
+
+The Charge Envelopes sheet is the most computation-heavy (one isotope
+pattern per metabolite per oxidation level); a live console progress
+bar with an adaptive ETA tracks it. Sheets are assembled in memory and
+written in bulk, so the Excel serialization itself takes seconds even
+for libraries with tens of thousands of envelope rows.
+
+## HTML/PDF report
+
+`build_report()` renders a standalone report (requires `rmarkdown`)
+with five summary plots -- charge envelope, isotope pattern,
+truncation series, oxidation series, and fragment map. The individual
+`plot_*()` functions are exported too, so any plot can be regenerated
+or restyled on its own:
+
+```{r report, eval = FALSE}
+report <- build_report(spec, mets, opts = opts,
+                       output_file = "demo_report",
+                       output_format = "html",   # or "pdf"
+                       plot_dir = ".")
+```
+
+## Orbitrap Exploris acquisition method export
+
+Three targeted-acquisition tables are exported in the exact column
+layout of the Orbitrap Exploris Method Editor's Targeted Mass filter
+(Mass List Type "m/z & z", Time Mode "Start/End Time"):
+
+```{r acquisition}
+ms1 <- thermo_ms1_inclusion_list(mets[1:3], z_range = 5:8,
+                                 max_oxid = 1, max_targets = 500)
+head(ms1, 4)
+```
+
+* **`thermo_ms1_inclusion_list()`** -- every (metabolite, oxidation
+  level, charge state) combination; import into a Full Scan
+  experiment's Targeted Mass filter.
+* **`thermo_ms2_prm_target_list()`** -- the same list narrowed to a
+  smaller charge range and tagged with an HCD collision energy; import
+  as the target list of a Targeted MS2 (PRM) scan. The default NCE
+  (20%) is a starting point for PS oligonucleotide backbones, not a
+  validated parameter -- optimize per method.
+* **`ms2_fragment_reference()`** -- theoretical fragment ions per
+  metabolite. This is *not* a Method Editor import (PRM records the
+  full fragment spectrum); it is the lookup table for interpreting the
+  acquired spectra afterward.
+
+Both list functions cap output rows (`max_targets`) -- the Method
+Editor accepts up to 150,000 rows, but PRM duty cycle degrades long
+before that.
+
+## Spectral libraries (MGF / MSP)
+
+The same theoretical library also exports as MGF and MSP, the formats
+spectral-library tools read (MS-DIAL, mzVault/Compound Discoverer,
+MZmine, matchms, SIRIUS, GNPS).
+
+```{r spectral, eval = FALSE}
+export_spectral_libraries(mets, dict, out_dir = "results",
+                          prefix = "my_oligo")
+#> results/my_oligo_MS1_library.mgf  (+ .msp)
+#> results/my_oligo_MS2_library.mgf  (+ .msp)
+```
+
+`build_ms1_library()` emits one spectrum per (metabolite, PS-oxidation
+level, charge state), whose peaks are the theoretical isotope cluster --
+real relative abundances, annotated with the true isotopologue offset
+(`M+0`, `M+1`, ...) and anchored on the m/z computed from the formula
+rather than on the isotope engine's binned masses.
+
+`build_ms2_library()` emits one spectrum per (metabolite, precursor
+charge state), holding the McLuckey fragment ions at the requested
+fragment charges, annotated `w4^2-`, `a-B5^1-`, `w-a(3,8)^1-` in the
+MSP.
+
+There is no fragment-intensity model in this pipeline, so **every MS2
+peak is written at a flat intensity of 100**. Match on m/z; an
+intensity-weighted dot-product or cosine score against these libraries
+reduces to a function of peak count and means nothing. The MS1
+libraries carry genuine isotope abundances and are not affected.
+
+# Matching against acquired MS data
+
+Point the pipeline at an mzML/mzXML file (or a two-column m/z-intensity
+peak list) to annotate the library against real data:
+
+```{r matching, eval = FALSE}
+ms   <- read_ms_file("data.mzML")          # MS1 + MS2 spectra
+feat <- extract_ms1_features(ms$ms1)
+hits <- match_ms1(feat, mets, ppm_tol = 10,
+                  z_range = 3:12, max_oxid = 6,
+                  adducts = c("H", "Na", "K", "NH4"))
+ann  <- annotate_metabolites(hits, ms, mets)   # adds MS2 confirmation
+```
+
+Matching proceeds in the order established by the eluforsen and FMVS
+studies: (1) match each metabolite's theoretical m/z values across
+charge states, adducts, and oxidation levels at the given ppm
+tolerance; (2) score isotope-pattern fit (cosine similarity) and
+charge-envelope consistency; (3) for hits with associated MS2 spectra,
+confirm via McLuckey fragment matching and PS diagnostic ions.
+
+`read_ms_file()` prefers Bioconductor's `Spectra`/`mzR` when installed
+(streaming, numpress, indexed-mzML support) and falls back to
+`parse_mzml()`, a built-in xml2-based parser that decodes mzML binary
+data (base64 + zlib) natively in R with no external dependency -- either
+way works, so `Spectra`/`mzR` are optional. Vendor raw files (Thermo
+`.raw`, Sciex `.wiff`, Bruker `.baf`/`.yep`) are converted to `.mzML`
+automatically via `resolve_ms_input_file()` when ProteoWizard
+`msconvert` is on the PATH; without it, convert externally first
+(`msconvert file.raw --mzML --centroid`). Agilent/Bruker `.d` folders
+are directories, not single files, so the Shiny app can only reach them
+through its local-folder batch input, not file upload.
+
+# Batch processing and statistical comparison
+
+The single-file matching above scales to a many-sample experiment via a
+bundled Python pipeline (`inst/python/oligomet_deconv/`, requires Python
+3.9+ with `inst/python/requirements.txt` installed) that streams each
+mzML/mzXML file and detects chromatographic features by grouping
+observed m/z into charge-state envelopes -- the same neutral-mass
+agreement check the R side already uses for `envelope_consistency()`,
+`M = z * (mz - proton)`, rather than a peptide isotope/averagine model,
+since that doesn't describe oligonucleotides. One worker process per
+file, so a batch scales with core count; a corrupt file is isolated and
+logged, not fatal to the run.
+
+```{r batch, eval = FALSE}
+source("R/batch_ms_processing.R"); source("R/statistics.R")
+
+deconv   <- run_batch_deconvolution(list.files("raw_data", pattern = "\\.mzML$", full.names = TRUE))
+features <- read_batch_features(deconv$features_path)
+batch    <- annotate_metabolites_batch(mets, features, dict = dict)   # matches + retains unmatched peaks
+
+abund <- build_abundance_matrix(batch$ms1_matches)
+long  <- abundance_long(abund, data.frame(
+  sample = c("ctrl_1", "ctrl_2", "treat_1", "treat_2"),
+  group  = c("control", "control", "treated", "treated")))
+compare_two_groups(long, "control", "treated")   # Welch t-test + BH-adjusted p-values
+```
+
+R matches the resulting features against the theoretical library by
+reusing `match_ms1()` unchanged; anything that matches no candidate
+within tolerance is retained (not discarded) as an "unidentified peaks"
+table. When MS2 confirmation is enabled, R first computes a *targeted*
+watch-list of theoretical precursor m/z (reusing `prm_inclusion_list()`)
+and passes it to the Python pipeline, which captures MS2 spectra only
+for scans near those candidates in the same streaming pass -- cheap on
+top of the deconvolution itself. R then confirms each matched hit
+against the theoretical fragment library with the existing
+`confirm_metabolite()` machinery, unchanged.
+
+`compare_two_groups()` (Welch t-test), `compare_multi_groups()`
+(one-way ANOVA + Tukey HSD), and `compare_time_series()` (linear trend)
+all report Benjamini-Hochberg-adjusted p-values and flag metabolites
+with too few replicates rather than erroring.
+
+## Bundled example
+
+A ready-to-run example ships with the package -- 6 synthetic mzML files
+(3 "control" + 3 "treated" replicates of the inotersen reference
+sequence, plus a contaminant trace that matches no theoretical
+metabolite) under `system.file("extdata", "batch_example", package =
+"OligoMetProfiler")`. `Rscript inst/examples/run_batch_example.R` from a
+repository checkout runs the whole thing end to end with no editing; the
+same data is used live below when Python is available on the machine
+building this vignette.
+
+```{r batch_example_setup, include = FALSE}
+python_available <- !is.na(find_python())
+```
+
+```{r batch_example, eval = python_available}
+example_dir <- system.file("extdata", "batch_example", package = "OligoMetProfiler")
+batch_files <- list.files(example_dir, pattern = "\\.mzML$", full.names = TRUE)
+sample_meta <- read.csv(file.path(example_dir, "sample_meta.csv"), stringsAsFactors = FALSE)
+
+ex_spec <- parse_input(INOTERSEN_TRIPLET)
+ex_mets <- generate_metabolites(ex_spec, opts = list(oligo_name = "inotersen_example",
+                                                       max_3p = 3, max_5p = 3, endo = FALSE))
+
+deconv   <- run_batch_deconvolution(batch_files, n_workers = 2)
+features <- read_batch_features(deconv$features_path)
+batch    <- annotate_metabolites_batch(ex_mets, features, ppm_tol = 10,
+                                        z_range = 3:12, adducts = "H", max_oxid = 0, n_iso = 0)
+
+cat("MS1 matches:", nrow(batch$ms1_matches),
+    " | unidentified peaks retained:", nrow(batch$unmatched), "\n")
+
+abund <- build_abundance_matrix(batch$ms1_matches)
+long  <- abundance_long(abund, sample_meta)
+compare_two_groups(long, "control", "treated")[, c("met_id", "met_name", "mean_a", "mean_b", "log2fc", "p_adj")]
+```
+
+```{r batch_example_skip, echo = FALSE, eval = !python_available, results = "asis"}
+cat("*(Skipped: no Python interpreter found while building this vignette --",
+    "run `Rscript inst/examples/run_batch_example.R` directly to see it work.)*")
+```
+
+# The Shiny dashboard and CLI drivers
+
+Three ready-made entry points wrap the same engine. The dashboard
+ships inside the installed package; the CLI drivers live in the
+repository root:
+
+* **`run_app()`** -- a Shiny dashboard with sequence input (triplet, or
+  the three-field manual entry described above), an editable
+  custom-chemistry table, full parameter control, optional MS upload,
+  a four-plot summary, and workbook/report/PRM/acquisition-list/
+  spectral-library downloads. Launch with `OligoMetProfiler::run_app()` from an
+  installed package, or `shiny::runApp(".")` from a clone of the
+  repository.
+* **`run_custom_oligo.R`** -- the primary CLI template: copy it, edit
+  the CONFIG block (sequence, overrides, parameters), and
+  `Rscript run_custom_oligo.R`.
+* **`run_batch_ms.R`** -- the batch/multi-sample counterpart: same
+  CONFIG-block pattern, but for a directory of raw files plus a sample
+  metadata table (group or timepoint), running the parallel Python
+  deconvolution pipeline and the statistics suite described above.
+
+For a formula-engine regression check from the command line, run the
+validation scripts in `tests/` (e.g.
+`Rscript tests/test_mass_isotope.R`) or call `validate_reference()`
+directly from R.
+
+# Performance notes
+
+* The **Charge Envelopes** computation dominates runtime: one isotope
+  pattern per metabolite per PS-oxidation level. Isotope patterns are
+  memoized per formula (both the enviPat and built-in engines), so
+  charge states and adducts add no repeated cost.
+* To speed up a long run: disable endonuclease fragments, lower
+  `max_oxid`, or narrow `z_range` -- each directly reduces the number
+  of isotope-pattern calls.
+* Workbook sheets are written in bulk (one write per sheet, styling
+  restricted to headers and a few accent cells), so `saveWorkbook()`
+  stays fast regardless of library size.
+* `enviPat` prints a harmless note about the electron mass on some
+  systems; it is cosmetic. Set `use_envipat = FALSE` to use the
+  built-in engine instead.
+
+# Caveats
+
+* Dictionary entries flagged `verify = TRUE` (cEt, LNA, GalNAc3, dye
+  and BPF terminal modifications) are best-estimate formulas --
+  confirm against a known mass before quantitative use.
+* Custom overrides are trusted as given; validate the parent mass
+  against a reference when one exists.
+* The `h_offset = 3.0046` convention exists only to reproduce legacy
+  reference workbooks that used an offset neutral mass; use 0 for
+  standard work.
+* The repository's `tests/` scripts are console-output validation
+  scripts, not asserted unit tests.
+
+# Session info {.unnumbered}
+
+```{r sessioninfo}
+sessionInfo()
+```
+
+# References {.unnumbered}
+
+## Methodology {.unnumbered}
+
+1. Lippens J.L. *et al.* SynONIM: a Synthetic Oligonucleotide
+   Nomenclature for Impurities and Modifications. *J Am Soc Mass
+   Spectrom* (2024).
+2. Kim J. *et al.* Metabolite Profiling of the Antisense
+   Oligonucleotide Eluforsen Using Liquid Chromatography-Mass
+   Spectrometry. *Mol Ther Nucleic Acids* (2019).
+3. Liu R. *et al.* OligoDistiller: untargeted profiling of therapeutic
+   oligonucleotide drugs and metabolites. *Anal Chem* (2025).
+4. Ye X. *et al.* Automatic metabolite identification of antisense
+   oligonucleotides by full MS variable scanning. *J Chromatogr B*
+   (2025).
+5. McLuckey S.A., Van Berkel G.J., Glish G.L. Tandem mass spectrometry
+   of small, multiply charged oligonucleotides. *J Am Soc Mass
+   Spectrom* 3:60-70 (1992).
+
+## Reference drugs and modality classification {.unnumbered}
+
+6. Takakusa H., Iwazaki N., Nishikawa M., Yoshida T., Obika S., Inoue T.
+   Drug Metabolism and Pharmacokinetics of Antisense Oligonucleotide
+   Therapeutics: Typical Profiles, Evaluation Approaches, and Points to
+   Consider Compared with Small Molecule Drugs. *Nucleic Acid
+   Therapeutics* 33(2):83-94 (2023). doi:10.1089/nat.2022.0054 --
+   source of the modality classification (Table 1) used for the four
+   bundled examples, and of the class-specific metabolism routes
+   (endonuclease-first for gapmers, exonuclease for SSOs).
+7. Egli M., Manoharan M. Chemistry, structure and function of approved
+   oligonucleotide therapeutics. *Nucleic Acids Research*
+   51(6):2529-2573 (2023). doi:10.1093/nar/gkad067 -- chemistry and
+   structural review of the approved oligonucleotide drugs.
+8. SPINRAZA (nusinersen) prescribing information, Biogen -- sequence,
+   2'-MOE/PS chemistry, and free-acid molecular formula
+   C~234~H~340~N~61~O~128~P~17~S~17~.
+9. TEGSEDI (inotersen) prescribing information, Akcea Therapeutics -- 5-10-5
+   MOE gapmer design, TTR 3'UTR target sequence (bases 618-637), and
+   free-acid molecular formula C~230~H~318~N~69~O~121~P~19~S~19~
+   (average MW 7183.08).
+10. ONPATTRO (patisiran) prescribing information, Alnylam -- siRNA
+    duplex sequences, 2'-OMe modification pattern, dTdT overhangs, and
+    lipid-nanoparticle formulation.
+11. GIVLAARI (givosiran) prescribing information, Alnylam -- ESC-GalNAc
+    siRNA sequences, 2'-F/2'-OMe alternation, terminal phosphorothioate
+    placement, and the trivalent GalNAc (L96) 3' conjugate.
+
+## Instrument and software documentation {.unnumbered}
+
+12. Thermo Fisher Scientific. *BioPharma Finder 5.2 Oligonucleotide
+    Analysis User Guide* -- triplet sequence notation and terminal
+    modification codes.
+13. Thermo Fisher Scientific. *Orbitrap Exploris 120 Software Manual*,
+    "Targeted Inclusion -- Targeted Mass filter" -- mass-list column
+    layout used by the acquisition exports.
+
+# Author, disclosure and disclaimer
+
+**Nishikant Wase, PhD** -- author and developer; Research Scientist,
+Thermo Fisher Scientific (nishikant.wase@gmail.com). Designed, written
+and maintained by the author; released under the MIT licence.
+
+**Research use only.** OligoMetProfiler is a research tool. It is not a
+medical device and is not intended or validated for diagnostic use,
+clinical decision-making, patient care, quality control release testing,
+or inclusion in a regulatory submission.
+
+**Everything it reports is a prediction.** Libraries, formulas, masses,
+envelopes, isotope patterns, fragment ions, target lists and spectral
+libraries are computed from a chemistry dictionary and from assumptions
+about oligonucleotide metabolism and fragmentation -- not measured. A
+mass match is a hypothesis, not an identification; confirm every
+assignment experimentally. Formulas flagged `verify = TRUE` are
+unverified best estimates, and the MS2 spectral libraries carry
+placeholder intensities.
+
+**No warranty, no liability.** The software is provided "as is", without
+warranty of any kind, express or implied, under the MIT licence. In no
+event shall the author be liable for any claim, damages or other
+liability -- including loss of data, wasted instrument time or
+materials, or an erroneous scientific conclusion -- arising from or in
+connection with the software or its use. The user is solely responsible
+for verifying fitness for their purpose and for validating every result.
+
+**Affiliation and disclosure.** The author is employed as a Research
+Scientist at Thermo Fisher Scientific, disclosed here because the
+package interoperates with Thermo Fisher products (BioPharma Finder
+notation, Orbitrap Exploris mass lists). OligoMetProfiler is an
+independent personal project, not a Thermo Fisher Scientific product,
+and has not been supplied, reviewed, supported, endorsed or approved by
+Thermo Fisher Scientific or any other company; all interoperability is
+implemented from publicly documented formats only. Product and drug
+names are used for identification and interoperability only and remain
+the trademarks of their owners. Views and outputs are the author's own.
+
+```{r about, eval = FALSE}
+oligomet_about()   # prints this statement in the console
+```
+
+The full statement is in `DISCLAIMER.md`.

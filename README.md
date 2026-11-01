@@ -1,0 +1,624 @@
+# OligoMet Profiler
+
+> **FOR RESEARCH USE ONLY.** Not for diagnostic, clinical, or regulatory
+> submission use. Every value is a computed prediction, not a
+> measurement, and must be confirmed experimentally. No warranty; see
+> [DISCLAIMER.md](DISCLAIMER.md).
+
+An R pipeline that generates theoretical metabolite libraries, charge
+envelopes, isotope patterns, McLuckey MS/MS fragment ions, and PRM
+inclusion lists for any therapeutic oligonucleotide — DNA, RNA, 2'-OMe,
+2'-F, MOE, cEt, LNA, mixed PO/PS backbones, and custom chemistry via
+dictionary overrides — with optional matching against uploaded MS data.
+Ships as an installable package (`OligoMetProfiler`) with a Shiny
+dashboard.
+
+Method background comes from SynONIM (Lippens et al. 2024), the
+eluforsen metabolite profiling study (Kim et al. 2019), OligoDistiller
+(Liu et al. 2025), and FMVS automatic metabolite ID (Ye et al. 2025);
+see the [Bibliography](#bibliography). Four approved drugs are bundled
+as worked examples, one per modality class in Takakusa et al. (2023) —
+they are illustrations, not default targets.
+
+**New here?** Start with [QUICKSTART.md](inst/help/QUICKSTART.md), which
+covers reading a Certificate of Analysis and building a valid input
+string. Full workflow documentation is in the
+[vignette](vignettes/OligoMetProfiler.Rmd).
+
+## Installation
+
+```r
+# install.packages(c("remotes", "shiny", "DT", "shinyFiles"))
+remotes::install_github("nishi76/OligoMet-Profiler")
+library(OligoMetProfiler)   # engine functions
+OligoMetProfiler::run_app() # launches the dashboard
+```
+
+Or from a clone, for the dashboard and CLI drivers:
+
+```r
+install.packages("shiny")
+source("install_packages.R")  # installs the rest
+shiny::runApp(".")
+```
+
+The dashboard carries its own documentation in a **Help & guides** panel
+(quick start, sequence guide, modification reference).
+
+Rather than assembling triplet notation by hand, the **Manual sequence
+entry** panel takes the three lines off your analysis document — bases,
+sugars, linkages — and builds the sequence:
+
+| Field | Example |
+|---|---|
+| Bases (5'→3') | `TSASTTTSATAATGSTGG` |
+| Sugars | `eeeeeeeeeeeeeeeeee` (or just `e` for all positions) |
+| Linkages | `sssssssssssssssss` (or just `s`) |
+
+[SEQUENCE_GUIDE.md](inst/help/SEQUENCE_GUIDE.md) walks a first-time user
+through reading those three lines and exporting a BioPharma Finder FASTA.
+
+## Bundled reference examples
+
+Selectable from the app's "Load example" dropdown, and available
+programmatically as constants and via the `REFERENCE_OLIGOS` registry:
+
+| Modality | Drug (brand) | nt | Chemistry | Constant |
+|---|---|---:|---|---|
+| Antisense (SSO) | nusinersen (SPINRAZA) | 18 | PS, uniform 2'-MOE, 5-methyl pyrimidines | `NUSINERSEN_TRIPLET` |
+| Antisense (gapmer) | inotersen (TEGSEDI) | 20 | PS, 5-10-5 2'-MOE/DNA gapmer, 5-methyl-C | `INOTERSEN_TRIPLET` |
+| siRNA (LNP) | patisiran (ONPATTRO) | 21 | 2'-OMe/ribose, all-PO backbone, dTdT overhang | `PATISIRAN_SENSE_TRIPLET` |
+| siRNA (GalNAc) | givosiran (GIVLAARI) | 21 | 2'-OMe/2'-F, partial PS, 3' trivalent GalNAc | `GIVOSIRAN_SENSE_TRIPLET` |
+
+```r
+spec <- parse_input(INOTERSEN_TRIPLET)
+mets <- generate_metabolites(spec, opts = list(oligo_name = "inotersen",
+                                               endo = TRUE, endo_sites = "gap"))
+```
+
+siRNA entries are the **sense strand** — the pipeline profiles one
+strand at a time, so run each strand separately. Givosiran's GalNAc is
+carried in the registry's `conj3` field, since triplet notation has no
+conjugate field.
+
+Each modality stresses a different part of the pipeline: gapmers cleave
+endonucleolytically in the DNA gap, sugar-modified SSOs degrade from the
+termini, the all-PO siRNA has no PS oxidation series, and the GalNAc
+conjugate is retained on 5' truncations but lost from 3' ones cutting
+past it.
+
+## BioPharma Finder compatibility
+
+Triplet sequences from BPF's sequence editor (`Ad-pTd-pCd-pAd`) parse
+directly — `p` is recognized as phosphodiester alongside this pipeline's
+`o`, and `s` already matched. BPF's terminal modification codes (biotin,
+cap analogs, triantennary GalNAc) appear in the app's conjugate
+dropdowns under descriptive names, since BPF's single letters (`a`, `u`,
+`r`, `c`) already mean specific sugars or linkages here. Formulas come
+from the BioPharma Finder 5.2 user guide.
+
+Going the other way, `format_biopharma_fasta()` — the app's **BPF
+FASTA** button — writes the sequence as a FASTA record for BPF's
+Sequence Manager:
+
+```
+>nusinersen | 18-mer
+Te-sSe-sAe-sSe-sTe-sTe-sTe-sSe-sAe-sTe-sAe-sAe-sTe-sGe-sSe-sTe-sGe-sGe
+```
+
+Two things depend on your BPF installation: **sugar codes** resolve
+against its Building Block editor, so a locally-defined code needs
+renaming or adding there; and **terminal conjugates** have nowhere to
+live in triplet notation, so the export writes them into the header as a
+reminder and you set them yourself. See
+[SEQUENCE_GUIDE.md](inst/help/SEQUENCE_GUIDE.md) section 7.
+
+## Modification coverage
+
+| Class | Codes |
+|---|---|
+| Sugars | `d` `r` `m` `f` `FANA` `e`/`MOE` **`NMA`** `allyl` `AP` `NH2` `UNA` `GNA` `LNA` `ENA` `cEt` `NP` |
+| Backbones | `o`/`p` `s`/`u` `mp` `prp` `ibu` `chx` `mop` `pace` `tpace` **`msp`** `pgo` `tmg` |
+| Conjugates | GalNAc (mono/tri/triantennary), cholesterol, C6/C12, TEG, FAM, Cy3, phosphate and thiophosphate caps, cap analogs, fatty acids |
+
+The mass differences people most often need:
+
+- **2'-O-NMA** is **+12.9953 Da per position vs MOE** — an amide where
+  MOE has an ether.
+- **Mesyl phosphoramidate** (msPA) is **+61.0164 Da per bond vs PS**.
+- **Phosphoryl guanidine** has two variants differing by 2.0157 Da per
+  bond (`pgo` cyclic, `tmg` tetramethyl) — check which yours is.
+- **FANA** is exactly isobaric with 2'-F ribo; MS cannot distinguish
+  them.
+- **UNA** and **GNA** are siRNA destabilizers at +2.0157 and −58.0055 Da
+  vs RNA.
+
+[MODIFICATIONS.md](inst/help/MODIFICATIONS.md) is the full reference:
+every code, residue formula, mass difference, and how to add one the
+dictionary lacks. `tests/test_modifications.R` recomputes every number.
+
+Morpholino (PMO), PNA, and boranophosphate are deliberately absent — the
+first two do not decompose into base/sugar/linkage residues, and
+boranophosphate needs boron added to the element table with its isotope
+abundances. The guide explains what to do about each.
+
+## Orbitrap Exploris acquisition export
+
+Targeted mass lists follow the Orbitrap Exploris Software Manual's
+"Targeted Inclusion — Targeted Mass filter" column layout exactly
+(`Compound, Formula, Adduct, m/z, z, Intensity Threshold, t start, t
+stop, HCD Collision Energies (%), Maximum Injection Time`). Import with
+Mass List Type "m/z & z" and Time Mode "Start/End Time" (or
+"Unscheduled").
+
+- **MS1 Inclusion List** — every (metabolite, PS-oxidation level, charge
+  state) across the configured envelope, for a Full Scan experiment.
+- **MS2 PRM Target List** — the same, narrowed to a smaller charge range
+  (PRM duty cycle degrades with target count) and tagged with an HCD
+  collision energy, for a tMS2/PRM scan.
+- **MS2 Fragment Reference** — theoretical McLuckey fragment ions
+  (a/a-B/b/b-B/c/w/x/y plus internal). **Not** a Method Editor import;
+  PRM targets precursors, so this is for interpreting the resulting
+  spectra afterward or building a Skyline-style transition list.
+
+The default HCD NCE (20%) is a starting point for PS backbones, not a
+validated parameter — optimize per method. Both list functions cap rows
+(`max_targets`), since PRM cycle time degrades well before the Method
+Editor's own 150,000-row limit.
+
+## Spectral library export
+
+The library also exports as MGF and MSP, read by MS-DIAL,
+mzVault/Compound Discoverer, MZmine, matchms, SIRIUS, and GNPS — from
+the app's **Spectral Libraries** download row or from R:
+
+```r
+export_spectral_libraries(mets, dict, out_dir = "results", prefix = "my_oligo")
+#> results/my_oligo_MS1_library.mgf   my_oligo_MS1_library.msp
+#> results/my_oligo_MS2_library.mgf   my_oligo_MS2_library.msp
+```
+
+- **MS1 library** — one spectrum per (metabolite, oxidation level,
+  charge state). Peaks are the theoretical isotope cluster, so
+  intensities are real relative abundances matchable against an acquired
+  pattern, annotated with isotopologue offset (`M+0`, `M+1`, …).
+- **MS2 library** — one spectrum per (metabolite, precursor charge),
+  holding McLuckey terminal and internal ions at the requested fragment
+  charges, annotated in the MSP (`w4^2-`, `a-B5^1-`, `w-a(3,8)^1-`).
+  Intensities are a rule-based heuristic (PS-linkage lability, MOE-PS vs
+  DNA-PS dominant ion series, purine base-loss lability) — match on
+  *m/z* only, do not treat them as measured abundances.
+- **Empirical MS2 library** — the real alternative, built from actual
+  acquired DDA/MS2 spectra rather than predicted ones. After a batch run
+  with MS2 confirmation enabled, `build_empirical_ms2_library()`
+  (`R/export_spectral.R`) pools every real MS2 spectrum confirmed for the
+  same (metabolite, oxidation level, charge, adduct) across all
+  samples/replicates into one consensus spectrum — a peak survives only
+  if it recurs, within tolerance, across a large-enough fraction of the
+  contributing spectra, denoising against one-off chemical noise the way
+  a NIST-style consensus spectrum does. Available from the Shiny app's
+  Batch Results tab ("Download empirical MS2 library") and written
+  automatically by `run_batch_ms.R` alongside the predicted library.
+
+## Performance
+
+**Charge Envelopes** is the heaviest step: one isotope pattern per
+metabolite × oxidation level. Patterns are memoized per formula, so
+charge states and adducts add no repeated cost, and the workbook is
+written in bulk. A full default run on a 16-mer (endonuclease fragments
+on, `max_oxid = 6`, z = 3–12) builds and saves in well under a minute on
+a typical laptop.
+
+To speed up a long run: uncheck "Include endonuclease fragments", lower
+"Max PS oxid.", or narrow the charge range — each directly reduces
+isotope-pattern calls.
+
+If the app seems unresponsive after clicking the folder picker, you are
+on an old version: `tcltk`/`utils::choose.dir()` used blocking native
+dialogs that could freeze the single-threaded Shiny process. That was
+replaced with an in-app `shinyFiles` picker. Separately, the Run handler
+is wrapped in a top-level `tryCatch`, so unexpected errors are reported
+in the status panel instead of silently doing nothing.
+
+## Batch processing and statistical comparison
+
+**Try it now, no data of your own needed:** a bundled example
+(`inst/extdata/batch_example/`) ships 6 synthetic mzML files — 3
+"control" + 3 "treated" replicates of the inotersen reference sequence,
+including a contaminant trace that matches nothing (exercises the
+retained "unidentified peaks" path) and a real MS2 spectrum per file for
+confirmation. Run it end to end with:
+
+```bash
+Rscript inst/examples/run_batch_example.R
+```
+
+which matches, confirms, and statistically compares (Welch t-test) all
+six files in about a minute, writing a workbook, an unmatched-peaks CSV,
+and a statistics CSV to `results_batch_example/`. `inst/extdata/batch_example/generate_example.py`
+shows exactly how the synthetic data was built, with fixed seeds, if you
+want to regenerate or adapt it.
+
+**Calibration curve, same reference oligo:** a second bundled example
+(`inst/extdata/calibration_example/`) ships a 5-level standard curve
+(1/5/25/100/500 ng/mL, n=2 replicate injections per level, 10 files
+total) for the same inotersen sequence, with `Sample Type = standard`
+and `concentration` already filled in `sample_meta.csv`. Run it with:
+
+```bash
+Rscript inst/examples/run_calibration_example.R
+```
+
+which fits a 1/x²-weighted calibration curve (R² > 0.999 on this
+synthetic data) and back-calculates each standard's concentration --
+useful both as a working example and as a reference for what correctly
+set-up calibration standard metadata looks like, if a real dataset's
+curve isn't building. `inst/extdata/calibration_example/generate_calibration_example.py`
+shows how it was built.
+
+**Reagent/matrix blank correction:** mark a batch sample `Sample Type =
+reagent_blank`/`matrix_blank` in the sample table, or just name the raw
+file with an "RB" or "MB" token (`RB_01.mzML`, `Sample-MB-2.mzML`) --
+Sample Type auto-fills from the name (still editable). Every other
+sample's signal then has that metabolite's pooled mean blank signal
+subtracted (`max(0, signal - blank_mean)`), as a *new* derived
+`intensity_bcorr`/`area_bcorr` column alongside the untouched raw
+values -- nothing is silently changed. The Statistical Analysis tab
+gets a **Signal basis: Raw / Blank-corrected** toggle (default Raw) that
+switches the calibration curve, degradation summary, univariate/class
+comparison stats, and PCA/clustering over to the corrected signal; the
+**Data Matrix** tab shows exactly what per-metabolite value is being
+subtracted.
+
+For many raw files at once — a multi-sample experiment rather than one
+sequence against one file — a parallel Python pipeline
+(`inst/python/oligomet_deconv/`) streams each mzML/mzXML file, detects
+chromatographic features, and groups them into charge-state envelopes by
+neutral-mass agreement across observed charge states (the same
+`M = z*(mz - proton)` relationship the R side already uses, not a
+peptide-style isotope/averagine model — oligonucleotides don't fit that).
+One worker process per file, so batches scale with core count; a bad file
+is isolated and logged rather than aborting the run.
+
+R matches the resulting features against the theoretical library
+(reusing `match_ms1()` unchanged), retains anything that didn't match as
+its own "unidentified peaks" table for QC, and — when MS2 confirmation is
+enabled — confirms matched hits against the theoretical fragment library
+using a *targeted* precursor watch-list, so only scans near a real
+candidate are captured (cheap on top of the deconvolution pass, and
+reuses `confirm_metabolite()` unchanged). A small statistics suite then
+compares each confirmed metabolite's abundance across 2+ experimental
+groups (Welch t-test or one-way ANOVA + Tukey HSD, both BH-adjusted) or
+across a time series (linear trend).
+
+```r
+source("R/batch_ms_processing.R"); source("R/statistics.R")
+
+deconv <- run_batch_deconvolution(list.files("raw_data", pattern = "\\.mzML$", full.names = TRUE))
+features <- read_batch_features(deconv$features_path)
+batch <- annotate_metabolites_batch(mets, features, dict = dict)
+
+abund <- build_abundance_matrix(batch$ms1_matches)
+long  <- abundance_long(abund, data.frame(sample = c("ctrl_1","ctrl_2","treat_1","treat_2"),
+                                           group = c("control","control","treated","treated")))
+compare_two_groups(long, "control", "treated")
+```
+
+Or from the command line: copy `run_batch_ms.R`, edit its `CONFIG` block
+(file glob, sample metadata, analysis mode), and run
+`Rscript run_batch_ms.R`. The Shiny app has the same workflow under
+**Batch MS Processing (optional)** — upload multiple files, fill in a
+Group or Timepoint column in the sample table, and the **Batch Results**,
+**Unidentified Peaks**, and **Statistics** tabs populate after Run.
+
+Requires Python 3.9+ with `inst/python/requirements.txt` installed
+(`pip install -r inst/python/requirements.txt`); everything else in the
+package works without it.
+
+## Targeted summed-XIC quantitation
+
+Identification and quantitation are separate steps. The charge-envelope
+deconvolution finds and identifies metabolites. The quantitative signal
+then comes from a Chromeleon-style summation of ions: for every identified
+metabolite, the extracted-ion chromatograms (XICs) of a fixed ion list
+(charge states x isotope clusters, each within +/-ppm) are summed scan by
+scan and integrated once, over one window with a linear baseline between
+the peak start and end. It is on by default in **Batch Processing >
+Processing Options** (**Targeted summed-XIC quantitation**) and costs one
+extra streaming pass per file.
+
+How the ion list is chosen, per metabolite, then fixed for every sample:
+
+- **Isotopes** are ranked by theoretical abundance of the nominal isotope
+  clusters (fine structure such as 13C2 vs 34S merged). For a 7 kDa
+  phosphorothioate the most abundant cluster is M+4; the monoisotopic peak
+  carries about 2% of the signal.
+- **Charge states** are ranked by summed signal in the calibration
+  standards and QCs (all samples when there are none), or taken from a
+  fixed list such as `3-8`.
+- Every candidate ion (all charges in the library's z range x the 10 most
+  abundant clusters) is extracted and integrated over the shared window, so
+  changing the number of charges or isotopes, or the fixed list, re-sums
+  instantly without re-reading the raw files. Tolerance and RT-window
+  changes re-run the extraction.
+
+The **XIC Quantitation** tab shows a charge x isotope map of where the
+signal is (outlined = summed), the summed chromatograms with each sample's
+integration window, the ion list per metabolite with the share of candidate
+signal it captures, and the per-sample areas. The summed-XIC area replaces
+the envelope area everywhere downstream: calibration curves, relative
+quantification, degradation, statistics, and the data-matrix export.
+
+**How many charge states and isotopes.** Cover the bulk of the charge-state
+distribution in *every* sample type, not only the standards. The
+distribution moves with matrix, mobile phase, and ion-pairing conditions;
+charge is conserved, so a broad set stays proportional to amount when the
+distribution shifts, while a narrow set does not. For a 7 kDa PS oligo:
+
+| Choice | Share of signal summed | Notes |
+|---|---|---|
+| Isotopes: top 3 | ~47% of each envelope | |
+| Isotopes: top 5 | ~71% | default; good S/N gain per ion added |
+| Isotopes: top 7 | ~86% | worth it at the LLOQ |
+| Charges: top 3 | ~60% of the envelope signal | sensitive to distribution shifts |
+| Charges: all states >= ~10% of the base charge state (typically 5-6 for 6-8 kDa) | ~90-95% | recommended |
+
+The bundled example `inst/extdata/xic_example/` (5-level curve, QCs, a
+blank, and four unknowns, two of them with a shifted charge-state
+distribution) shows the effect: automatic top-5 charges (z 4-8, picked on
+the standards) read the shifted unknowns 13% low, while a fixed `3-8`
+recovers them within 1%.
+
+## Internal standard
+
+Enter the analyte and its internal standard(s) together as a multi-record
+FASTA, pasted into the sequence box or loaded from a `.fasta`/`.txt` file:
+
+```
+>Inotersen
+Te-sGe-sCe-s...
+>Inotersen analog IS
+Ae-sGe-s...
+```
+
+A record is an internal standard when its name holds a standalone `IS`,
+`SIL`, `ISTD`, `IntStd`, `IS1` token or the phrase "internal standard"
+(case-insensitive; a code like `ASO-123456` stays an analyte), or when the
+header says `role=IS`. `5'-<conj>`/`3'-<conj>` tags in a header set that
+record's conjugates. The Library Generation tab shows how each record was
+read before anything runs. One analyte per run.
+
+- **Library.** The analyte gets its full metabolite library; each IS is one
+  entry (`IS01`, `IS02`, ...) with its mass from its own sequence and no
+  metabolites. An IS with the same mass as one of the analyte's metabolites,
+  or close enough that isotope envelopes overlap, is reported.
+- **Quantitation.** Every metabolite is divided by its IS's signal in the
+  same sample (response ratio). One global IS (sidebar, defaults to the
+  first IS) serves every metabolite unless the **Internal Standard** tab
+  assigns a different IS to specific metabolites. The Signal basis gains
+  *IS-normalized* and *Blank-corrected + IS-normalized*, and switches to
+  IS-normalized when an IS appears. Calibration curves are then fitted on
+  the response ratio; relative quantification, degradation, statistics and
+  PCA use it too. The IS itself is never blank-corrected (a zero blank
+  contains IS), and it is left out of % degradation, class sums, statistics
+  and the calibrator list.
+- **IS response monitoring.** The Internal Standard tab plots each
+  sample's IS response as % of the mean of the standards and QCs, in sample
+  table order, and flags anything outside the acceptance window (default
+  50-150%, editable) or with no IS peak. Blanks are listed, not evaluated.
+- **Data matrices.** A row with kind `IS`/`ISTD`/`internal standard`, or an
+  IS token in its id or name, is recognised on upload; any row can also be
+  picked as the global IS.
+
+The summed-XIC example (`inst/extdata/xic_example/`) includes an analog IS
+(`sequences.fasta`), a +/-20% injection-volume spread, and one sample with an
+under-spiked IS. On raw area the curve gives r^2 0.977 and QC errors up to
+25%; on the IS response ratio r^2 0.9997 and QC errors under 2%, and the
+under-spiked sample is flagged at 35% of the reference IS response.
+
+## Analysis from a pre-processed data matrix
+
+Peak picking, envelope summing, and MS1/MS2 matching only need to run once.
+After identification, download the data matrix from **Batch Processing >
+Batch Results** (wide or long `.csv`). Every later analysis can start from
+that file. Set **Data Source** to *Pre-processed data matrix*, upload the
+matrix and a sample information sheet, and the app runs statistics,
+calibration curves, back-calculated concentrations of unknowns, relative
+quantification, and degradation against an earlier timepoint on the matrix
+alone. Python and raw files are not needed for this path.
+
+Accepted inputs (`.csv`, `.tsv`, `.txt`, `.xlsx`; `.xls` with `readxl`):
+
+| Layout | Columns |
+|---|---|
+| Wide | `met_id` (optional `met_name`, `kind`), then one numeric column per sample |
+| Long | `sample`, `met_id`, `intensity` or `area`; optional `group`, `timepoint`, `sample_type`, `concentration` |
+| Sample info | `sample`, `group`, `timepoint`, `sample_type`, `concentration` |
+
+Common header variants are recognized (`Sample Name`, `Time`, `Conc`,
+`Type`, `Compound`, `Area`), and sample types such as `Std`, `QC`,
+`Blank`, or `Matrix Blank` map onto the controlled vocabulary. Pick the
+metabolites to calibrate in **Calibration & Quantification**; each one gets
+its own weighted curve from the `standard` rows, and the curve, fit table,
+and back-calculated concentrations update as soon as it is selected. All
+other metabolites are relative-quantified against the control group or the
+reference timepoint. A generated library (or a saved session JSON followed
+by **Generate Library**) is optional and only fills in metabolite names and
+classes. Without it, a `kind` column in the matrix, or an id such as
+`PARENT`, sets the parent for % degradation, and the **Parent (intact)
+species** dropdown overrides it.
+
+A bundled example lives in `inst/extdata/data_matrix_example/`: a
+5-level calibration in duplicate, three QCs, a reagent and a matrix blank,
+and a two-arm incubation (0/4/24/48 h, n = 3), in wide, long, and sample
+information form.
+
+```r
+m  <- read_data_matrix("data_matrix_wide.csv")$matches
+si <- read_sample_info("sample_info.csv")
+q  <- quantify_metabolites(m, si, absolute_met_ids = c("M01", "M02"),
+                           mode = "time_series", weighting = "1/x2")
+q$absolute        # back-calculated concentrations, %RE for standards and QCs
+deg <- degradation_summary(m, sample_meta = si)
+degradation_vs_reference(deg$per_sample)   # % parent remaining vs t0, per arm
+degradation_by_condition(deg)              # mean/SD/n per group x timepoint, incl. class composition
+```
+
+With raw files, the app also keeps the processed results for the session.
+Running **Generate Empirical MS2 Library** and then **Run Batch
+Processing** on the same files and settings processes the files once; the
+second click only recomputes statistics and quantification from the current
+sample table. Tick **Force re-run of peak picking and matching** to process
+them again.
+
+## LLM agent (experimental)
+
+An agent layer inspired by MSAgent (Li, Zhong, Liu *et al.*, bioRxiv 2026,
+doi:10.64898/2026.04.22.720103) sits on top of the same analysis
+functions everything else in this README describes — `R/agent_tools.R`
+wraps parsing, library generation, MS1/MS2 matching, degradation, and
+group comparison as a tool registry, and `R/agent_core.R` drives a
+provider-agnostic (Anthropic or OpenAI) ReAct loop over it, grounding every
+claim in the pipeline's own computed evidence (ppm error, isotope fit,
+`n_candidates`/`ambiguous`, coverage, confirmation score) rather than the
+model's own say-so. Two front ends share that one registry:
+
+- **In-app chat** — the "Ask OligoMet" tab in the dashboard. Reads whatever
+  sequence/library/batch results are already loaded in the session; reply
+  is grounded the same way. Needs `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`
+  set in the environment the app runs in (never typed into the page).
+- **MCP server** — `inst/mcp_server/`, for Claude Code / Claude Desktop /
+  claude.ai. Talks to a small persistent R API (`Rscript run_agent_api.R`)
+  over HTTP; see `inst/mcp_server/README.md` for setup.
+
+Design rationale, what does and doesn't translate from MSAgent's own
+small-molecule setting, and the phased build plan are in
+`/root/.claude/plans/staged-mapping-blanket.md`.
+
+## Dependencies
+
+Required: `openxlsx`, `ggplot2`, `xml2`, `xfun`, `jsonlite` (installed with
+the package; the last one only exercised by the LLM agent layer above).
+Dashboard: `shiny`, `DT`, `bslib`, `shinyFiles`. Optional:
+`enviPat` (higher-accuracy isotope patterns; a built-in convolution is
+used if absent), `rmarkdown` (HTML/PDF reports), and `Spectra`/`mzR`
+(faster, more robust mzML/mzXML reading — a built-in xml2-based parser is
+used if absent). `install_packages.R` installs the required set and
+offers the optional ones.
+
+mzML/mzXML import prefers Bioconductor's `Spectra`/`mzR` when installed
+(streaming, numpress, indexed-mzML support) and falls back to a built-in
+xml2-based parser otherwise — either way, no external tool is required.
+Vendor raw files (Thermo `.raw`, Sciex `.wiff`, Bruker `.baf`/`.yep`) are
+converted to `.mzML` automatically via ProteoWizard `msconvert` if it's
+found on PATH (install from proteowizard.org); without it, vendor files
+are rejected with an error asking you to convert them externally.
+Agilent/Bruker `.d` folders are directories, not single files, so they
+can't be uploaded through the browser — only the batch mode's local-folder
+input can reach them. Batch/parallel processing of many raw files (see
+above) is a separate, optional Python component —
+`pip install -r inst/python/requirements.txt` — needed only for that
+workflow; it always reads mzML/mzXML (via `pyteomics`), so vendor batch
+files also go through the `msconvert` bridge first.
+
+## Known limitations
+
+- `tests/test_*.R` remain console-output checks for interactive reading;
+  `tests/testthat/` holds the asserted counterparts for the highest-risk
+  paths (formula engine, isotope pattern, custom-chemistry validation,
+  notation round-trips) and gates every push/PR via
+  `.github/workflows/tests.yml`. Coverage is not yet exhaustive.
+
+## Bibliography
+
+### Methodology
+
+1. Lippens J.L. *et al.* SynONIM: a Synthetic Oligonucleotide Nomenclature
+   for Impurities and Modifications. *J Am Soc Mass Spectrom* (2024).
+2. Kim J. *et al.* Metabolite Profiling of the Antisense Oligonucleotide
+   Eluforsen Using Liquid Chromatography-Mass Spectrometry. *Mol Ther
+   Nucleic Acids* (2019).
+3. Liu R. *et al.* OligoDistiller: untargeted profiling of therapeutic
+   oligonucleotide drugs and metabolites. *Anal Chem* (2025).
+4. Ye X. *et al.* Automatic metabolite identification of antisense
+   oligonucleotides by full MS variable scanning. *J Chromatogr B* (2025).
+5. McLuckey S.A., Van Berkel G.J., Glish G.L. Tandem mass spectrometry of
+   small, multiply charged oligonucleotides. *J Am Soc Mass Spectrom*
+   3:60-70 (1992). — fragment ion nomenclature (a/a-B/b/c/w/x/y/z).
+
+### Reference drugs and modality classification
+
+6. Takakusa H. *et al.* Drug Metabolism and Pharmacokinetics of Antisense
+   Oligonucleotide Therapeutics. *Nucleic Acid Therapeutics* 33(2):83-94
+   (2023). [doi:10.1089/nat.2022.0054](https://doi.org/10.1089/nat.2022.0054)
+   — modality classification (Table 1) for the four bundled examples, and
+   the class-specific metabolism routes.
+7. Egli M., Manoharan M. Chemistry, structure and function of approved
+   oligonucleotide therapeutics. *Nucleic Acids Research* 51(6):2529-2573
+   (2023). [doi:10.1093/nar/gkad067](https://doi.org/10.1093/nar/gkad067)
+8. SPINRAZA (nusinersen) prescribing information, Biogen — 18-mer sequence,
+   uniform 2'-MOE/PS chemistry, free-acid formula C234H340N61O128P17S17.
+9. TEGSEDI (inotersen) prescribing information, Akcea Therapeutics — 5-10-5 MOE
+   gapmer, TTR 3'UTR target (bases 618-637), free-acid formula
+   C230H318N69O121P19S19 (average MW 7183.08).
+10. ONPATTRO (patisiran) prescribing information, Alnylam — duplex
+    sequences, 2'-OMe pattern, dTdT overhangs, LNP formulation.
+11. GIVLAARI (givosiran) prescribing information, Alnylam — ESC-GalNAc
+    sequences, 2'-F/2'-OMe alternation, terminal PS placement, trivalent
+    GalNAc (L96) 3' conjugate.
+
+### Instrument and software documentation
+
+12. Thermo Fisher Scientific. *BioPharma Finder 5.2 Oligonucleotide Analysis
+    User Guide* — triplet notation and terminal modification codes.
+13. Thermo Fisher Scientific. *Orbitrap Exploris 120 Software Manual*,
+    "Targeted Inclusion — Targeted Mass filter" — mass-list column layout.
+
+## Author
+
+**Nishikant Wase, PhD** — author and developer
+Research Scientist, Thermo Fisher Scientific
+<nishikant.wase@gmail.com>
+
+If this software contributes to work you publish, please cite it as:
+
+> Wase, N. *OligoMetProfiler: theoretical metabolite libraries, charge
+> envelopes, and MS/MS fragment ions for therapeutic oligonucleotides.*
+> R package. <https://github.com/nishi76/OligoMet-Profiler>
+
+## Disclosure and disclaimer
+
+**Research use only.** Not a medical device; not validated for
+diagnostic use, clinical decision-making, quality-control release
+testing, or regulatory submission. **Everything it reports is a
+prediction** computed from a chemistry dictionary — confirm every
+assignment experimentally. **No warranty, no liability:** provided "as
+is" under a proprietary licence; the author is not liable for any damages,
+loss of data, wasted instrument time, or erroneous conclusions, and the
+user is solely responsible for validating every result.
+
+**Affiliation.** The author is a Research Scientist at Thermo Fisher
+Scientific, disclosed because the package interoperates with Thermo
+Fisher products. OligoMetProfiler is an independent personal project:
+not a Thermo Fisher Scientific product, and not supplied, reviewed,
+endorsed, or approved by Thermo Fisher Scientific or any other company.
+All interoperability uses publicly documented formats only. Product and
+drug names are used for identification only and remain their owners'
+trademarks; the bundled reference drugs are worked examples from
+published literature and public filings. All views and outputs are the
+author's own.
+
+Full statement: [DISCLAIMER.md](DISCLAIMER.md), or `oligomet_about()` in R.
+
+## License
+
+**Proprietary — all rights reserved.** Copyright (c) 2026 Nishikant Wase.
+See [LICENSE](LICENSE). The source code may not be used, copied, modified,
+or redistributed without the author's written permission. The application
+is made available to use only as a hosted instance operated or authorized
+by the author; running that instance grants no rights to the source.
+
+Earlier versions of this project that were previously released under the
+MIT License remain available under the MIT License for those released
+versions; this notice and the current LICENSE govern the current and all
+later versions. For licensing inquiries, contact the author.

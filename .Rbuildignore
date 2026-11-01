@@ -1,0 +1,13 @@
+^app\.R$
+^run_custom_oligo\.R$
+^install_packages\.R$
+^tests$
+^LICENSE\.md$
+^\.claude$
+^\.gitignore$
+^.*\.xlsx$
+^QUICKSTART\.md$
+^.*\.Rproj$
+^\.Rproj\.user$
+^research_notes/
+^reports/

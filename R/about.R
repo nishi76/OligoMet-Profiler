@@ -1,0 +1,96 @@
+# =============================================================================
+# about.R
+# Authorship and the research-use-only disclaimer, in one place.
+#
+# Every surface that carries attribution -- the Shiny dashboard, the HTML/PDF
+# report, the Excel workbook, the MGF/MSP spectral libraries, the README and
+# the guides -- draws its text from the constants below, so the wording stays
+# identical everywhere and only has to be changed once.
+#
+# Deliberately NOT added to the Thermo acquisition CSVs (MS1 inclusion list,
+# MS2 PRM target list, fragment reference): those are strict column-layout
+# files that the Method Editor and Skyline parse positionally, and a comment
+# or banner line would break the import.
+# =============================================================================
+
+## ---- Authorship -------------------------------------------------------------
+OLIGOMET_AUTHOR <- "Nishikant Wase, PhD"
+OLIGOMET_AUTHOR_EMAIL <- "nishikant.wase@gmail.com"
+OLIGOMET_AUTHOR_ROLE <- "Author and developer"
+OLIGOMET_AUTHOR_TITLE <- "Research Scientist"
+OLIGOMET_AUTHOR_AFFILIATION <- "Thermo Fisher Scientific"
+OLIGOMET_URL <- "https://github.com/nishi76/OligoMet-Profiler"
+
+# "Nishikant Wase, PhD <nishikant.wase@gmail.com>"
+oligomet_author_line <- function(email = TRUE) {
+  if (email) sprintf("%s <%s>", OLIGOMET_AUTHOR, OLIGOMET_AUTHOR_EMAIL)
+  else OLIGOMET_AUTHOR
+}
+
+## ---- Disclaimer -------------------------------------------------------------
+# One-line form, for places with no room for more (file headers, footers).
+OLIGOMET_DISCLAIMER_SHORT <- paste0(
+  "FOR RESEARCH USE ONLY. Not for diagnostic, clinical, or regulatory ",
+  "submission use. All values are computed predictions, not measurements. ",
+  "Provided without warranty; the author accepts no liability for their use.")
+
+# Footer line. This is what goes at the foot of a document or generated file:
+# attribution, licence, and a pointer to the full statement. The detailed
+# disclaimer lives in DISCLAIMER.md (and, in the app, the About panel), so
+# footers do not restate it.
+OLIGOMET_FOOTER <- paste0(
+  "OligoMetProfiler -- ", OLIGOMET_AUTHOR, ". Proprietary licence (all rights reserved). ",
+  "Research use only; see DISCLAIMER.md.")
+
+# Full statement. Plain text, one element per paragraph, so each surface can
+# wrap or format it however it likes.
+OLIGOMET_DISCLAIMER <- c(
+  paste0(
+    "Research use only. OligoMetProfiler is not a medical device and is ",
+    "not validated for diagnostic, clinical, quality-control, or ",
+    "regulatory submission use. Every value it reports is a computed ",
+    "prediction, not a measurement: a match is a hypothesis, and every ",
+    "assignment must be confirmed experimentally. Dictionary entries ",
+    " are best estimates not yet checked against a ",
+    "measured mass."),
+  paste0(
+    "No warranty, no liability. Provided \"as is\" under a proprietary licence (all rights reserved), ",
+    "without warranty of any kind. The author is not liable for any ",
+    "damages or loss arising from this software or its use; the user is ",
+    "solely responsible for validating every result before relying on it."),
+  paste0(
+    "Disclosure. The author is a ", OLIGOMET_AUTHOR_TITLE, " at ",
+    OLIGOMET_AUTHOR_AFFILIATION, ". OligoMetProfiler is an independent ",
+    "personal project not a ", OLIGOMET_AUTHOR_AFFILIATION, " product, ",
+    "and not supplied, reviewed, endorsed or approved by ",
+    OLIGOMET_AUTHOR_AFFILIATION, " or any other company. Interoperability ",
+    "with third-party software and instruments uses publicly documented ",
+    "formats only. Product and drug names are used for identification only ",
+    "and remain their owners' trademarks; the bundled reference drugs are ",
+    "worked examples from published literature and public filings. All ",
+    "views and outputs are the author's own.")
+)
+
+## ---- Convenience -------------------------------------------------------------
+# Print authorship, version and the full disclaimer to the console.
+# Wrapped at `width` so it stays readable in a terminal.
+oligomet_about <- function(width = 76) {
+  ver <- tryCatch(as.character(utils::packageVersion("OligoMetProfiler")),
+                  error = function(e) "(source)")
+  cat("OligoMetProfiler ", ver, "\n", sep = "")
+  cat(OLIGOMET_AUTHOR_ROLE, ": ", oligomet_author_line(), "\n", sep = "")
+  cat(OLIGOMET_AUTHOR_TITLE, ", ", OLIGOMET_AUTHOR_AFFILIATION, "\n", sep = "")
+  cat(OLIGOMET_URL, "\n\n", sep = "")
+  cat("DISCLAIMER\n")
+  for (p in OLIGOMET_DISCLAIMER) {
+    cat(paste(strwrap(p, width = width), collapse = "\n"), "\n\n", sep = "")
+  }
+  invisible(NULL)
+}
+
+# Comment-prefixed footer block for text file headers (MGF). Deliberately the
+# short footer, not the full statement -- see OLIGOMET_FOOTER.
+.disclaimer_comment_block <- function(prefix = "# ", width = 76) {
+  lines <- c(strwrap(OLIGOMET_FOOTER, width = width), OLIGOMET_URL)
+  paste0(prefix, lines)
+}

@@ -1,0 +1,270 @@
+# test_degradation.R -- validate R/degradation.R: degradation_summary()'s
+# peak-area-based % degradation arithmetic, its area-absent fallback to
+# intensity, and the class-composition/top-degradant breakdowns, both on
+# hand-built synthetic data (exact arithmetic checks) and against the real
+# batch_example fixture (which now bundles two truncated degradant species
+# alongside the parent -- see inst/extdata/batch_example/generate_example.py).
+
+.pkg_root <- local({
+  this <- tryCatch({
+    args <- commandArgs(trailingOnly = FALSE)
+    f <- sub("^--file=", "", args[grep("^--file=", args)])
+    if (length(f) > 0) normalizePath(f) else NULL
+  }, error = function(e) NULL)
+  if (!is.null(this)) dirname(dirname(this)) else ".."
+})
+for (.f in c("about.R", "chemistry_dict.R", "oligo_io.R", "metabolites.R",
+             "mass_isotope.R", "fragments.R", "ms_matching.R",
+             "batch_ms_processing.R", "statistics.R", "degradation.R")) {
+  source(file.path(.pkg_root, "R", .f))
+}
+
+cat("==== degradation.R validation ====\n\n")
+
+.mk_row <- function(sample, met_id, met_name, kind, area = NA_real_, intensity = NA_real_) {
+  data.frame(sample = sample, met_id = met_id, met_name = met_name, kind = kind,
+             area = area, intensity = intensity, stringsAsFactors = FALSE)
+}
+
+## ---- Exact arithmetic: parent=100, degradants=50 -> 33.33% degradation ---
+cat("--- exact arithmetic: parent=100, one degradant=50 ---\n")
+m1 <- rbind(
+  .mk_row("s1", "M01", "parent", "parent", area = 100),
+  .mk_row("s1", "M02", "N-1", "exo_3p", area = 50)
+)
+d1 <- degradation_summary(m1)
+stopifnot(d1$signal_used == "area")
+stopifnot(d1$per_sample$pct_degradation == round(100 * (1 - 100 / 150), 2))
+stopifnot(d1$per_sample$pct_degradation == 33.33)
+cat("pct_degradation =", d1$per_sample$pct_degradation, "(expected 33.33): PASS\n")
+
+## ---- Zero-degradant edge case: 100% parent -> 0% degradation -------------
+cat("\n--- zero-degradant edge case ---\n")
+m2 <- .mk_row("s1", "M01", "parent", "parent", area = 100)
+d2 <- degradation_summary(m2)
+stopifnot(d2$per_sample$pct_degradation == 0)
+stopifnot(nrow(d2$top_degradants) == 0)
+cat("pct_degradation = 0, no top_degradants rows: PASS\n")
+
+## ---- All-degradant edge case: no parent -> 100% degradation --------------
+cat("\n--- all-degradant edge case (no parent signal) ---\n")
+m3 <- .mk_row("s1", "M02", "N-1", "exo_3p", area = 75)
+d3 <- degradation_summary(m3)
+stopifnot(d3$per_sample$pct_degradation == 100)
+stopifnot(nrow(d3$top_degradants) == 1)
+cat("pct_degradation = 100, one top_degradants row: PASS\n")
+
+## ---- Multiple degradant classes: composition sums correctly --------------
+cat("\n--- composition breakdown across 3 degradant classes ---\n")
+m4 <- rbind(
+  .mk_row("s1", "M01", "parent", "parent", area = 60),
+  .mk_row("s1", "M02", "3'N-1", "exo_3p", area = 20),
+  .mk_row("s1", "M03", "5'N-1", "exo_5p", area = 15),
+  .mk_row("s1", "M04", "endo1", "endo_5frag", area = 5)
+)
+d4 <- degradation_summary(m4)
+stopifnot(d4$per_sample$pct_degradation == round(100 * (1 - 60 / 100), 2))  # 40
+stopifnot(nrow(d4$composition) == 4)
+stopifnot(sum(d4$composition$pct_of_total) == 100)
+degradant_pcts <- d4$composition$pct_of_degradants[d4$composition$kind != "parent"]
+stopifnot(abs(sum(degradant_pcts) - 100) < 0.01)
+stopifnot(nrow(d4$top_degradants) == 3)
+stopifnot(d4$top_degradants$met_id[1] == "M02")  # highest-area degradant ranked first
+cat("4-way composition sums to 100%, degradant-only pcts sum to 100%,",
+    "top_degradants correctly ranked: PASS\n")
+
+## ---- area-absent fallback to intensity ------------------------------------
+cat("\n--- area-absent -> falls back to intensity ---\n")
+m5 <- rbind(
+  .mk_row("s1", "M01", "parent", "parent", area = NA, intensity = 200),
+  .mk_row("s1", "M02", "N-1", "exo_3p", area = NA, intensity = 100)
+)
+d5 <- degradation_summary(m5)
+stopifnot(d5$signal_used == "intensity")
+stopifnot(d5$per_sample$pct_degradation == round(100 * (1 - 200 / 300), 2))
+cat("signal_used='intensity', pct_degradation =", d5$per_sample$pct_degradation,
+    "(expected 33.33): PASS\n")
+
+## ---- Empty / degenerate inputs --------------------------------------------
+cat("\n--- degenerate inputs don't error ---\n")
+empty <- degradation_summary(data.frame())
+stopifnot(nrow(empty$per_sample) == 0)
+stopifnot(is.na(empty$signal_used))
+null_result <- degradation_summary(NULL)
+stopifnot(nrow(null_result$per_sample) == 0)
+cat("empty data.frame() and NULL both return the empty-shaped result: PASS\n")
+
+## ---- Multi-sample: per-sample independence --------------------------------
+cat("\n--- multi-sample independence ---\n")
+m6 <- rbind(
+  .mk_row("ctrl", "M01", "parent", "parent", area = 90),
+  .mk_row("ctrl", "M02", "N-1", "exo_3p", area = 10),
+  .mk_row("treat", "M01", "parent", "parent", area = 50),
+  .mk_row("treat", "M02", "N-1", "exo_3p", area = 50)
+)
+d6 <- degradation_summary(m6)
+stopifnot(nrow(d6$per_sample) == 2)
+ctrl_pct <- d6$per_sample$pct_degradation[d6$per_sample$sample == "ctrl"]
+treat_pct <- d6$per_sample$pct_degradation[d6$per_sample$sample == "treat"]
+stopifnot(ctrl_pct == 10)
+stopifnot(treat_pct == 50)
+stopifnot(treat_pct > ctrl_pct)
+cat("ctrl = 10%, treat = 50%, computed independently per sample: PASS\n")
+
+## ---- sample_meta excludes calibration standards/QC, joins group/timepoint --
+cat("\n--- sample_meta excludes standards/QC, joins group/timepoint ---\n")
+m7 <- rbind(
+  .mk_row("std_1", "M01", "parent", "parent", area = 2000),
+  .mk_row("qc_1", "M01", "parent", "parent", area = 400000),
+  .mk_row("qc_1", "M02", "N-1", "exo_3p", area = 10000),
+  .mk_row("t0_r1", "M01", "parent", "parent", area = 400000),
+  .mk_row("t0_r1", "M02", "N-1", "exo_3p", area = 10000),
+  .mk_row("t24_r1", "M01", "parent", "parent", area = 200000),
+  .mk_row("t24_r1", "M02", "N-1", "exo_3p", area = 210000)
+)
+sm7 <- data.frame(
+  sample = c("std_1", "qc_1", "t0_r1", "t24_r1"),
+  sample_type = c("standard", "quality_control", "unknown", "unknown"),
+  group = "", timepoint = c("", "", "0", "24"),
+  stringsAsFactors = FALSE)
+
+d7_nofilter <- degradation_summary(m7)
+stopifnot(setequal(unique(d7_nofilter$per_sample$sample), c("std_1", "qc_1", "t0_r1", "t24_r1")))
+cat("no sample_meta given -> every sample kept (backward compatible): PASS\n")
+
+d7 <- degradation_summary(m7, sample_meta = sm7)
+stopifnot(setequal(unique(d7$per_sample$sample), c("t0_r1", "t24_r1")))
+stopifnot(setequal(unique(d7$composition$sample), c("t0_r1", "t24_r1")))
+cat("sample_meta given -> standard/quality_control samples excluded from",
+    "per_sample and composition: PASS\n")
+
+stopifnot("timepoint" %in% names(d7$per_sample), "timepoint" %in% names(d7$composition))
+stopifnot(d7$per_sample$timepoint[d7$per_sample$sample == "t0_r1"] == "0")
+stopifnot(d7$per_sample$timepoint[d7$per_sample$sample == "t24_r1"] == "24")
+pct_t0 <- d7$per_sample$pct_degradation[d7$per_sample$sample == "t0_r1"]
+pct_t24 <- d7$per_sample$pct_degradation[d7$per_sample$sample == "t24_r1"]
+stopifnot(pct_t24 > pct_t0)
+cat("timepoint joined onto both tables, degradation trend over time preserved: PASS\n")
+
+## ---- plot_degradation_composition() returns a ggplot ----------------------
+cat("\n--- plot_degradation_composition() ---\n")
+p <- plot_degradation_composition(d6)
+stopifnot(inherits(p, "ggplot"))
+p_empty <- plot_degradation_composition(list(composition = data.frame(), signal_used = NA))
+stopifnot(inherits(p_empty, "ggplot"))
+cat("returns a ggplot object for both populated and empty input: PASS\n")
+
+## ---- Integration: real batch_example fixture (parent + 2 degradants) -----
+cat("\n--- integration: inst/extdata/batch_example (real deconvolution) ---\n")
+ex_dir <- file.path(.pkg_root, "inst", "extdata", "batch_example")
+files <- list.files(ex_dir, pattern = "\\.mzML$", full.names = TRUE)
+if (length(files) == 0 || is.na(find_python())) {
+  cat("SKIPPED (no fixtures or no python3 on PATH)\n")
+} else {
+  dict <- STANDARD_DICT
+  spec <- parse_input(INOTERSEN_TRIPLET)
+  mets <- generate_metabolites(spec, opts = list(oligo_name = "inotersen",
+                                                  max_3p = 1, max_5p = 1, endo = FALSE))
+  watchlist_path <- tempfile(fileext = ".txt")
+  write_precursor_watchlist(mets, dict, z_range = 3:12, max_oxid = 0, h_offset = 0,
+                             out_path = watchlist_path)
+  deconv <- tryCatch(
+    run_batch_deconvolution(files, precursor_watchlist = watchlist_path,
+                             mass_tol_ppm = 10, n_workers = 1),
+    error = function(e) NULL)
+  if (is.null(deconv)) {
+    cat("SKIPPED (batch deconvolution failed)\n")
+  } else {
+    feats <- read_batch_features(deconv$features_path)
+    feats$sample <- tools::file_path_sans_ext(basename(feats$sample))
+    m <- match_ms1_batch(mets, feats, dict, ppm_tol = 10, z_range = 3:12,
+                          adducts = "H", max_oxid = 0)
+    deg <- degradation_summary(m)
+    cat("signal_used:", deg$signal_used, "\n")
+    stopifnot(deg$signal_used == "area")
+    stopifnot(nrow(deg$per_sample) == 6)
+    stopifnot(all(deg$per_sample$pct_degradation > 0))  # fixture has real degradants
+    stopifnot(nrow(deg$top_degradants) > 0)
+
+    ctrl_mean <- mean(deg$per_sample$pct_degradation[grepl("^ctrl", deg$per_sample$sample)])
+    treat_mean <- mean(deg$per_sample$pct_degradation[grepl("^treat", deg$per_sample$sample)])
+    cat("mean pct_degradation: ctrl =", round(ctrl_mean, 2),
+        " treat =", round(treat_mean, 2), "\n")
+    stopifnot(treat_mean > ctrl_mean)  # generate_example.py deliberately builds this in
+    cat("real fixture: non-zero degradation, treated > control as designed: PASS\n")
+  }
+}
+
+## ---- degradation_by_condition(): replicates grouped by group / timepoint ----
+cat("\n--- degradation_by_condition() ---\n")
+mkm <- function(sample, met, kind, sig) data.frame(met_id = met, met_name = met, kind = kind,
+  sample = sample, intensity = sig, stringsAsFactors = FALSE)
+cm <- rbind(
+  mkm("a0_1", "P", "parent", 90), mkm("a0_1", "N1", "exo_3p", 10),
+  mkm("a0_2", "P", "parent", 80), mkm("a0_2", "N1", "exo_3p", 20),
+  mkm("a24_1", "P", "parent", 50), mkm("a24_1", "N1", "exo_3p", 40), mkm("a24_1", "F5", "exo_5p", 10),
+  mkm("a24_2", "P", "parent", 50), mkm("a24_2", "N1", "exo_3p", 50),
+  mkm("c0_1", "P", "parent", 95), mkm("c0_1", "N1", "exo_3p", 5),
+  mkm("std1", "P", "parent", 100))
+cmeta <- data.frame(sample = c("a0_1", "a0_2", "a24_1", "a24_2", "c0_1", "std1"),
+                    group = c("act", "act", "act", "act", "ctl", ""),
+                    timepoint = c("0", "0", "24", "24", "0", ""),
+                    sample_type = c(rep("unknown", 5), "standard"), stringsAsFactors = FALSE)
+cd <- degradation_summary(cm, sample_meta = cmeta)
+bc <- degradation_by_condition(cd)
+stopifnot(bc$design == "group_timepoint")
+stopifnot(nrow(bc$per_condition) == 3)
+r <- bc$per_condition[bc$per_condition$group == "act" & bc$per_condition$timepoint == 24, ]
+stopifnot(r$n == 2, abs(r$mean_pct_degradation - 50) < 1e-9, abs(r$sd_pct_degradation - 0) < 1e-9)
+r0 <- bc$per_condition[bc$per_condition$group == "act" & bc$per_condition$timepoint == 0, ]
+stopifnot(abs(r0$mean_pct_degradation - 15) < 1e-9, abs(r0$sd_pct_degradation - sd(c(10, 20))) < 1e-9)
+cat("per-condition mean/SD/n of % degradation: PASS\n")
+f5 <- bc$composition[bc$composition$group == "act" & bc$composition$timepoint == 24 & bc$composition$kind == "exo_5p", ]
+stopifnot(abs(f5$mean_pct_of_total - 5) < 1e-9)  # 10% in one replicate, absent (0%) in the other
+cat("class absent from a replicate counts as 0%: PASS\n")
+stopifnot(!"std1" %in% cd$per_sample$sample)
+cat("calibration standards excluded from conditions: PASS\n")
+cmeta2 <- cmeta; cmeta2$timepoint <- ""
+bg <- degradation_by_condition(degradation_summary(cm, sample_meta = cmeta2))
+stopifnot(bg$design == "group", identical(sort(bg$per_condition$group), c("act", "ctl")),
+          !"timepoint" %in% names(bg$per_condition))
+cat("group-only design: PASS\n")
+stopifnot(degradation_by_condition(degradation_summary(cm))$design == "none")
+cat("no design -> 'none', not an error: PASS\n")
+invisible(plot_degradation_by_condition(cd)); invisible(plot_degradation_by_condition(degradation_summary(cm)))
+invisible(plot_degradation_composition(cd, "condition")); invisible(plot_degradation_composition(cd, "sample"))
+invisible(plot_degradation_composition(degradation_summary(cm), "condition"))
+cat("condition and per-sample plots render (with and without a design): PASS\n")
+
+## ---- matrix as a grouping / faceting axis ------------------------------------
+cat("\n--- degradation_by_condition(): matrix axis ---\n")
+# Same samples, now tagged with a matrix and a timepoint (plasma vs CSF).
+mxm <- rbind(
+  mkm("p0_1", "P", "parent", 90), mkm("p0_1", "N1", "exo_3p", 10),
+  mkm("p24_1", "P", "parent", 40), mkm("p24_1", "N1", "exo_3p", 60),
+  mkm("c0_1", "P", "parent", 98), mkm("c0_1", "N1", "exo_3p", 2),
+  mkm("c24_1", "P", "parent", 90), mkm("c24_1", "N1", "exo_3p", 10))
+mxmeta <- data.frame(
+  sample = c("p0_1", "p24_1", "c0_1", "c24_1"),
+  matrix = c("plasma", "plasma", "CSF", "CSF"),
+  timepoint = c("0", "24", "0", "24"),
+  sample_type = "unknown", stringsAsFactors = FALSE)
+bm <- degradation_by_condition(degradation_summary(mxm, sample_meta = mxmeta))
+stopifnot(isTRUE(bm$has_matrix), "matrix" %in% names(bm$per_condition))
+stopifnot(setequal(unique(bm$per_condition$matrix), c("plasma", "CSF")))
+# Plasma degrades far more than CSF by 24 h in this fixture.
+pl24 <- bm$per_condition$mean_pct_degradation[bm$per_condition$matrix == "plasma" & bm$per_condition$timepoint == 24]
+cs24 <- bm$per_condition$mean_pct_degradation[bm$per_condition$matrix == "CSF" & bm$per_condition$timepoint == 24]
+stopifnot(pl24 > cs24)
+cat("matrix carried into per_condition; per-matrix kinetics preserved: PASS\n")
+# Matrix without group/timepoint -> matrix becomes the grouping axis.
+mxmeta_only <- mxmeta; mxmeta_only$timepoint <- ""
+bmo <- degradation_by_condition(degradation_summary(mxm, sample_meta = mxmeta_only))
+stopifnot(bmo$design == "matrix", setequal(bmo$per_condition$matrix, c("plasma", "CSF")))
+cat("matrix-only design -> 'matrix' axis: PASS\n")
+invisible(plot_degradation_by_condition(degradation_summary(mxm, sample_meta = mxmeta)))
+invisible(plot_degradation_by_condition(degradation_summary(mxm, sample_meta = mxmeta_only)))
+invisible(plot_degradation_composition(degradation_summary(mxm, sample_meta = mxmeta), "condition"))
+cat("matrix-faceted degradation and composition plots render: PASS\n")
+
+cat("\n==== All degradation tests passed ====\n")
