@@ -11,6 +11,7 @@ from typing import Optional
 
 import pandas as pd
 
+from .align import align_retention_times
 from .deconvolve import DeconvParams, process_file
 
 FEATURE_COLUMNS = ["sample", "source_file", "feature_id", "mz", "rt", "max_intensity",
@@ -33,7 +34,13 @@ def run_batch(paths, params: DeconvParams, output_dir: str,
               output_file: str = "combined_features.tsv",
               ms2_output_file: Optional[str] = None,
               precursor_watchlist_path: Optional[str] = None,
-              n_workers: Optional[int] = None):
+              n_workers: Optional[int] = None,
+              align: bool = False,
+              align_is_mz=None,
+              align_ppm: float = 15.0,
+              align_rt_tol: float = 0.15,
+              align_min_fraction: float = 0.5,
+              align_loess_span: float = 0.5):
     import concurrent.futures as cf
 
     os.makedirs(output_dir, exist_ok=True)
@@ -79,6 +86,24 @@ def run_batch(paths, params: DeconvParams, output_dir: str,
         ) from exc
 
     feat_df = pd.DataFrame(all_features, columns=FEATURE_COLUMNS)
+
+    # Cross-sample retention-time alignment (peakGroups-style). Runs on the
+    # combined table so it can tie the same analyte together across files;
+    # adds rt_aligned (and rt_raw) and writes a per-sample summary sidecar.
+    # Alignment never drops or reorders features, it only annotates RT, so a
+    # downstream step is free to use rt_aligned or fall back to rt.
+    if align and not feat_df.empty:
+        feat_df, align_summary, align_anchors = align_retention_times(
+            feat_df, is_mz=align_is_mz, ppm=align_ppm, rt_tol=align_rt_tol,
+            min_fraction=align_min_fraction, loess_span=align_loess_span,
+        )
+        if not align_summary.empty:
+            align_summary.to_csv(os.path.join(output_dir, "_rt_alignment.tsv"),
+                                 sep="\t", index=False)
+        if not align_anchors.empty:
+            align_anchors.to_csv(os.path.join(output_dir, "_rt_alignment_anchors.tsv"),
+                                 sep="\t", index=False)
+
     feat_path = os.path.join(output_dir, output_file)
     feat_df.to_csv(feat_path, sep="\t", index=False)
 

@@ -235,6 +235,17 @@ desulfurization level, adducts, and (if you want them) the in-place
 modification classes. Turn on MS2 confirmation so each hit is scored against
 the empirical library. Set the number of parallel workers to match the machine.
 
+Turn on **Align retention times across samples** when column or gradient drift
+moves a peak's apex from run to run, across a long sequence or across matrices.
+The alignment groups features across samples by mass and retention time, picks
+stable groups as anchors, and fits a smooth per-sample correction from them
+(the peakGroups method XCMS uses by default). Spiked internal standards are
+seeded as anchors, since they are present in every injection. A sample with too
+few anchors keeps its raw retention time and is flagged, and the raw value is
+kept alongside the aligned one. Identity-based matching still runs on accurate
+mass, so alignment sharpens the retention-time steps rather than driving the
+identification.
+
 ### 6.3 Run
 
 The batch step deconvolves every file, matches the library against each

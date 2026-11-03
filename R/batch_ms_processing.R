@@ -125,6 +125,19 @@ write_precursor_watchlist <- function(mets, dict = STANDARD_DICT, z_range = 3:12
 #'   got applied per file.
 #' @param n_workers Parallel worker processes; `NULL` lets the Python
 #'   side pick (`os.cpu_count() - 1`).
+#' @param align Align retention times across samples after feature
+#'   extraction (peakGroups-style; see `inst/python/oligomet_deconv/align.py`).
+#'   Adds `rt_aligned`/`rt_raw` to the feature table and a `_rt_alignment.tsv`
+#'   sidecar. Default `FALSE`.
+#' @param align_is_mz Internal-standard theoretical m/z (numeric vector);
+#'   feature groups matching these are seeded as alignment anchors, since an
+#'   internal standard is present in every injection.
+#' @param align_ppm,align_rt_tol Tolerances for grouping features across
+#'   samples (m/z in ppm, RT in minutes).
+#' @param align_min_fraction Fraction of samples a group must appear in to
+#'   serve as a (non-IS) anchor.
+#' @param align_loess_span Fraction of anchors in each local-regression
+#'   window of the RT-deviation fit.
 #' @param python_bin,module_dir Interpreter and module location, normally
 #'   left at their defaults ([find_python()]/`.find_deconv_module_dir()`).
 #' @param progress,console_tracker Optional callbacks: `progress(msg)`
@@ -135,8 +148,11 @@ write_precursor_watchlist <- function(mets, dict = STANDARD_DICT, z_range = 3:12
 #'   `profile_mode_files` (data.frame, or `NULL` -- files that appear to
 #'   be uncentroided profile-mode data), `noise_thresholds` (data.frame,
 #'   or `NULL` -- only present in S/N-threshold mode, one row per file
-#'   with its computed `noise_level`/`effective_min_intensity`), and
-#'   `log` (the subprocess's captured output).
+#'   with its computed `noise_level`/`effective_min_intensity`),
+#'   `rt_alignment` (data.frame, or `NULL` -- present only when
+#'   `align = TRUE`, one row per sample with `n_anchors`/`aligned`/
+#'   `median_shift`/`max_abs_shift`), and `log` (the subprocess's captured
+#'   output).
 #' @seealso [read_batch_features()], [read_batch_ms2()],
 #'   [match_ms1_batch()], [annotate_metabolites_batch()]
 #' @export
@@ -149,6 +165,9 @@ run_batch_deconvolution <- function(files, output_dir = tempdir(),
                                      min_scans = 3,
                                      max_gap_scans = 2, min_charge_states = 2,
                                      top_n_charge_states = 5, n_workers = NULL,
+                                     align = FALSE, align_is_mz = NULL,
+                                     align_ppm = 15, align_rt_tol = 0.15,
+                                     align_min_fraction = 0.5, align_loess_span = 0.5,
                                      python_bin = find_python(),
                                      module_dir = .find_deconv_module_dir(),
                                      progress = NULL, console_tracker = NULL) {
@@ -184,6 +203,23 @@ run_batch_deconvolution <- function(files, output_dir = tempdir(),
   if (!is.null(precursor_watchlist)) {
     args <- c(args, "--precursor-watchlist", precursor_watchlist,
               "--ms2-watch-ppm", ms2_watch_ppm, "--ms2-output-file", ms2_output_file)
+  }
+  # Cross-sample retention-time alignment (peakGroups-style). Internal-standard
+  # m/z, when supplied, are written to a sidecar and passed as anchor seeds --
+  # an IS is in every injection, so its feature group is a reliable landmark.
+  if (isTRUE(align)) {
+    args <- c(args, "--align",
+              "--align-ppm", align_ppm, "--align-rt-tol", align_rt_tol,
+              "--align-min-fraction", align_min_fraction,
+              "--align-loess-span", align_loess_span)
+    is_vals <- suppressWarnings(as.numeric(align_is_mz))
+    is_vals <- is_vals[is.finite(is_vals) & is_vals > 0]
+    if (length(is_vals) > 0) {
+      is_path <- file.path(output_dir, "_align_is_mz.txt")
+      dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+      writeLines(format(sort(unique(is_vals)), scientific = FALSE, trim = TRUE), is_path)
+      args <- c(args, "--align-is-mz", is_path)
+    }
   }
 
   if (!is.null(progress)) progress("Running parallel deconvolution (Python)...")
@@ -231,11 +267,20 @@ run_batch_deconvolution <- function(files, output_dir = tempdir(),
     utils::read.delim(noise_path, stringsAsFactors = FALSE)
   } else NULL
 
+  # Per-sample RT-alignment summary (present only when align = TRUE): one row
+  # per sample with the anchor count and the shift applied, so a run that
+  # drifted -- or a sample that had too few anchors to warp -- is auditable.
+  align_path <- file.path(output_dir, "_rt_alignment.tsv")
+  rt_alignment <- if (file.exists(align_path)) {
+    utils::read.delim(align_path, stringsAsFactors = FALSE)
+  } else NULL
+
   list(
     features_path = file.path(output_dir, output_file),
     ms2_path = if (!is.null(precursor_watchlist)) file.path(output_dir, ms2_output_file) else NULL,
     profile_mode_files = profile_mode_files,
     noise_thresholds = noise_thresholds,
+    rt_alignment = rt_alignment,
     log = status
   )
 }
@@ -255,6 +300,10 @@ run_batch_deconvolution <- function(files, output_dir = tempdir(),
 #' @return A data.frame with `sample` forced to character (see the
 #'   comment above for why -- numeric-looking sample names, e.g. Shiny's
 #'   renamed uploads, would otherwise silently become a numeric column).
+#'   When the table carries a `rt_aligned` column (RT alignment was run),
+#'   the working `rt` is set to the aligned value and the original is kept
+#'   as `rt_raw`, so every downstream RT step (matching, apex windows,
+#'   per-sample consistency) uses the aligned axis without further change.
 #' @seealso [run_batch_deconvolution()], [read_batch_ms2()],
 #'   [match_ms1_batch()]
 #' @export
@@ -262,6 +311,14 @@ read_batch_features <- function(tsv_path) {
   if (!file.exists(tsv_path)) stop("Feature table not found: ", tsv_path)
   df <- utils::read.delim(tsv_path, stringsAsFactors = FALSE)
   df$sample <- as.character(df$sample)
+  # Alignment annotates RT, it never reorders features. Promote the aligned
+  # RT to the working `rt` so downstream code needs no awareness of it; the
+  # raw RT stays available as `rt_raw` for QC/audit.
+  if ("rt_aligned" %in% names(df) && "rt" %in% names(df)) {
+    if (!"rt_raw" %in% names(df)) df$rt_raw <- df$rt
+    aligned <- suppressWarnings(as.numeric(df$rt_aligned))
+    df$rt <- ifelse(is.finite(aligned), aligned, df$rt)
+  }
   df
 }
 

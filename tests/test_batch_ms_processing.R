@@ -219,4 +219,31 @@ cat("remapped samples:", paste(remapped, collapse = ", "), "\n")
 stopifnot(identical(remapped, c("ctrl_1", "treat_1")))
 unlink(tmp_numeric)
 
+# read_batch_features() promotes rt_aligned to the working rt (keeping rt_raw)
+# when RT alignment annotated the table, so downstream RT steps use the
+# aligned axis transparently; without the column, rt is untouched.
+cat("\n--- rt_aligned promotion in read_batch_features() ---\n")
+tmp_al <- tempfile(fileext = ".tsv")
+raw_al <- data.frame(
+  sample = c("A", "B"), source_file = c("a", "b"), feature_id = c("A1", "B1"),
+  mz = c(500, 500), rt = c(5.00, 5.20), max_intensity = c(1e5, 1e5),
+  n_scans = 5, charge = 6, neutral_mass = 3000, n_charge_states = 2, n_summed = 2,
+  mass_cv_ppm = 1, rt_start = 0, rt_end = 0, area = 0,
+  rt_aligned = c(5.10, 5.10), stringsAsFactors = FALSE)
+utils::write.table(raw_al, tmp_al, sep = "\t", row.names = FALSE, quote = FALSE)
+p_al <- read_batch_features(tmp_al)
+stopifnot("rt_raw" %in% names(p_al))
+stopifnot(identical(p_al$rt_raw, c(5.00, 5.20)))      # raw preserved
+stopifnot(identical(p_al$rt, c(5.10, 5.10)))          # working rt = aligned
+cat("working rt now aligned:", paste(p_al$rt, collapse = ", "),
+    "| rt_raw kept:", paste(p_al$rt_raw, collapse = ", "), "\n")
+# a table with no rt_aligned column leaves rt as-is and adds no rt_raw
+tmp_noal <- tempfile(fileext = ".tsv")
+utils::write.table(raw_al[, setdiff(names(raw_al), "rt_aligned")], tmp_noal,
+                   sep = "\t", row.names = FALSE, quote = FALSE)
+p_noal <- read_batch_features(tmp_noal)
+stopifnot(!("rt_raw" %in% names(p_noal)), identical(p_noal$rt, c(5.00, 5.20)))
+cat("no rt_aligned -> rt untouched, no rt_raw added\n")
+unlink(c(tmp_al, tmp_noal))
+
 cat("\n==== All batch_ms_processing tests passed ====\n")

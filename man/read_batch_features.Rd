@@ -14,6 +14,10 @@ read_batch_features(tsv_path)
 A data.frame with \code{sample} forced to character (see the
 comment above for why -- numeric-looking sample names, e.g. Shiny's
 renamed uploads, would otherwise silently become a numeric column).
+When the table carries a \code{rt_aligned} column (RT alignment was run),
+the working \code{rt} is set to the aligned value and the original is kept
+as \code{rt_raw}, so every downstream RT step (matching, apex windows,
+per-sample consistency) uses the aligned axis without further change.
 }
 \description{
 Read the combined feature table from a batch deconvolution run

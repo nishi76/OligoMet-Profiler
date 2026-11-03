@@ -59,6 +59,20 @@ def build_parser() -> argparse.ArgumentParser:
                          "channel's own max (default 5; envelopes with fewer confirmed "
                          "charge states sum all of them)")
     p.add_argument("--n-workers", type=int, default=None)
+    # -- cross-sample retention-time alignment (peakGroups-style) --
+    p.add_argument("--align", action="store_true",
+                    help="align retention times across samples after feature extraction")
+    p.add_argument("--align-is-mz", default=None,
+                    help="file of internal-standard theoretical m/z, one per line; "
+                         "groups matching these are seeded as alignment anchors")
+    p.add_argument("--align-ppm", type=float, default=15.0,
+                    help="m/z tolerance (ppm) for grouping features across samples")
+    p.add_argument("--align-rt-tol", type=float, default=0.15,
+                    help="RT tolerance (min) for grouping features across samples")
+    p.add_argument("--align-min-fraction", type=float, default=0.5,
+                    help="a group must appear in this fraction of samples to be an anchor")
+    p.add_argument("--align-loess-span", type=float, default=0.5,
+                    help="fraction of anchors in each local-regression window")
     return p
 
 
@@ -82,10 +96,18 @@ def main(argv=None) -> int:
     if args.precursor_watchlist and not ms2_output_file:
         ms2_output_file = "combined_ms2.tsv"
 
+    align_is_mz = None
+    if args.align_is_mz:
+        with open(args.align_is_mz) as fh:
+            align_is_mz = [float(line.strip()) for line in fh if line.strip()]
+
     feat_path, ms2_path, failures, profile_mode_files = run_batch(
         paths, params, args.output_dir, output_file=args.output_file,
         ms2_output_file=ms2_output_file, precursor_watchlist_path=args.precursor_watchlist,
         n_workers=args.n_workers,
+        align=args.align, align_is_mz=align_is_mz, align_ppm=args.align_ppm,
+        align_rt_tol=args.align_rt_tol, align_min_fraction=args.align_min_fraction,
+        align_loess_span=args.align_loess_span,
     )
 
     print(f"Processed {len(paths)} file(s); {len(failures)} failed.")

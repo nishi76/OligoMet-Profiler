@@ -22,6 +22,12 @@ run_batch_deconvolution(
   min_charge_states = 2,
   top_n_charge_states = 5,
   n_workers = NULL,
+  align = FALSE,
+  align_is_mz = NULL,
+  align_ppm = 15,
+  align_rt_tol = 0.15,
+  align_min_fraction = 0.5,
+  align_loess_span = 0.5,
   python_bin = find_python(),
   module_dir = .find_deconv_module_dir(),
   progress = NULL,
@@ -61,6 +67,24 @@ got applied per file.}
 \item{n_workers}{Parallel worker processes; \code{NULL} lets the Python
 side pick (\code{os.cpu_count() - 1}).}
 
+\item{align}{Align retention times across samples after feature
+extraction (peakGroups-style; see \code{inst/python/oligomet_deconv/align.py}).
+Adds \code{rt_aligned}/\code{rt_raw} to the feature table and a
+\verb{_rt_alignment.tsv} sidecar. Default \code{FALSE}.}
+
+\item{align_is_mz}{Internal-standard theoretical m/z (numeric vector);
+feature groups matching these are seeded as alignment anchors, since an
+internal standard is present in every injection.}
+
+\item{align_ppm, align_rt_tol}{Tolerances for grouping features across
+samples (m/z in ppm, RT in minutes).}
+
+\item{align_min_fraction}{Fraction of samples a group must appear in to
+serve as a (non-IS) anchor.}
+
+\item{align_loess_span}{Fraction of anchors in each local-regression
+window of the RT-deviation fit.}
+
 \item{python_bin, module_dir}{Interpreter and module location, normally
 left at their defaults (\code{\link[=find_python]{find_python()}}/\code{.find_deconv_module_dir()}).}
 
@@ -74,8 +98,11 @@ A list: \code{features_path}, \code{ms2_path} (or \code{NULL}),
 \code{profile_mode_files} (data.frame, or \code{NULL} -- files that appear to
 be uncentroided profile-mode data), \code{noise_thresholds} (data.frame,
 or \code{NULL} -- only present in S/N-threshold mode, one row per file
-with its computed \code{noise_level}/\code{effective_min_intensity}), and
-\code{log} (the subprocess's captured output).
+with its computed \code{noise_level}/\code{effective_min_intensity}),
+\code{rt_alignment} (data.frame, or \code{NULL} -- present only when
+\code{align = TRUE}, one row per sample with \code{n_anchors}/\code{aligned}/
+\code{median_shift}/\code{max_abs_shift}), and \code{log} (the subprocess's
+captured output).
 }
 \description{
 Shells out to \verb{python -m oligomet_deconv.cli} (see

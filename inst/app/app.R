@@ -212,6 +212,7 @@ options(shiny.maxRequestSize = 20 * 1024^3)  # 20 GB
   "adducts", "mods", "frag_tol_ppm", "frag_z_max",
   "parent_pct_min", "batch_apply_pct",
   "enable_batch", "batch_run_ms2", "batch_n_workers", "batch_deconv_ppm",
+  "align_rt", "align_ppm", "align_rt_tol", "align_min_fraction", "align_loess_span",
   "xic_enable", "xic_n_charges", "xic_n_iso", "xic_charges", "xic_ppm", "xic_rt_window",
   "batch_noise_mode", "batch_min_intensity", "batch_sn_threshold", "batch_dir",
   "man_bases", "man_sugars", "man_linkages"
@@ -269,6 +270,11 @@ options(shiny.maxRequestSize = 20 * 1024^3)  # 20 GB
   batch_deconv_ppm = function(s, v) updateNumericInput(s, "batch_deconv_ppm", value = v),
   batch_noise_mode = function(s, v) updateRadioButtons(s, "batch_noise_mode", selected = v),
   batch_min_intensity = function(s, v) updateNumericInput(s, "batch_min_intensity", value = v),
+  align_rt       = function(s, v) updateCheckboxInput(s, "align_rt", value = v),
+  align_ppm      = function(s, v) updateNumericInput(s, "align_ppm", value = v),
+  align_rt_tol   = function(s, v) updateNumericInput(s, "align_rt_tol", value = v),
+  align_min_fraction = function(s, v) updateNumericInput(s, "align_min_fraction", value = v),
+  align_loess_span   = function(s, v) updateNumericInput(s, "align_loess_span", value = v),
   batch_sn_threshold = function(s, v) updateNumericInput(s, "batch_sn_threshold", value = v),
   batch_dir      = function(s, v) updateTextInput(s, "batch_dir", value = v),
   man_bases      = function(s, v) updateTextInput(s, "man_bases", value = v),
@@ -920,6 +926,26 @@ ui <- fluidPage(
                 condition = "input.batch_noise_mode == 'fixed'",
                 numericInput("batch_min_intensity", "Fixed intensity threshold",
                             value = DEFAULT_PIPELINE_PARAMS$min_intensity, min = 0)
+              ),
+              checkboxInput("align_rt", "Align retention times across samples",
+                            value = DEFAULT_PIPELINE_PARAMS$align_rt),
+              conditionalPanel(
+                condition = "input.align_rt == true",
+                fluidRow(
+                  column(6, numericInput("align_ppm", "Align m/z tol (ppm)",
+                            value = DEFAULT_PIPELINE_PARAMS$align_ppm, min = 1, max = 100)),
+                  column(6, numericInput("align_rt_tol", "Align RT tol (min)",
+                            value = DEFAULT_PIPELINE_PARAMS$align_rt_tol, min = 0.01, step = 0.05))
+                ),
+                fluidRow(
+                  column(6, numericInput("align_min_fraction", "Min sample fraction",
+                            value = DEFAULT_PIPELINE_PARAMS$align_min_fraction, min = 0.1, max = 1, step = 0.1)),
+                  column(6, numericInput("align_loess_span", "Loess span",
+                            value = DEFAULT_PIPELINE_PARAMS$align_loess_span, min = 0.1, max = 1, step = 0.1))
+                ),
+                tags$p(class = "help-note", style = "font-size:10.5px;color:#6c757d;margin:-4px 0 6px;",
+                       "peakGroups-style alignment. Internal standards are used as anchors; ",
+                       "samples with too few anchors keep their raw retention time.")
               ),
               tags$p(style = "font-size: 10.5px; color: #6c757d;",
                      "Sample metadata (group/timepoint/type) is set on the Batch ",
@@ -3601,18 +3627,46 @@ server <- function(input, output, session) {
           resolved_paths <- resolved[ok]
           resolved_names <- batch_files_df$name[ok]
 
+          # Cross-sample RT alignment: seed the anchors with the internal
+          # standards' theoretical precursor m/z (an IS is in every
+          # injection). Alignment still runs without IS, falling back to
+          # ubiquitous feature groups.
+          align_on <- isTRUE(input$align_rt %||% FALSE)
+          is_anchor_mz <- NULL
+          if (align_on) {
+            is_only <- Filter(function(m) identical(m$kind, "internal_standard"), mets)
+            if (length(is_only) > 0) {
+              is_anchor_mz <- prm_inclusion_list(
+                is_only, dict = dict, z_range = z_range, h_offset = input$h_offset)$precursor_mz
+            }
+          }
+          align_args <- list(
+            align = align_on, align_is_mz = is_anchor_mz,
+            align_ppm = input$align_ppm %||% 15, align_rt_tol = input$align_rt_tol %||% 0.15,
+            align_min_fraction = input$align_min_fraction %||% 0.5,
+            align_loess_span = input$align_loess_span %||% 0.5)
+
           deconv <- if (input$batch_noise_mode == "sn") {
-            run_batch_deconvolution(
+            do.call(run_batch_deconvolution, c(list(
               resolved_paths, precursor_watchlist = watchlist_path,
               mass_tol_ppm = input$batch_deconv_ppm, n_workers = input$batch_n_workers,
               sn_threshold = input$batch_sn_threshold,
-              progress = function(msg) incProgress(0, detail = msg))
+              progress = function(msg) incProgress(0, detail = msg)), align_args))
           } else {
-            run_batch_deconvolution(
+            do.call(run_batch_deconvolution, c(list(
               resolved_paths, precursor_watchlist = watchlist_path,
               mass_tol_ppm = input$batch_deconv_ppm, n_workers = input$batch_n_workers,
               min_intensity = input$batch_min_intensity,
-              progress = function(msg) incProgress(0, detail = msg))
+              progress = function(msg) incProgress(0, detail = msg)), align_args))
+          }
+
+          if (!is.null(deconv$rt_alignment) && nrow(deconv$rt_alignment) > 0) {
+            ra <- deconv$rt_alignment
+            n_al <- sum(as.logical(ra$aligned), na.rm = TRUE)
+            rv$status_text <- paste0(rv$status_text,
+              "RT alignment: ", n_al, "/", nrow(ra), " sample(s) aligned (median shift ",
+              sprintf("%.3f", stats::median(suppressWarnings(as.numeric(ra$median_shift)), na.rm = TRUE)),
+              " min). Samples with too few anchors keep their raw RT.\n")
           }
 
           if (!is.null(deconv$profile_mode_files) && nrow(deconv$profile_mode_files) > 0) {

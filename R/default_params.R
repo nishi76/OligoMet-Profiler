@@ -78,5 +78,12 @@ DEFAULT_PIPELINE_PARAMS <- list(
   enable_batch      = FALSE,
   batch_run_ms2     = TRUE,
   batch_n_workers   = 4,
-  batch_deconv_ppm  = 20
+  batch_deconv_ppm  = 20,
+
+  # -- Cross-sample retention-time alignment (peakGroups-style) --
+  align_rt           = FALSE, # align RT across samples after feature extraction
+  align_ppm          = 15,    # m/z tolerance (ppm) for grouping features across samples
+  align_rt_tol       = 0.15,  # RT tolerance (min) for grouping features across samples
+  align_min_fraction = 0.5,   # fraction of samples a group must span to be an anchor
+  align_loess_span   = 0.5    # fraction of anchors per local-regression window
 )

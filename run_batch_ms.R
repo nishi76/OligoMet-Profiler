@@ -128,6 +128,10 @@ PARAMS <- list(
   # number applied to every file alike).
   sn_threshold  = 3, min_intensity = 1e4,
   min_scans = 3, max_gap_scans = 2, ms2_watch_ppm = 50,
+  # Cross-sample retention-time alignment (peakGroups-style). Set align = TRUE
+  # to tie the same analyte's RT together across injections before matching.
+  align = FALSE, align_ppm = 15, align_rt_tol = 0.15,
+  align_min_fraction = 0.5, align_loess_span = 0.5,
   n_workers     = NULL,           # NULL = os.cpu_count() - 1
   output_prefix = "my_oligo_batch",
   results_dir   = "results_batch"
@@ -177,6 +181,15 @@ run_batch_pipeline <- function() {
     min_intensity = PARAMS$min_intensity,  # fallback if sn_threshold is NULL or noise estimate fails
     sn_threshold = PARAMS$sn_threshold,
     min_scans = PARAMS$min_scans, max_gap_scans = PARAMS$max_gap_scans,
+    align = PARAMS$align,
+    align_is_mz = if (isTRUE(PARAMS$align)) {
+      is_only <- Filter(function(m) identical(m$kind, "internal_standard"), mets)
+      if (length(is_only) > 0)
+        prm_inclusion_list(is_only, dict, z_range = PARAMS$z_range, h_offset = PARAMS$h_offset)$precursor_mz
+      else NULL
+    } else NULL,
+    align_ppm = PARAMS$align_ppm, align_rt_tol = PARAMS$align_rt_tol,
+    align_min_fraction = PARAMS$align_min_fraction, align_loess_span = PARAMS$align_loess_span,
     n_workers = PARAMS$n_workers, progress = function(m) cat(" ", m, "\n"))
   features <- read_batch_features(deconv$features_path)
   ms2_by_sample <- if (!is.null(deconv$ms2_path)) read_batch_ms2(deconv$ms2_path) else NULL
