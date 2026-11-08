@@ -212,9 +212,14 @@ generate_fragments <- function(met, dict = STANDARD_DICT,
 # Types: w-a (w-type 5' end + a-type 3' end), w-b, w-d
 # Fragment spans positions (i+1)..j where i < j, i = 5' cleavage, j = 3' cleavage
 #
-# w-a(i,j) = I_{i+1..j} + L_i - H   (w adds L_i + O - H, a removes O)
-# w-b(i,j) = I_{i+1..j} + L_i + O - H  (w adds L_i + O - H, b retains 3'-OH)
+# I = free 5'-OH / 3'-OH oligo of positions i+1..j. Derived from the terminal-ion
+# definitions above (w = G + L, a = F - H2O, b = F), using the complement identity
+# a_j + w_{j+1..n} = X for any 5'-phosphorylated chain X:
+#   w-a(i,j) = I_{i+1..j} + L_i - H2O  (w: 5'-phosphate, +L_i; a: 3' end - H2O)
+#   w-b(i,j) = I_{i+1..j} + L_i        (w: 5'-phosphate, +L_i; b retains 3'-OH)
 # w-d(i,j) = I_{i+1..j} + L_i - H - base_j + H2O  (w + d with base loss)
+#   NOTE: w-d was NOT re-derived when w-a/w-b were corrected; the complement
+#   identity suggests I + L_i + L_j for w-d before base loss. Verify before use.
 #' Generate internal (double-cleavage) MS2 fragment ions for a metabolite
 #'
 #' Internal fragments from two backbone cleavages at positions `i < j`
@@ -253,14 +258,13 @@ generate_internal_fragments <- function(met, dict = STANDARD_DICT,
       base_j <- dict[[met$bases[j]]]$formula
 
       if ("wa" %in% types) {
-        fwa <- add_formulas(I_ij, L_i); fwa[["H"]] <- fwa[["H"]] - 1
+        fwa <- add_formulas(add_formulas(I_ij, L_i), -.as_formula(.H2O))
         frags <- c(frags, list(.make_frag("w-a", "internal", i, j - i, fwa,
                                            dict, z_range, h_offset, met$id,
                                            internal_5 = i, internal_3 = j)))
       }
       if ("wb" %in% types) {
-        fwb <- add_formulas(I_ij, L_i); fwb[["O"]] <- fwb[["O"]] + 1
-        fwb[["H"]] <- fwb[["H"]] - 1
+        fwb <- add_formulas(I_ij, L_i)
         frags <- c(frags, list(.make_frag("w-b", "internal", i, j - i, fwb,
                                            dict, z_range, h_offset, met$id,
                                            internal_5 = i, internal_3 = j)))
