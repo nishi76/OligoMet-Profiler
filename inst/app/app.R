@@ -49,7 +49,7 @@ if (!is.null(.module_dir)) {
                "degradation.R", "multivariate.R", "blank_correction.R", "data_matrix.R", "xic_quant.R", "internal_standard.R",
                "structure_annotation.R", "regulatory_report.R", "report_evidence.R",
                "build_workbook.R", "build_report.R",
-               "export_acquisition.R", "export_spectral.R", "mirror_plot.R",
+               "export_acquisition.R", "export_spectral.R", "mirror_plot.R", "studio.R",
                "agent_tools.R", "agent_core.R")) {
     source(file.path(.module_dir, "R", .f))
   }
@@ -1447,6 +1447,11 @@ ui <- fluidPage(
     ),
 
     ## =========================================================================
+    ## TAB: Studio -- three-pane workbench (R/studio.R, inst/app/www/studio.*)
+    ## =========================================================================
+    tabPanel("Studio", studio_ui(if (exists(".module_dir", inherits = TRUE)) .module_dir else NULL)),
+
+    ## =========================================================================
     ## TAB: Statistical Analysis
     ## =========================================================================
     tabPanel("Statistical Analysis",
@@ -1752,6 +1757,9 @@ server <- function(input, output, session) {
     seq_roles = NULL, is_interference = NULL,
     agent_messages = list(), agent_ctx = list(), agent_busy = FALSE
   )
+
+  ## ---- Studio tab (R/studio.R) -------------------------------------------
+  studio_server(input, output, session, rv, tab = "Studio")
 
   ## ---- Guided/Expert shell: context header + top stepper --------------------
   # One reactive source of workflow state, reused by the top stepper, the

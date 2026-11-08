@@ -48,6 +48,14 @@ plot_charge_envelope <- function(met, dict = STANDARD_DICT, z_range = 3:12,
 }
 
 ## ---- Plot 2: Isotope pattern ----------------------------------------------
+# Bar width in m/z units: isotope peaks are 1.00335/z apart, so use a fixed
+# fraction of that spacing (the old 0.003 * max(mz) was ~2.7 Th at m/z 900,
+# 16x the spacing at z = 6, merging all bars into one block).
+.isotope_bar_width <- function(mz, z) {
+  spacing <- 1.00335 / max(1, abs(z))
+  0.3 * spacing
+}
+
 plot_isotope_pattern <- function(met, dict = STANDARD_DICT, z = 6,
                                   n_iso = 8, h_offset = 0,
                                   use_envipat = TRUE) {
@@ -57,7 +65,7 @@ plot_isotope_pattern <- function(met, dict = STANDARD_DICT, z = 6,
   if (is.null(cl)) return(NULL)
   cl$iso <- factor(cl$iso)
   ggplot2::ggplot(cl, ggplot2::aes(x = mz, y = abundance * 100)) +
-    ggplot2::geom_col(fill = "#0279EE", width = 0.003 * max(cl$mz)) +
+    ggplot2::geom_col(fill = "#0279EE", width = .isotope_bar_width(cl$mz, z)) +
     ggplot2::geom_text(ggplot2::aes(label = sprintf("%.1f", abundance * 100)),
                        vjust = -0.3, size = 3) +
     ggplot2::labs(x = sprintf("m/z (z=%d)", z), y = "Relative Abundance (%)",

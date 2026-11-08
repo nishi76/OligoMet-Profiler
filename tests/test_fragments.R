@@ -199,4 +199,23 @@ m_explicit_h <- match_fragments(frags, synth_peaks, tol_ppm = 10, z_range = 1:2,
 stopifnot(identical(m_default, m_explicit_h))
 cat("Default adducts=c('H') identical to explicit c('H'): PASS\n")
 
+# Internal fragments: independent check via terminal ions.
+# Internal ion (i,j) = (w piece from cleavage i) minus the terminal fragment
+# complementary to its 3' cleavage at j: w-a = w_i - w_j, w-b = w_i - x_j
+# (a_j + w_j = b_j + x_j = X for the 5'-phosphorylated chain X). This does
+# not go through the internal-ion code path, so it catches formula errors
+# (an earlier version was +17.0027 Da / +14.9871 Da off for w-a / w-b).
+cat("\n--- Internal w-a / w-b vs terminal-ion differences ---\n")
+ifr <- generate_internal_fragments(parent, types = c("wa", "wb"), z_range = 1)
+n_chk <- 0
+for (f in ifr) {
+  i <- f$internal_5; j <- f$internal_3
+  wi <- get_frag(frags, "w", i); wj <- get_frag(frags, "w", j); xj <- get_frag(frags, "x", j)
+  expected <- if (f$ion_type == "w-a") wi$mono_mass - wj$mono_mass else wi$mono_mass - xj$mono_mass
+  stopifnot(abs(f$mono_mass - expected) < 1e-4)
+  n_chk <- n_chk + 1
+}
+stopifnot(n_chk > 20)
+cat(sprintf("%d internal w-a/w-b masses agree with terminal-ion differences: PASS\n", n_chk))
+
 cat("\n==== All fragment tests passed ====\n")

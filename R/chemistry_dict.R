@@ -700,7 +700,9 @@ PATISIRAN_SENSE_TRIPLET <- paste0(
 # 5'-terminal linkages only (remainder phosphodiester), trivalent GalNAc
 # (L96) conjugated at the 3' terminus. Structured input is used here because
 # triplet notation carries no conjugate field.
-# Sequence 5'-CAGAAAGAGUGUCUCAUCUUA-(GalNAc3)-3'.
+# Sequence 5'-CAGAAAGAGUGUCUCAUCUUA-(GalNAc3_triantennary)-3'.
+# The L96 conjugate carries one phosphate and 11 N (GalNAc3_triantennary); the
+# generic GalNAc3 entry has neither and under-masses the strand by ~972.6 Da.
 GIVOSIRAN_SENSE_SPEC <- list(
   bases    = c("C","A","G","A","A","A","G","A","G","U","G",
                "U","C","U","C","A","U","C","U","U","A"),
@@ -708,7 +710,7 @@ GIVOSIRAN_SENSE_SPEC <- list(
                "m","f","m","f","m","m","m","m","m","m"),
   linkages = c("s","s", rep("o", 18), NA),
   conj5    = "none",
-  conj3    = "GalNAc3"
+  conj3    = "GalNAc3_triantennary"
 )
 
 # Triplet form of the givosiran sense strand, for the notation-based entry
@@ -761,7 +763,7 @@ REFERENCE_OLIGOS <- list(
     length    = 21,
     triplet   = GIVOSIRAN_SENSE_TRIPLET,
     conj5     = "none",
-    conj3     = "GalNAc3",
+    conj3     = "GalNAc3_triantennary",
     formula   = NA_character_)
 )
 
