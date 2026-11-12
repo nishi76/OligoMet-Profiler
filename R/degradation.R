@@ -428,8 +428,13 @@ plot_degradation_by_condition <- function(degradation) {
 #' @param per_sample `degradation_summary(...)$per_sample`, which carries
 #'   `timepoint` (and `group`) when `sample_meta` was supplied.
 #' @param reference_timepoint Numeric timepoint to compare against. `NULL`
-#'   uses the earliest timepoint of each arm.
-#' @return A data.frame, one row per (group, timepoint), or an empty
+#'   uses the earliest timepoint that carries real parent signal: a leading
+#'   predose negative control (no oligo spiked, near-zero parent signal, <
+#'   10% of the arm's maximum) is skipped, so it is not taken as the 100%
+#'   baseline. A genuine t=0 dosing point (full intact signal) stays the
+#'   reference.
+#' @return A data.frame, one row per (group, timepoint), with an
+#'   `is_predose` flag (a leading near-zero negative control), or an empty
 #'   data.frame when there is no numeric timepoint information.
 #' @export
 degradation_vs_reference <- function(per_sample, reference_timepoint = NULL) {
@@ -453,7 +458,25 @@ degradation_vs_reference <- function(per_sample, reference_timepoint = NULL) {
                  sd_pct_degradation = if (nrow(s) > 1) stats::sd(s$pct_degradation, na.rm = TRUE) else NA_real_,
                  stringsAsFactors = FALSE)
     }))
-    ref_t <- if (is.null(reference_timepoint) || is.na(reference_timepoint)) min(tps) else reference_timepoint
+    # A predose negative control (no oligo spiked) must not be the 100%
+    # baseline: dividing against its near-zero parent signal is what made the
+    # later timepoints read as if the oligo had already been exhausted. Detect
+    # it by signal, not by the clock, so a genuine t=0 DOSING point (full
+    # intact signal) stays the reference: strip only the LEADING run of
+    # timepoints whose mean parent signal is negligible (< 10% of the arm's
+    # max). Interior low points (e.g. absorption-limited profiles) are left
+    # alone, and a caller-supplied reference is honored exactly.
+    maxp <- suppressWarnings(max(agg$mean_parent_signal, na.rm = TRUE))
+    agg$is_predose <- FALSE
+    if (is.finite(maxp) && maxp > 0) {
+      ordi <- order(agg$timepoint)
+      lead <- cumprod(as.integer(agg$mean_parent_signal[ordi] < 0.10 * maxp)) == 1
+      agg$is_predose[ordi] <- lead
+    }
+    ref_t <- if (is.null(reference_timepoint) || is.na(reference_timepoint)) {
+      cand <- agg$timepoint[!agg$is_predose]
+      if (length(cand) > 0) min(cand) else min(tps)
+    } else reference_timepoint
     ref <- agg[agg$timepoint == ref_t, , drop = FALSE]
     ref_parent <- if (nrow(ref) > 0) ref$mean_parent_signal[1] else NA_real_
     ref_degr <- if (nrow(ref) > 0) ref$mean_pct_degradation[1] else NA_real_

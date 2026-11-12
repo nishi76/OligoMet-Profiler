@@ -11,11 +11,16 @@ degradation_vs_reference(per_sample, reference_timepoint = NULL)
 \code{timepoint} (and \code{group}) when \code{sample_meta} was supplied.}
 
 \item{reference_timepoint}{Numeric timepoint to compare against. \code{NULL}
-uses the earliest timepoint of each arm.}
+uses the earliest timepoint that carries real parent signal: a leading
+predose negative control (no oligo spiked, near-zero parent signal, below
+10\% of the arm's maximum) is skipped, so it is not taken as the 100\%
+baseline. A genuine t=0 dosing point (full intact signal) stays the
+reference.}
 }
 \value{
-A data.frame, one row per (group, timepoint), or an empty
-data.frame when there is no numeric timepoint information.
+A data.frame, one row per (group, timepoint), with an \code{is_predose}
+flag (a leading near-zero negative control), or an empty data.frame when
+there is no numeric timepoint information.
 }
 \description{
 Summarizes \code{\link[=degradation_summary]{degradation_summary()}}'s \code{per_sample} table by timepoint

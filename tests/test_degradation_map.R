@@ -10,7 +10,7 @@
   }, error = function(e) NULL)
   if (!is.null(this)) dirname(dirname(this)) else ".."
 })
-for (.f in c("about.R", "chemistry_dict.R", "oligo_io.R", "metabolites.R", "degradation_map.R"))
+for (.f in c("about.R", "chemistry_dict.R", "oligo_io.R", "metabolites.R", "degradation.R", "degradation_map.R"))
   source(file.path(.pkg_root, "R", .f))
 check <- function(label, ok) {
   cat(sprintf("%-74s %s\n", label, if (isTRUE(ok)) "PASS" else "FAIL"))
@@ -49,11 +49,13 @@ addrow <- function(mid, kind, sample, area, mod = "none", mod_site = NA, ms2 = N
     area = area, intensity = area, sample = sample, stringsAsFactors = FALSE)
 }
 meta <- list()
+# predose ("pre", t=0) is a negative control: background parent signal only,
+# no spiked oligo. The earliest POST-dose timepoint (24h) is the 100% baseline.
 for (mx in c("plasma", "csf")) for (tp in c("pre", "24h", "168h")) {
   s <- paste(mx, tp, sep = "_")
   meta[[length(meta) + 1L]] <- data.frame(sample = s, timepoint = tp, matrix = mx, stringsAsFactors = FALSE)
-  pbase <- if (mx == "plasma") c(pre = 1e7, `24h` = 5e6, `168h` = 3e5)[[tp]]
-           else c(pre = 1e7, `24h` = 9e6, `168h` = 6e6)[[tp]]
+  pbase <- if (mx == "plasma") c(pre = 5e3, `24h` = 5e6, `168h` = 3e5)[[tp]]
+           else c(pre = 5e3, `24h` = 9e6, `168h` = 6e6)[[tp]]
   addrow(parent_id, "parent", s, pbase)
   addrow(exo3$id, "exo_3p", s, pbase * 0.3, ms2 = 0.8)
   addrow(conj[[1]]$id, "conj_catab", s, pbase * 0.6)
@@ -90,8 +92,16 @@ check("parent remaining: plasma collapses, CSF holds", {
   cs <- model$parent$pct[model$parent$matrix == "csf" & model$parent$time == "168h"]
   pl < 10 && cs > 40
 })
-check("parent remaining starts at 100 at the earliest timepoint", {
-  all(abs(model$parent$pct[model$parent$time == "pre"] - 100) < 1e-6)
+check("100% reference is the earliest POST-dose timepoint (24h), not predose", {
+  all(abs(model$parent$pct[model$parent$time == "24h"] - 100) < 1e-6)
+})
+check("predose is flagged as control and sits near 0% (negative control)", {
+  pre <- model$parent[model$parent$time == "pre", ]
+  nrow(pre) == 2 && all(pre$predose) && all(pre$pct < 1)
+})
+check("predose samples contribute no metabolite cells", {
+  # 'pre' must not appear in any cell panel (negative control)
+  !("pre" %in% model$base$time) && !("pre" %in% model$cleave$time) && !("pre" %in% model$conj$time)
 })
 check("min_pct filter drops sub-threshold base cells", {
   m2 <- degradation_position_model(matches, mets, spec, sm, min_pct = 4.5)
@@ -105,6 +115,45 @@ check("no sample metadata collapses to one timepoint/matrix", {
   m1 <- degradation_position_model(matches, mets, spec, sample_meta = NULL)
   identical(m1$matrices, "all") && identical(m1$times, "all")
 })
+
+## ---- predose handling in degradation_vs_reference ---------------------------
+# A predose / time-0 negative control must not be the 100% baseline.
+ps <- data.frame(
+  sample = paste0("s", 1:8),
+  group = "A",
+  timepoint = c(0, 0, 24, 24, 168, 168, 72, 72),
+  parent_signal = c(2e3, 3e3, 1e6, 1.1e6, 2e5, 1.8e5, 5e5, 5.2e5),
+  pct_degradation = c(0, 0, 10, 12, 80, 82, 48, 50),
+  stringsAsFactors = FALSE)
+vr <- degradation_vs_reference(ps)
+check("reference auto-selects earliest POST-dose timepoint, not predose",
+      all(vr$reference_timepoint == 24))
+check("predose is flagged (is_predose) and the post-dose rows are not",
+      isTRUE(vr$is_predose[vr$timepoint == 0]) && !any(vr$is_predose[vr$timepoint > 0]))
+check("% parent remaining is 100 at the reference, near 0 at predose", {
+  rem0 <- vr$pct_parent_remaining[vr$timepoint == 0]
+  rem24 <- vr$pct_parent_remaining[vr$timepoint == 24]
+  abs(rem24 - 100) < 1e-6 && rem0 < 1
+})
+check("an explicit reference_timepoint is still honored", {
+  vr2 <- degradation_vs_reference(ps, reference_timepoint = 72)
+  all(vr2$reference_timepoint == 72) && abs(vr2$pct_parent_remaining[vr2$timepoint == 72] - 100) < 1e-6
+})
+# Backward compatibility: a genuine t=0 DOSING point (full intact signal,
+# first-order decay after) must stay the 100% reference, not be mistaken for a
+# predose control. Mirrors the convention in test_data_matrix.R.
+dose <- data.frame(
+  sample = paste0("d", 1:8), group = "active",
+  timepoint = c(0, 0, 24, 24, 48, 48, 72, 72),
+  parent_signal = 1e6 * exp(-0.03 * c(0, 0, 24, 24, 48, 48, 72, 72)),
+  pct_degradation = 100 * (1 - exp(-0.03 * c(0, 0, 24, 24, 48, 48, 72, 72))),
+  stringsAsFactors = FALSE)
+vd <- degradation_vs_reference(dose)
+check("t=0 dosing point (full signal) stays the 100% reference",
+      all(vd$reference_timepoint == 0) && abs(vd$pct_parent_remaining[vd$timepoint == 0] - 100) < 1e-6)
+check("a full-signal t=0 is NOT flagged predose", !any(vd$is_predose))
+check("dosing arm loses parent monotonically over time",
+      all(diff(vd$pct_parent_remaining[order(vd$timepoint)]) < 0))
 
 ## ---- HTML widget (needs jsonlite) -------------------------------------------
 if (requireNamespace("jsonlite", quietly = TRUE)) {

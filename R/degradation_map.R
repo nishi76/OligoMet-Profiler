@@ -145,6 +145,32 @@ degradation_position_model <- function(matches, mets, spec, sample_meta = NULL,
   parent_sig <- tapply(m$.sig[is_parent], m$sample[is_parent], max)
   m$.psig <- as.numeric(parent_sig[m$sample])
   m$.pct <- ifelse(is.na(m$.psig) | m$.psig <= 0, NA_real_, 100 * m$.sig / m$.psig)
+  # A predose negative control (no oligo spiked) carries no real metabolites,
+  # and its near-zero parent signal gives meaningless ratios. Detect it by
+  # signal, not the clock, so a genuine t=0 DOSING point is kept: within each
+  # matrix, flag the LEADING run of timepoints whose parent signal is
+  # negligible (< 10% of that matrix's max). These are excluded from the
+  # per-position cells and never used as the 100% reference, but kept in the
+  # parent track as controls. Returns per-matrix ordered timepoint levels and
+  # whether each is a control, reused by the parent track below.
+  .dm_controls <- function() {
+    out <- list()
+    if (!any(is_parent)) return(out)
+    pagg <- stats::aggregate(.sig ~ .tp + .mx, data = m[is_parent, , drop = FALSE], FUN = max)
+    for (xcol in unique(pagg$.mx)) {
+      s <- pagg[pagg$.mx == xcol, , drop = FALSE]
+      lv <- .dm_order_levels(s$.tp); sig <- s$.sig[match(lv, s$.tp)]
+      mx_max <- suppressWarnings(max(sig, na.rm = TRUE))
+      ctrl <- rep(FALSE, length(lv))
+      if (is.finite(mx_max) && mx_max > 0) ctrl <- cumprod(as.integer(sig < 0.10 * mx_max)) == 1
+      out[[xcol]] <- list(levels = lv, sig = sig, ctrl = ctrl)
+    }
+    out
+  }
+  ctrl_info <- .dm_controls()
+  ctrl_key <- unlist(lapply(names(ctrl_info), function(x)
+    paste(x, ctrl_info[[x]]$levels[ctrl_info[[x]]$ctrl], sep = "\r")), use.names = FALSE)
+  m$.predose <- paste(m$.mx, m$.tp, sep = "\r") %in% (ctrl_key %||% character(0))
 
   mod <- if ("mod" %in% names(m)) as.character(m$mod) else rep("none", nrow(m))
   mod[is.na(mod)] <- "none"
@@ -157,6 +183,7 @@ degradation_position_model <- function(matches, mets, spec, sample_meta = NULL,
   add <- function(lst, row) { lst[[length(lst) + 1L]] <- row; lst }
 
   for (i in seq_len(nrow(m))) {
+    if (isTRUE(m$.predose[i])) next   # negative control: no metabolite cells
     pct <- m$.pct[i]; if (is.na(pct)) next
     kinds <- kind_by_id[[m$met_id[i]]] %||% m$kind[i]
     tcol <- m$.tp[i]; xcol <- m$.mx[i]
@@ -217,18 +244,16 @@ degradation_position_model <- function(matches, mets, spec, sample_meta = NULL,
 
   # parent percent remaining vs the earliest timepoint, per matrix
   par_rows <- list()
-  if (any(is_parent)) {
-    pm <- m[is_parent, , drop = FALSE]
-    agg <- stats::aggregate(.sig ~ .tp + .mx, data = pm, FUN = max)
-    for (xcol in unique(agg$.mx)) {
-      sub <- agg[agg$.mx == xcol, , drop = FALSE]
-      lv <- .dm_order_levels(sub$.tp)
-      base_sig <- sub$.sig[match(lv[1], sub$.tp)]
-      if (is.na(base_sig) || base_sig <= 0) next
-      for (tt in lv) par_rows[[length(par_rows) + 1L]] <- data.frame(
-        matrix = xcol, time = tt, pct = 100 * sub$.sig[match(tt, sub$.tp)] / base_sig,
-        stringsAsFactors = FALSE)
-    }
+  for (xcol in names(ctrl_info)) {
+    ci <- ctrl_info[[xcol]]; lv <- ci$levels; sig <- ci$sig; ctrl <- ci$ctrl
+    # 100% reference is the earliest timepoint with real parent signal (the
+    # first non-control), never a leading predose control.
+    ref_i <- which(!ctrl)[1]; if (is.na(ref_i)) ref_i <- 1L
+    base_sig <- sig[ref_i]
+    if (is.na(base_sig) || base_sig <= 0) next
+    for (ti in seq_along(lv)) par_rows[[length(par_rows) + 1L]] <- data.frame(
+      matrix = xcol, time = lv[ti], pct = 100 * sig[ti] / base_sig,
+      predose = ctrl[ti], stringsAsFactors = FALSE)
   }
   parent <- bind(par_rows)
 
@@ -340,8 +365,10 @@ degradation_position_model <- function(matches, mets, spec, sample_meta = NULL,
        } else if(cov[tm+"|"+p]){row+="<td class=\\"c cov\\" data-tip=\\""+tipCov(p,tm,mx)+"\\"><div class=bx>\\u00b7</div></td>";}
        else row+="<td class=c><div class=bx></div></td>";
      }
-     var pr=parentPct(mx,tm);
-     row+="<th class=rl>"+(pr==null?"":"<span class=trk><span style=\\"width:"+Math.max(0,Math.min(100,pr)).toFixed(0)+"%\\"></span></span><span class=p>"+pr.toFixed(1)+"%</span>")+"</th></tr>";
+     var pr=parentRow(mx,tm);
+     if(pr==null){row+="<th class=rl></th></tr>";}
+     else{var w=Math.max(0,Math.min(100,pr.pct));
+       row+="<th class=rl><span class=trk><span style=\\"width:"+w.toFixed(0)+"%\\"></span></span><span class=p>"+pr.pct.toFixed(1)+"%"+(pr.predose?" <span style=\\"color:var(--mut)\\">ctrl</span>":"")+"</span></th></tr>";}
      body+=row;
    });
    host.innerHTML="<div class=scrollx><table>"+head+seq+body+"</table></div>";
@@ -377,7 +404,7 @@ degradation_position_model <- function(matches, mets, spec, sample_meta = NULL,
    host.innerHTML="<div class=scrollx><table>"+head+body+"</table></div>";
    host.querySelectorAll("[data-tip]").forEach(function(td){bind(td,td.getAttribute("data-tip"));td.removeAttribute("data-tip");});
  }
- function parentPct(mx,tm){var r=(D.parent||[]).find(function(x){return x.matrix===mx&&x.time===tm;});return r?r.pct:null;}
+ function parentRow(mx,tm){var r=(D.parent||[]).find(function(x){return x.matrix===mx&&x.time===tm;});return r||null;}
  function tipB(c,p,tm,mx){var cl=CLS[c.cls];return "<b>"+cl[2]+"</b><br><span class=k>residue</span> "+esc(D.seq[p-1])+p+(inGap(p)?" (DNA gap)":" (wing)")+"<hr><span class=k>species</span> "+esc(c.species)+"<br><span class=k>abundance</span> "+c.pct.toFixed(2)+"% of parent<br>"+(isFinite(c.ppm)?"<span class=k>mass error</span> "+(+c.ppm).toFixed(1)+" ppm<br>":"")+"<span class=k>MS2</span> "+(c.ms2?"confirmed":"MS1 only")+"<br><span class=k>"+esc(tm)+" \\u00b7 "+esc(mx)+"</span>";}
  function tipC(c,l,tm,mx){var cl=CLS[c.cls];return "<b>"+cl[2]+"</b> <span class=k>@ linkage "+l+"</span><hr><span class=k>product</span> "+esc(c.species)+(c.cyc?" (2\\u2032,3\\u2032-cyclic phosphate)":"")+"<br><span class=k>abundance</span> "+c.pct.toFixed(2)+"% of parent<br><span class=k>MS2</span> "+(c.ms2?"confirmed":"MS1 only")+"<br><span class=k>"+esc(tm)+" \\u00b7 "+esc(mx)+"</span>";}
  function tipGn(c,tm,mx){return "<b>"+esc(c.label)+"</b><hr><span class=k>abundance</span> "+c.pct.toFixed(1)+"% of parent<br><span class=k>MS2</span> "+(c.ms2?"confirmed":"MS1 only")+"<br><span class=k>"+esc(tm)+" \\u00b7 "+esc(mx)+"</span>";}

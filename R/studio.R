@@ -474,6 +474,13 @@ studio_server <- function(input, output, session, rv, tab = "Studio") {
     st$use_demo <- TRUE
   })
   shiny::observeEvent(input$studio_mine, { st$use_demo <- FALSE })
+  # A freshly generated library or a loaded project takes over Studio: leave
+  # demo mode so the panes follow the real data. Without this, Studio stays
+  # stuck on the demo study after a project is loaded, because .inputs()
+  # short-circuits to the demo before it ever reads rv$spec / rv$mets.
+  shiny::observeEvent(rv$mets, {
+    if (!is.null(rv$mets)) st$use_demo <- FALSE
+  }, ignoreInit = TRUE)
   shiny::observeEvent(input$studio_nav, {
     target <- input$studio_nav
     if (target %in% c("Library Generation", "Batch Processing", "Empirical MS2 Library"))
