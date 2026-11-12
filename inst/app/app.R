@@ -46,7 +46,7 @@ if (!is.null(.module_dir)) {
                "chemistry_dict.R", "oligo_io.R",
                "metabolites.R", "mass_isotope.R", "fragments.R",
                "ms_matching.R", "spectra_io.R", "batch_ms_processing.R", "statistics.R",
-               "degradation.R", "multivariate.R", "blank_correction.R", "data_matrix.R", "xic_quant.R", "internal_standard.R",
+               "degradation.R", "degradation_map.R", "multivariate.R", "blank_correction.R", "data_matrix.R", "xic_quant.R", "internal_standard.R",
                "structure_annotation.R", "regulatory_report.R", "report_evidence.R",
                "build_workbook.R", "build_report.R",
                "export_acquisition.R", "export_spectral.R", "mirror_plot.R", "studio.R",
@@ -1438,6 +1438,21 @@ ui <- fluidPage(
                   DT::DTOutput("degradation_vs_ref_table"),
                   tags$div(style = "height: 8px;"),
                   downloadButton("dl_degradation_vs_ref_csv", "Download degradation vs reference (.csv)", class = "btn-outline-primary")
+                )
+              )
+            ),
+            tabPanel("Degradation Map",
+              conditionalPanel(
+                condition = "output.batch_ready == 'true'",
+                tags$div(style = "padding-top: 12px;",
+                  tags$p(style = "font-size: 12px; color: #6c757d; margin-bottom: 10px;",
+                    "Every identified metabolite placed on the parent sequence and colored by ",
+                    "degradation class, across the study's timepoints and matrices (after the ",
+                    "manner of Shen et al., OligoFragger 2026, Fig 3d). Rows are timepoints, ",
+                    "columns are residue and linkage positions; cell opacity scales with abundance ",
+                    "relative to the full-length parent. Needs sample metadata (timepoint / matrix) ",
+                    "for the axes."),
+                  uiOutput("degradation_map_ui")
                 )
               )
             )
@@ -4944,6 +4959,27 @@ server <- function(input, output, session) {
       DT::formatRound(intersect(c("mean_pct_degradation", "sd_pct_degradation", "sem_pct_degradation"),
                                 names(pc)), digits = 2) |>
       DT::formatRound(intersect(c("mean_parent_signal", "mean_degradant_signal"), names(pc)), digits = 0)
+  })
+
+  # Position-resolved degradation map (OligoFragger Fig 3d analog): every
+  # identified metabolite placed on the sequence, colored by class, across
+  # timepoints and matrices. Built from the same match table + metabolite
+  # library + sample metadata the rest of the batch tab uses.
+  output$degradation_map_ui <- renderUI({
+    br <- rv$batch_ms_results
+    req(br, br$ms1_matches, nrow(br$ms1_matches) > 0, rv$spec, rv$mets)
+    meta <- batch_meta_data()
+    model <- tryCatch(
+      degradation_position_model(
+        br$ms1_matches, rv$mets, rv$spec, sample_meta = meta,
+        oligo_name = input$oligo_name %||% "parent",
+        signal_col = "area", min_pct = input$parent_pct_min %||% 0.1),
+      error = function(e) {
+        rv$status_text <- paste0(rv$status_text, "Degradation map: ", conditionMessage(e), "\n")
+        NULL
+      })
+    if (is.null(model)) return(tags$p(style = "color:#a3231b;", "Could not build the degradation map."))
+    shiny::HTML(degradation_map_html(model, id = "dmap_app"))
   })
 
   output$plot_degradation_composition <- renderPlot({
