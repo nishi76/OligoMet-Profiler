@@ -304,6 +304,37 @@
 #'   [build_regulatory_report_docx()].
 #' @seealso [build_regulatory_report_html()], [build_regulatory_report_docx()]
 #' @export
+# Flatten a degradation_position_model() into a static, report-ready table:
+# the interactive widget cannot go into a .docx, and a regulatory reader wants
+# the underlying numbers tabulated anyway.
+.REG_DEGMAP_CLASS <- c(ox = "Oxidation", aB = "Depurination/abasic", dA = "Deamination",
+                       e3 = "3'-exonuclease", e5 = "5'-exonuclease", en = "Endonuclease",
+                       gn = "GalNAc loss")
+.reg_degmap_table <- function(model) {
+  rows <- list()
+  push <- function(mx, tm, panel, pos, cls, pct, ms2, note = "") {
+    rows[[length(rows) + 1L]] <<- data.frame(
+      Matrix = mx, Timepoint = tm, Panel = panel, Position = pos,
+      Class = unname(.REG_DEGMAP_CLASS[cls]), `% of parent` = round(pct, 2),
+      MS2 = ifelse(isTRUE(ms2), "yes", "-"), Note = note,
+      check.names = FALSE, stringsAsFactors = FALSE)
+  }
+  b <- model$base
+  if (!is.null(b) && nrow(b) > 0) for (i in seq_len(nrow(b)))
+    push(b$matrix[i], b$time[i], "Base modification", as.character(b$pos[i]), b$cls[i], b$pct[i], b$ms2[i])
+  cl <- model$cleave
+  if (!is.null(cl) && nrow(cl) > 0) for (i in seq_len(nrow(cl)))
+    push(cl$matrix[i], cl$time[i], "Backbone cleavage", paste0("linkage ", cl$link[i]), cl$cls[i], cl$pct[i], cl$ms2[i],
+         if (isTRUE(cl$cyc[i])) "2',3'-cyclic phosphate" else "")
+  cj <- model$conj
+  if (!is.null(cj) && nrow(cj) > 0) for (i in seq_len(nrow(cj)))
+    push(cj$matrix[i], cj$time[i], "Conjugate", cj$label[i], cj$cls[i], cj$pct[i], cj$ms2[i])
+  if (length(rows) == 0) return(data.frame())
+  out <- do.call(rbind, rows)
+  tord <- match(out$Timepoint, model$times); tord[is.na(tord)] <- length(model$times) + 1L
+  out[order(out$Matrix, tord, out$Panel, out$Position), , drop = FALSE]
+}
+
 .reg_model <- function(ctx) {
   details <- ctx$details %||% list()
   params <- ctx$params %||% list()
@@ -750,6 +781,29 @@
     if (!is.null(pathway_txt)) P(sprintf("At %s the degradant signal was distributed as follows. ", if (has_time) fmt_t(last_t) else "each condition"), pathway_txt, ".")
   }
 
+  # ---- position-resolved degradation map (OligoFragger Fig 3d analog) ----
+  if (!is.null(matches) && nrow(matches) > 0 && !is.null(ctx$spec) && !is.null(ctx$mets)) {
+    dmodel <- tryCatch(degradation_position_model(
+      matches, ctx$mets, ctx$spec, sample_meta = meta,
+      oligo_name = if (nzchar(lib_prefix)) lib_prefix else ta,
+      signal_col = "area", min_pct = threshold), error = function(e) NULL)
+    if (!is.null(dmodel) && (nrow(dmodel$base) + nrow(dmodel$cleave) + nrow(dmodel$conj)) > 0) {
+      H2("Position-Resolved Degradation Map")
+      P("Every identified metabolite is placed on the parent sequence and colored by ",
+        "degradation class across the study's timepoints and matrices: in-place base ",
+        "modifications on their residue, backbone cleavage on its linkage, and the ",
+        "GalNAc conjugate ladder, each with abundance relative to the full-length ",
+        "parent. A predose / time-0 negative control is shown as a control and is not ",
+        "used as the 100% reference. The interactive map is rendered in the HTML report; ",
+        "the underlying values are tabulated below for the filing record.")
+      add(list(type = "degmap", model = dmodel,
+               caption = sprintf("Figure %d. Position-resolved degradation map of %s.",
+                                 (n_fig <- n_fig + 1L), ta)))
+      TAB(.reg_degmap_table(dmodel),
+          "Positioned degradation products: matrix, timepoint, panel, position, class, abundance (% of parent) and MS2 confirmation.")
+    }
+  }
+
   H2("Metabolite Characterization")
   char_ids <- if (!is.null(rep_mets)) head(rep_mets, params$max_characterized %||% 15) else NULL
   raw_ms <- !is.null(matches) && "obs_mz" %in% names(matches)
@@ -1024,6 +1078,10 @@ build_regulatory_report_html <- function(ctx) {
         if (is.null(uri)) "" else sprintf("<figure><img class='fig' src='%s'/><figcaption>%s</figcaption></figure>", uri, .reg_xml_escape(b$caption))
       },
       svg = sprintf("<figure class='struct'>%s<figcaption>%s</figcaption></figure>", b$svg, .reg_xml_escape(b$caption)),
+      degmap = sprintf("<figure>%s<figcaption>%s</figcaption></figure>",
+                       tryCatch(degradation_map_html(b$model, id = "dmap_report"),
+                                error = function(e) "<p class='note'>Degradation map unavailable.</p>"),
+                       .reg_xml_escape(b$caption)),
       pagebreak = "",
       "")
   }, "")
@@ -1242,6 +1300,9 @@ build_regulatory_report_docx <- function(ctx, file) {
           officer::body_add_img(doc, png, width = w, height = h)
         }
       },
+      degmap = add_fpar(doc, paste0("The interactive position-resolved degradation map is ",
+        "rendered in the HTML report; its underlying values are tabulated below."),
+        tx(9, FALSE, "#6c757d", TRUE), par(after = 6)),
       pagebreak = officer::body_add_break(doc),
       doc)
   }

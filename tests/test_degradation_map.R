@@ -10,7 +10,8 @@
   }, error = function(e) NULL)
   if (!is.null(this)) dirname(dirname(this)) else ".."
 })
-for (.f in c("about.R", "chemistry_dict.R", "oligo_io.R", "metabolites.R", "degradation.R", "degradation_map.R"))
+for (.f in c("about.R", "chemistry_dict.R", "oligo_io.R", "metabolites.R", "degradation.R",
+             "degradation_map.R", "regulatory_report.R"))
   source(file.path(.pkg_root, "R", .f))
 check <- function(label, ok) {
   cat(sprintf("%-74s %s\n", label, if (isTRUE(ok)) "PASS" else "FAIL"))
@@ -115,6 +116,18 @@ check("no sample metadata collapses to one timepoint/matrix", {
   m1 <- degradation_position_model(matches, mets, spec, sample_meta = NULL)
   identical(m1$matrices, "all") && identical(m1$times, "all")
 })
+
+## ---- static table for the regulatory report (.reg_degmap_table) -------------
+rt <- .reg_degmap_table(model)
+check("report degmap table flattens all three panels", {
+  setequal(unique(rt$Panel), c("Base modification", "Backbone cleavage", "Conjugate"))
+})
+check("report degmap table uses readable class names", {
+  all(c("Oxidation", "Deamination") %in% rt$Class)
+})
+check("report degmap table excludes the predose control", !("pre" %in% rt$Timepoint))
+check("report degmap table carries abundance and MS2 columns",
+      all(c("% of parent", "MS2") %in% names(rt)))
 
 ## ---- predose handling in degradation_vs_reference ---------------------------
 # A predose / time-0 negative control must not be the 100% baseline.
