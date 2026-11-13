@@ -1077,7 +1077,20 @@ ui <- fluidPage(
                          selected = "raw"),
             conditionalPanel(
               condition = "input.data_source == 'matrix'",
-              fileInput("dm_file", "Data matrix (.csv, .tsv, .txt, .xlsx)",
+              tags$div(class = "sidebar-section", style = "margin-bottom: 8px;",
+                tags$label("Try an example dataset", style = "font-size: 13px; font-weight: 500;"),
+                fluidRow(
+                  column(8, selectInput("example_dataset", NULL,
+                    choices = c("Choose an example..." = "",
+                                "Forced-degradation stress study (acid/base/thermal x 6 timepoints)" = "stress_example",
+                                "Quant / calibration example (data matrix)" = "data_matrix_example"))),
+                  column(4, actionButton("load_example_data", "Load", class = "btn-sm btn-outline-secondary w-100"))
+                ),
+                tags$p(style = "font-size: 10.5px; color: #6c757d; margin: -6px 0 2px;",
+                       "Bundled data matrices you can load and explore without any files, ",
+                       "library, or the Python backend. Analyte names are generic placeholders.")
+              ),
+              fileInput("dm_file", "...or upload your own data matrix (.csv, .tsv, .txt, .xlsx)",
                         accept = c(".csv", ".tsv", ".txt", ".xlsx", ".xls")),
               radioButtons("dm_format", "Layout",
                            choices = c("Auto-detect" = "auto",
@@ -2352,10 +2365,14 @@ server <- function(input, output, session) {
     invisible(NULL)
   }
 
-  .load_data_matrix <- function() {
-    f <- input$dm_file
-    if (is.null(f)) return(invisible(NULL))
-    res <- tryCatch(read_data_matrix(f$datapath, format = input$dm_format %||% "auto", name = f$name),
+  .load_data_matrix <- function(path = NULL, name = NULL, format = NULL) {
+    if (is.null(path)) {
+      f <- input$dm_file
+      if (is.null(f)) return(invisible(NULL))
+      path <- f$datapath; name <- f$name
+    }
+    res <- tryCatch(read_data_matrix(path, format = format %||% input$dm_format %||% "auto",
+                                     name = name %||% basename(path)),
                     error = function(e) e)
     if (inherits(res, "error")) {
       dm_raw(NULL)
@@ -2381,6 +2398,27 @@ server <- function(input, output, session) {
   observeEvent(input$dm_file, .load_data_matrix())
   observeEvent(input$dm_format, .load_data_matrix(), ignoreInit = TRUE)
   observeEvent(input$run_matrix_analysis, .analyze_matrix())
+
+  # Load a bundled example data matrix (inst/extdata/<name>/data_matrix_long.csv),
+  # so users can try every analysis tab without their own files or the Python
+  # backend. Resolves from the installed package first, then a source checkout.
+  .example_matrix_path <- function(name) {
+    p <- system.file("extdata", name, "data_matrix_long.csv", package = "OligoMetProfiler")
+    if (nzchar(p) && file.exists(p)) return(p)
+    base <- if (exists(".module_dir", inherits = TRUE)) .module_dir else getwd()
+    for (cand in c(file.path(base, "inst", "extdata", name, "data_matrix_long.csv"),
+                   file.path(getwd(), "inst", "extdata", name, "data_matrix_long.csv")))
+      if (file.exists(cand)) return(cand)
+    ""
+  }
+  observeEvent(input$load_example_data, {
+    sel <- input$example_dataset
+    if (is.null(sel) || !nzchar(sel)) { dm_status_msg("Choose an example dataset first."); return() }
+    path <- .example_matrix_path(sel)
+    if (!nzchar(path)) { dm_status_msg(paste0("ERROR: example '", sel, "' not found in this install.")); return() }
+    updateRadioButtons(session, "dm_format", selected = "long")
+    .load_data_matrix(path = path, name = paste0(sel, " (example)"), format = "long")
+  })
 
   ## ---- Quantification controls: keep dropdown choices in sync --------------
   # Absolute-quant metabolite choices come from the library just built
