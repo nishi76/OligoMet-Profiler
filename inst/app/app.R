@@ -46,7 +46,7 @@ if (!is.null(.module_dir)) {
                "chemistry_dict.R", "oligo_io.R",
                "metabolites.R", "mass_isotope.R", "fragments.R",
                "ms_matching.R", "spectra_io.R", "batch_ms_processing.R", "statistics.R",
-               "degradation.R", "degradation_map.R", "multivariate.R", "blank_correction.R", "data_matrix.R", "xic_quant.R", "internal_standard.R",
+               "degradation.R", "degradation_map.R", "library_figures.R", "multivariate.R", "blank_correction.R", "data_matrix.R", "xic_quant.R", "internal_standard.R",
                "structure_annotation.R", "regulatory_report.R", "report_evidence.R",
                "build_workbook.R", "build_report.R",
                "export_acquisition.R", "export_spectral.R", "mirror_plot.R", "studio.R",
@@ -778,6 +778,28 @@ ui <- fluidPage(
               tabPanel("Truncation Series", plotOutput("plot_truncation", height = "380px")),
               tabPanel("Isotope Pattern", plotOutput("plot_isotope", height = "380px")),
               tabPanel("Oxidation Series", plotOutput("plot_oxidation", height = "380px")),
+              tabPanel("Library Figures",
+                tags$div(style = "padding-top: 12px;",
+                  tags$p(style = "font-size: 12px; color: #6c757d; margin-bottom: 8px;",
+                    "Characterization figures for the predicted library: mass-shift waterfall, ",
+                    "mass-defect plot, phosphorothioate-base Kendrick mass-defect plot (which ",
+                    "aligns the PS→PO desulfurization series), charge-state m/z heatmap, PRM ",
+                    "target m/z distribution, and class counts. All titled with the oligo name."),
+                  fluidRow(
+                    column(6, plotOutput("libfig_waterfall", height = "320px")),
+                    column(6, plotOutput("libfig_massdefect", height = "320px"))
+                  ),
+                  tags$div(style = "height: 10px;"),
+                  plotOutput("libfig_kendrick", height = "360px"),
+                  tags$div(style = "height: 10px;"),
+                  fluidRow(
+                    column(7, plotOutput("libfig_heatmap", height = "460px")),
+                    column(5,
+                      plotOutput("libfig_mzdist", height = "230px"),
+                      plotOutput("libfig_categories", height = "220px"))
+                  )
+                )
+              ),
               tabPanel("MS2 Explorer (predicted)",
                 tags$div(style = "padding-top: 12px;",
                   fluidRow(
@@ -3947,6 +3969,21 @@ server <- function(input, output, session) {
   output$plot_oxidation <- renderPlot({
     if (rv$ready && !is.null(rv$plots$oxidation)) rv$plots$oxidation
   })
+
+  ## ---- Library Figures (R/library_figures.R) -------------------------------
+  # The oligo name always comes from user input, never hardcoded.
+  .libfig_name <- reactive(input$oligo_name %||% "oligo")
+  .lib_mass_frame <- reactive({
+    req(rv$ready, rv$mets)
+    library_mass_frame(rv$mets, rv$dict %||% STANDARD_DICT)
+  })
+  output$libfig_waterfall <- renderPlot(plot_mass_shift_waterfall(.lib_mass_frame(), .libfig_name()))
+  output$libfig_massdefect <- renderPlot(plot_mass_defect(.lib_mass_frame(), .libfig_name()))
+  output$libfig_kendrick <- renderPlot({
+    req(rv$prm); plot_kendrick_defect(rv$prm, .lib_mass_frame(), .libfig_name()) })
+  output$libfig_heatmap <- renderPlot({ req(rv$prm); plot_charge_heatmap(rv$prm, .libfig_name()) })
+  output$libfig_mzdist <- renderPlot({ req(rv$prm); plot_prm_mz_distribution(rv$prm, .libfig_name()) })
+  output$libfig_categories <- renderPlot(plot_metabolite_categories(.lib_mass_frame(), .libfig_name()))
 
   ## ---- Structure annotation (cleavage map) ---------------------------------
   # Populate the metabolite picker whenever the library changes.
