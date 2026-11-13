@@ -64,6 +64,7 @@
 }
 
 .studio_num <- function(x) {
+  if (length(x) == 0) return(NA_real_)   # a missing column must not collapse a vapply
   x <- suppressWarnings(as.numeric(x)); x[!is.finite(x)] <- NA; x
 }
 
@@ -183,7 +184,10 @@ studio_payload <- function(spec, mets, dict = STANDARD_DICT, ms1_matches = NULL,
       rec <- if (k == 0L) recs[[mid]] else .studio_oxid_record(recs[[mid]], k, mets, dict)
       pick <- function(col) vapply(sid, function(s) {
         r <- best[best$sample == s & best$met_id == mid & best$k_oxid == k, , drop = FALSE]
-        if (nrow(r) == 0) NA_real_ else .studio_num(r[[col]][1])
+        # A data-matrix import carries only signal, not ppm/rt/obs_mz/z, so a
+        # requested column may be absent -- treat it as not available (NA)
+        # rather than letting NULL[1] collapse the vapply to length 0.
+        if (nrow(r) == 0 || !col %in% names(r)) NA_real_ else .studio_num(r[[col]][1])
       }, numeric(1))
       sg <- pick(signal_col)
       rec$signal <- unname(sg); rec$ppm <- unname(pick("ppm_error")); rec$rt <- unname(pick("rt"))

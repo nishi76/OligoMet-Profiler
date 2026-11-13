@@ -56,4 +56,19 @@ check("detail: charge envelope covers z = 3..12", length(det$env) == 10)
 check("detail: score reports covered and total bond counts", det$score$total == 20 && det$score$covered > 0)
 th <- studio_detail(met1, demo$dict, NULL, 0L)
 check("detail without a spectrum returns the library only", !th$has_spectrum && length(th$theoretical) > 50 && length(th$acquired) == 0)
+## data-matrix results: a minimal matrix (signal only, no ppm/rt/obs_mz/z)
+## must not collapse the payload's per-sample vapply (regression).
+ids_dm <- vapply(mets, function(m) m$id, "")
+dm <- do.call(rbind, lapply(c("acid_0h", "acid_24h"), function(s) data.frame(
+  met_id = ids_dm[1:3], met_name = "example", kind = c("parent", "exo_3p", "exo_3p"),
+  sample = s, intensity = c(100, 30, 10), stringsAsFactors = FALSE)))
+pl_dm <- tryCatch(studio_payload(spec, mets, ms1_matches = dm, mode = "results"),
+                  error = function(e) conditionMessage(e))
+check("data-matrix payload (signal-only schema) builds without error",
+      is.list(pl_dm) && identical(pl_dm$mode, "results"))
+check("data-matrix payload keeps per-sample signal; absent ppm/rt/z are NA", {
+  sp <- pl_dm$species[[1]]
+  "pct" %in% names(sp) && all(is.na(sp$ppm)) && all(is.na(sp$rt))
+})
+
 cat("\n==== All Studio data-layer tests passed ====\n")
