@@ -757,7 +757,7 @@ ui <- fluidPage(
                 tags$div(style = "padding-top: 12px;",
                   fluidRow(
                     column(6, selectInput("anno_met", "Metabolite", choices = NULL, width = "100%")),
-                    column(6, selectInput("anno_mod", "In-place modification",
+                    column(6, selectInput("anno_mod", "Variant to draw",
                       choices = c("none (parent species)" = "none",
                                   "Depurination (abasic)" = "depurination",
                                   "Oxidation (+O)" = "oxidation",
@@ -766,6 +766,9 @@ ui <- fluidPage(
                       selected = "none", width = "100%"))
                   ),
                   tags$p(style = "font-size: 12px; color: #6c757d;",
+                    "Draws one structure at a time. Pick a metabolite and, optionally, one ",
+                    "modification variant to badge on it. To search for modifications across ",
+                    "the library, use the Variable modifications checkboxes on the sidebar. ",
                     "Cleavage map: residues colored by 2'-sugar chemistry, backbone drawn as ",
                     "phosphorothioate (thick) vs phosphodiester (thin dashed), the retained span ",
                     "solid and the lost portion faded, the cleavage site scissored, 5'/3' termini ",
