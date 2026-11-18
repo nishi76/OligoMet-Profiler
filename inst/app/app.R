@@ -892,14 +892,21 @@ ui <- fluidPage(
               checkboxGroupInput("adducts", "Adducts",
                                  choices = c("H", "Na", "K", "NH4"),
                                  selected = DEFAULT_PIPELINE_PARAMS$adducts, inline = TRUE),
-              checkboxGroupInput("mods", "In-place modifications (metabolite search)",
-                                 choices = c("Depurination (abasic)" = "depurination",
-                                             "Oxidation (+O)" = "oxidation",
-                                             "Deamination (+0.984)" = "deamination",
-                                             "2',3'-cyclic phosphate" = "cyclic_phosphate"),
+              checkboxGroupInput("mods", "Variable modifications to search for",
+                                 choices = c("Depurination (abasic): −117.044 Da (A), −133.039 Da (G)" = "depurination",
+                                             "Oxidation (+O): +15.9949 Da" = "oxidation",
+                                             "Deamination: +0.9840 Da" = "deamination",
+                                             "2',3'-cyclic phosphate: −18.0106 Da" = "cyclic_phosphate"),
                                  selected = DEFAULT_PIPELINE_PARAMS$mods),
+              tags$div(style = "margin:-4px 0 6px;",
+                       actionLink("mods_all", "Select all", style = "font-size:11px;"),
+                       tags$span(" · ", style = "font-size:11px; color:#aaa;"),
+                       actionLink("mods_none", "Clear", style = "font-size:11px;")),
               tags$p(class = "help-note",
-                     "Each adds a single in-place modification on top of the nuclease + desulfurization search. Off by default.",
+                     "Like variable modifications in a PTM search: in-place base chemistry can't be ",
+                     "predicted from the sequence, so select the plausible modifications and the ",
+                     "search looks for each mass shift on the parent and its metabolites, then ",
+                     "confirms by MS2. These are a search, not predicted products. Off by default.",
                      style = "font-size:11px; color:#777; margin:2px 0 8px;"),
               fluidRow(
                 column(6, numericInput("frag_tol_ppm", "Fragment tol (ppm)",
@@ -2398,6 +2405,12 @@ server <- function(input, output, session) {
   observeEvent(input$dm_file, .load_data_matrix())
   observeEvent(input$dm_format, .load_data_matrix(), ignoreInit = TRUE)
   observeEvent(input$run_matrix_analysis, .analyze_matrix())
+
+  # Variable-modification search: one-click select-all / clear, the way a PTM
+  # search lets you turn on every candidate modification at once.
+  .ALL_MODS <- c("depurination", "oxidation", "deamination", "cyclic_phosphate")
+  observeEvent(input$mods_all, updateCheckboxGroupInput(session, "mods", selected = .ALL_MODS))
+  observeEvent(input$mods_none, updateCheckboxGroupInput(session, "mods", selected = character(0)))
 
   # Load a bundled example data matrix (inst/extdata/<name>/data_matrix_long.csv),
   # so users can try every analysis tab without their own files or the Python
