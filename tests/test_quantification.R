@@ -11,7 +11,7 @@
   }, error = function(e) NULL)
   if (!is.null(this)) dirname(dirname(this)) else ".."
 })
-for (.f in c("about.R", "chemistry_dict.R", "oligo_io.R", "metabolites.R",
+for (.f in c("palettes.R", "about.R", "chemistry_dict.R", "oligo_io.R", "metabolites.R",
              "mass_isotope.R", "fragments.R", "ms_matching.R",
              "batch_ms_processing.R", "degradation.R", "statistics.R")) {
   source(file.path(.pkg_root, "R", .f))
@@ -47,6 +47,68 @@ stopifnot(curve$r_squared > 0.99)
 stopifnot(curve$n_points == length(std_concs))
 stopifnot(all(abs(curve$points$percent_re) < 15))  # standards back-calculate close to nominal
 cat("Calibration curve recovers known slope/intercept with r_squared > 0.99: PASS\n")
+
+## ---- fit_calibration_curve(): quadratic model ----------------------------
+cat("\n--- fit_calibration_curve() quadratic ---\n")
+q_a <- 500; q_b <- 2000; q_c <- 5
+q_concs <- c(1, 5, 10, 25, 50, 100, 250, 500)
+q_samples <- paste0("qstd_", seq_along(q_concs))
+q_matches <- data.frame(
+  met_id = "PARENT", met_name = "parent oligo", kind = "parent", sample = q_samples,
+  area = q_a + q_b * q_concs + q_c * q_concs^2, stringsAsFactors = FALSE)
+q_meta <- data.frame(sample = q_samples, group = "", timepoint = "",
+                     sample_type = "standard", concentration = as.character(q_concs),
+                     stringsAsFactors = FALSE)
+qcurve <- fit_calibration_curve(q_matches, "PARENT", q_meta, weighting = "none",
+                                model_type = "quadratic")
+cat("model_type =", qcurve$model_type, "  b2 =", round(qcurve$coef[["b2"]], 3),
+    "(true", q_c, ")  r2 =", round(qcurve$r_squared, 5), "\n")
+stopifnot(identical(qcurve$model_type, "quadratic"))
+stopifnot(length(qcurve$coef) == 3 && abs(qcurve$coef[["b2"]] - q_c) / q_c < 0.01)
+stopifnot(qcurve$r_squared > 0.999)
+stopifnot(all(abs(qcurve$points$percent_re) < 1))  # noiseless -> back-calc on the curve
+# a known unknown back-calculates to its true concentration
+y80 <- q_a + q_b * 80 + q_c * 80^2
+stopifnot(abs(.calib_backcalc(qcurve, y80) - 80) < 1e-3)
+cat("Quadratic fit recovers curvature term and back-calculates on the curve: PASS\n")
+
+## ---- fit_calibration_curve(): bilinear (segmented) model ------------------
+cat("\n--- fit_calibration_curve() bilinear ---\n")
+b_a <- 500; b_s1 <- 2000; b_s2 <- 500; b_k <- 50
+bl_signal <- function(x) ifelse(x <= b_k, b_a + b_s1 * x, b_a + b_s1 * b_k + b_s2 * (x - b_k))
+b_concs <- c(1, 5, 10, 25, 50, 100, 200, 500)
+b_samples <- paste0("bstd_", seq_along(b_concs))
+b_matches <- data.frame(
+  met_id = "PARENT", met_name = "parent oligo", kind = "parent", sample = b_samples,
+  area = bl_signal(b_concs), stringsAsFactors = FALSE)
+b_meta <- data.frame(sample = b_samples, group = "", timepoint = "",
+                     sample_type = "standard", concentration = as.character(b_concs),
+                     stringsAsFactors = FALSE)
+bcurve <- fit_calibration_curve(b_matches, "PARENT", b_meta, weighting = "none",
+                                model_type = "bilinear")
+cat("model_type =", bcurve$model_type, "  knot =", round(bcurve$coef[["knot"]], 1),
+    "  slope1 =", round(bcurve$coef[["slope1"]], 1), "  slope2 =", round(bcurve$coef[["slope2"]], 1), "\n")
+stopifnot(identical(bcurve$model_type, "bilinear"))
+stopifnot(abs(bcurve$coef[["knot"]] - b_k) < 1e-6)
+stopifnot(abs(bcurve$coef[["slope1"]] - b_s1) / b_s1 < 0.01)
+stopifnot(abs(bcurve$coef[["slope2"]] - b_s2) / b_s2 < 0.01)
+stopifnot(bcurve$r_squared > 0.999)
+# back-calculate a point in each segment
+stopifnot(abs(.calib_backcalc(bcurve, bl_signal(20)) - 20) < 1e-3)   # lower segment
+stopifnot(abs(.calib_backcalc(bcurve, bl_signal(300)) - 300) < 1e-3) # upper segment
+cat("Bilinear fit recovers both slopes and the knot, back-calculates in each segment: PASS\n")
+
+## ---- back-compat: a curve with no coef falls back to linear inverse -------
+legacy <- list(model_type = NULL, coef = NULL, intercept = 500, slope = 2000,
+               conc_range = c(1, 100))
+stopifnot(abs(.calib_backcalc(legacy, 500 + 2000 * 42) - 42) < 1e-6)
+cat("Legacy curve (intercept/slope only) back-calculates as linear: PASS\n")
+
+## ---- too-few-points guards scale with model complexity --------------------
+q_few <- fit_calibration_curve(q_matches[q_matches$sample %in% q_samples[1:2], ],
+                               "PARENT", q_meta[1:2, ], weighting = "none", model_type = "quadratic")
+stopifnot(is.null(q_few$model) && nzchar(q_few$note))
+cat("Quadratic with 2 points -> empty curve with a note: PASS\n")
 
 ## ---- fit_calibration_curve(): missing standards handled gracefully --------
 cat("\n--- fit_calibration_curve() edge cases ---\n")

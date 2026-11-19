@@ -1231,10 +1231,16 @@ ui <- fluidPage(
                              choices = character(0), multiple = TRUE,
                              options = list(placeholder = "None selected -- every metabolite uses relative quantification")),
               fluidRow(
+                column(6, selectInput("calibration_model", "Calibration curve fit",
+                          choices = c("Linear" = "linear",
+                                      "Quadratic" = "quadratic",
+                                      "Bilinear (segmented)" = "bilinear"))),
                 column(6, selectInput("calibration_weighting", "Calibration curve weighting",
                           choices = c("1/x² weighted (recommended)" = "1/x2",
                                       "1/x weighted" = "1/x",
-                                      "Unweighted (OLS)" = "none"))),
+                                      "Unweighted (OLS)" = "none")))
+              ),
+              fluidRow(
                 column(6, selectInput("control_group", "Control group (relative quant)",
                           choices = character(0)))
               ),
@@ -2508,7 +2514,8 @@ server <- function(input, output, session) {
   # Picking calibrator metabolites, the weighting, or the control group
   # recomputes quantification on the spot from the results already in
   # memory -- no second click, and never a re-run of peak picking.
-  observeEvent(list(input$absolute_quant_mets, input$calibration_weighting, input$control_group,
+  observeEvent(list(input$absolute_quant_mets, input$calibration_weighting, input$calibration_model,
+                    input$control_group,
                     input$xic_n_charges, input$xic_n_iso, .xic_charges_d(), input$xic_enable,
                     input$global_is, is_overrides(), input$signal_basis), {
     bres <- rv$batch_ms_results
@@ -3485,6 +3492,7 @@ server <- function(input, output, session) {
         control_group = if (has_time) NULL else control_group,
         reference_timepoint = if (has_time) .resolve_reference_timepoint() else NULL,
         weighting = input$calibration_weighting,
+        model_type = input$calibration_model %||% "linear",
         signal_col = sig_col)
     }, error = function(e) {
       rv$status_text <- paste0(rv$status_text,
@@ -4463,7 +4471,8 @@ server <- function(input, output, session) {
     do.call(rbind, lapply(cc, function(c) {
       mean_abs_re <- if (!is.null(c$points) && nrow(c$points) > 0 && "percent_re" %in% names(c$points))
         mean(abs(c$points$percent_re), na.rm = TRUE) else NA_real_
-      data.frame(met_id = c$met_id, weighting = c$weighting,
+      data.frame(met_id = c$met_id, model = c$model_type %||% "linear",
+                 weighting = c$weighting,
                  r_squared = c$r_squared, n_points = c$n_points,
                  mean_abs_percent_re = mean_abs_re,
                  note = if (nzchar(c$note)) c$note else "ok",

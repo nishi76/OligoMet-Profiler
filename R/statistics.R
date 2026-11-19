@@ -577,6 +577,99 @@ plot_multi_trend <- function(trend_summary, normalize = TRUE, reference_timepoin
     stop("Unknown weighting scheme: '", scheme, "' (expected one of 1/x2, 1/x, none)"))
 }
 
+# ---- Calibration model: predict and inverse --------------------------------
+# A fitted curve is described entirely by `model_type` plus a named `coef`
+# vector, both plain values that survive serialization into a saved Analysis
+# State (the lm object in `$model` is stripped). These two helpers are the
+# single place the three model shapes are evaluated, forward (signal from
+# concentration, for drawing the line) and inverse (concentration from signal,
+# for back-calculation). A curve restored from an older state that predates
+# `coef` falls back to the linear intercept/slope it does carry.
+#   linear     signal = a + b*x
+#   quadratic  signal = a + b1*x + b2*x^2
+#   bilinear   two continuous line segments meeting at a knot k:
+#              signal = a + b1*x          for x <= k
+#              signal = a + b1*k + b2*(x-k) for x >  k
+.calib_coef <- function(curve) {
+  co <- curve$coef
+  if (is.null(co)) return(list(mt = "linear",
+                               co = c(intercept = curve$intercept, slope = curve$slope)))
+  list(mt = curve$model_type %||% "linear", co = co)
+}
+
+.calib_predict <- function(curve, x) {
+  cc <- .calib_coef(curve); co <- cc$co
+  switch(cc$mt,
+    linear    = co[["intercept"]] + co[["slope"]] * x,
+    quadratic = co[["intercept"]] + co[["b1"]] * x + co[["b2"]] * x^2,
+    bilinear  = {
+      a <- co[["intercept"]]; b1 <- co[["slope1"]]; b2 <- co[["slope2"]]; k <- co[["knot"]]
+      ifelse(x <= k, a + b1 * x, a + b1 * k + b2 * (x - k))
+    },
+    rep(NA_real_, length(x)))
+}
+
+# Inverse: concentration from signal. Quadratic takes the root on the
+# monotonic branch that covers the calibrated range (the physically
+# meaningful one); a near-zero curvature term degrades to the linear inverse.
+.calib_backcalc <- function(curve, y) {
+  cc <- .calib_coef(curve); co <- cc$co
+  switch(cc$mt,
+    linear    = (y - co[["intercept"]]) / co[["slope"]],
+    quadratic = {
+      a <- co[["intercept"]]; b <- co[["b1"]]; q <- co[["b2"]]
+      if (is.na(q) || abs(q) < 1e-12) return((y - a) / b)
+      rng <- curve$conc_range %||% c(NA_real_, NA_real_)
+      mid <- if (all(is.finite(rng))) mean(rng) else 0
+      disc <- b^2 - 4 * q * (a - y)
+      vapply(seq_along(y), function(i) {
+        d <- disc[i]
+        if (is.na(d) || d < 0) return(NA_real_)
+        roots <- c((-b + sqrt(d)) / (2 * q), (-b - sqrt(d)) / (2 * q))
+        pos <- roots[is.finite(roots) & roots >= 0]
+        pick <- if (length(pos) > 0) pos else roots[is.finite(roots)]
+        if (length(pick) == 0) return(NA_real_)
+        pick[which.min(abs(pick - mid))]
+      }, numeric(1))
+    },
+    bilinear  = {
+      a <- co[["intercept"]]; b1 <- co[["slope1"]]; b2 <- co[["slope2"]]; k <- co[["knot"]]
+      yk <- a + b1 * k
+      ifelse(y <= yk, (y - a) / b1, k + (y - yk) / b2)
+    },
+    rep(NA_real_, length(y)))
+}
+
+# Continuous two-segment (bilinear) fit by a knot grid search. Candidate knots
+# are the interior standard concentrations that leave >= 2 points on each
+# side; for each, a weighted segmented regression is fit and the knot with the
+# smallest weighted residual sum of squares wins. Returns NULL when no
+# candidate knot splits the data (too few distinct concentrations).
+.fit_bilinear <- function(pts, w) {
+  concs <- sort(unique(pts$concentration))
+  cand <- concs[concs > min(concs) & concs < max(concs)]
+  cand <- cand[vapply(cand, function(k)
+    sum(pts$concentration <= k) >= 2 && sum(pts$concentration > k) >= 2, logical(1))]
+  if (length(cand) == 0) return(NULL)
+  best <- NULL; best_rss <- Inf
+  for (k in cand) {
+    seg <- pmax(pts$concentration - k, 0)
+    f <- tryCatch(stats::lm(signal ~ concentration + seg, data = pts, weights = w),
+                  error = function(e) NULL)
+    if (is.null(f)) next
+    rss <- sum(w * stats::residuals(f)^2)
+    if (is.finite(rss) && rss < best_rss) { best_rss <- rss; best <- list(fit = f, knot = k) }
+  }
+  best
+}
+
+.weighted_r2 <- function(y, fitted, w) {
+  ybar <- stats::weighted.mean(y, w)
+  wtss <- sum(w * (y - ybar)^2)
+  if (!is.finite(wtss) || wtss <= 0) return(NA_real_)
+  1 - sum(w * (y - fitted)^2) / wtss
+}
+
 ## ---- Calibration curve for one metabolite -----------------------------------
 # ONLY sample_meta rows with sample_type == "standard" and a positive numeric
 # concentration build the curve. Every other row (unknown study samples,
@@ -610,6 +703,14 @@ plot_multi_trend <- function(trend_summary, normalize = TRUE, reference_timepoin
 #'   quantification), `"1/x"`, or `"none"` (unweighted OLS). No universally
 #'   correct default exists across labs/instruments/SOPs, so this has no
 #'   default of its own -- callers must pick.
+#' @param model_type Regression model: `"linear"` (signal = a + b*conc, the
+#'   default), `"quadratic"` (a + b*conc + c*conc^2, for a response that
+#'   curves at the top of the range) or `"bilinear"` (two continuous linear
+#'   segments meeting at a fitted knot, for a response whose slope changes
+#'   across the range, e.g. detector saturation). Weighting applies to every
+#'   model. Quadratic needs at least 3 standard points and bilinear at least
+#'   4 with an interior knot; below that the curve is returned empty with a
+#'   `note`, as with too few points.
 #' @param signal_col Which column to use as signal. `NULL` (the default)
 #'   auto-detects: `"area"` if present and not all-`NA`, else
 #'   `"intensity"`.
@@ -629,11 +730,14 @@ plot_multi_trend <- function(trend_summary, normalize = TRUE, reference_timepoin
 #' @export
 fit_calibration_curve <- function(batch_matches, met_id, sample_meta,
                                    weighting = c("1/x2", "1/x", "none"),
+                                   model_type = c("linear", "quadratic", "bilinear"),
                                    signal_col = NULL, min_points = 3) {
   weighting <- match.arg(weighting)
+  model_type <- match.arg(model_type)
   if (is.null(signal_col)) signal_col <- .auto_signal_col(batch_matches)
 
   empty <- list(met_id = met_id, signal_col = signal_col, weighting = weighting,
+                model_type = model_type, coef = NULL,
                 model = NULL, intercept = NA_real_, slope = NA_real_, r_squared = NA_real_,
                 n_points = 0, conc_range = c(NA_real_, NA_real_),
                 points = data.frame(), note = "")
@@ -670,24 +774,55 @@ fit_calibration_curve <- function(batch_matches, met_id, sample_meta,
   names(pts)[names(pts) == signal_col] <- "signal"
   pts <- pts[!is.na(pts$signal), ]
 
-  if (nrow(pts) < max(min_points, 2)) {
-    empty$note <- sprintf("only %d standard point(s) with signal for %s (need >= %d)",
-                           nrow(pts), met_id, min_points)
+  # Each model needs a minimum number of points to be identifiable (2 for a
+  # line, 3 for a parabola, 4 for two segments), on top of the caller's floor.
+  needed <- switch(model_type, linear = 2, quadratic = 3, bilinear = 4)
+  min_req <- max(min_points, needed)
+  if (nrow(pts) < min_req) {
+    empty$note <- sprintf("only %d standard point(s) with signal for %s (need >= %d for %s)",
+                           nrow(pts), met_id, min_req, model_type)
     empty$points <- pts
     return(empty)
   }
 
   w <- .calibration_weights(pts$concentration, weighting)
-  fit <- stats::lm(signal ~ concentration, data = pts, weights = w)
-  s <- summary(fit)
-  intercept <- unname(stats::coef(fit)[1]); slope <- unname(stats::coef(fit)[2])
-  pts$back_calc_concentration <- (pts$signal - intercept) / slope
-  pts$percent_re <- 100 * (pts$back_calc_concentration - pts$concentration) / pts$concentration
 
-  list(met_id = met_id, signal_col = signal_col, weighting = weighting, model = fit,
-       intercept = intercept, slope = slope, r_squared = s$r.squared,
-       n_points = nrow(pts), conc_range = range(pts$concentration),
-       points = pts, note = "")
+  fit <- NULL; coef_vec <- NULL; r2 <- NA_real_
+  if (model_type == "linear") {
+    fit <- stats::lm(signal ~ concentration, data = pts, weights = w)
+    cf <- stats::coef(fit)
+    coef_vec <- c(intercept = unname(cf[1]), slope = unname(cf[2]))
+    r2 <- summary(fit)$r.squared
+  } else if (model_type == "quadratic") {
+    fit <- stats::lm(signal ~ concentration + I(concentration^2), data = pts, weights = w)
+    cf <- stats::coef(fit)
+    coef_vec <- c(intercept = unname(cf[1]), b1 = unname(cf[2]), b2 = unname(cf[3]))
+    r2 <- summary(fit)$r.squared
+  } else {  # bilinear
+    bl <- .fit_bilinear(pts, w)
+    if (is.null(bl)) {
+      empty$note <- sprintf("could not place a bilinear knot for %s (need standards on both sides of an interior concentration)",
+                            met_id)
+      empty$points <- pts
+      return(empty)
+    }
+    fit <- bl$fit
+    cf <- stats::coef(fit)   # intercept, concentration (= lower slope), seg (= slope increment)
+    coef_vec <- c(intercept = unname(cf[1]), slope1 = unname(cf[2]),
+                  slope2 = unname(cf[2] + cf[3]), knot = bl$knot)
+    r2 <- .weighted_r2(pts$signal, stats::fitted(fit), w)
+  }
+
+  curve <- list(met_id = met_id, signal_col = signal_col, weighting = weighting,
+                model_type = model_type, coef = coef_vec, model = fit,
+                intercept = unname(coef_vec[["intercept"]]),
+                slope = if (model_type == "linear") unname(coef_vec[["slope"]]) else NA_real_,
+                r_squared = r2, n_points = nrow(pts),
+                conc_range = range(pts$concentration), points = pts, note = "")
+  pts$back_calc_concentration <- .calib_backcalc(curve, pts$signal)
+  pts$percent_re <- 100 * (pts$back_calc_concentration - pts$concentration) / pts$concentration
+  curve$points <- pts
+  curve
 }
 
 ## ---- Calibration curve plot -------------------------------------------------
@@ -733,10 +868,16 @@ plot_calibration_curve <- function(curve_result, quant_points = NULL) {
     return(ggplot2::ggplot() + ggplot2::theme_void() + ggplot2::labs(title = msg))
   }
   pts <- curve_result$points
+  # Draw the fitted response across the calibrated span. For a line this is
+  # the regression line; for quadratic/bilinear it follows the actual curve,
+  # so the plot always shows the model that was fit rather than a straight
+  # approximation of it.
+  gx <- seq(min(pts$concentration), max(pts$concentration), length.out = 200)
+  gline <- data.frame(concentration = gx, signal = .calib_predict(curve_result, gx))
   p <- ggplot2::ggplot() +
     ggplot2::geom_vline(xintercept = curve_result$conc_range, linetype = "dotted", color = "#B7B2A7") +
-    ggplot2::geom_abline(intercept = curve_result$intercept, slope = curve_result$slope,
-                          color = "#009E73", linewidth = 0.8) +
+    ggplot2::geom_line(data = gline, ggplot2::aes(x = .data$concentration, y = .data$signal),
+                        color = "#009E73", linewidth = 0.8) +
     ggplot2::geom_point(data = pts, ggplot2::aes(x = .data$concentration, y = .data$signal),
                          color = "#0072B2", size = 2.5, alpha = 0.85)
 
@@ -756,7 +897,8 @@ plot_calibration_curve <- function(curve_result, quant_points = NULL) {
   p + ggplot2::labs(
     x = "Concentration", y = "Signal",
     title = paste0("Calibration curve -- ", curve_result$met_id),
-    subtitle = sprintf("R^2 = %.4f   n = %d standards   weighting = %s   signal = %s",
+    subtitle = sprintf("%s fit   R^2 = %.4f   n = %d standards   weighting = %s   signal = %s",
+                        curve_result$model_type %||% "linear",
                         curve_result$r_squared, curve_result$n_points,
                         curve_result$weighting, curve_result$signal_col)) +
     theme_oligomet()
@@ -790,6 +932,8 @@ plot_calibration_curve <- function(curve_result, quant_points = NULL) {
 #'   `concentration` columns.
 #' @param weighting Calibration curve weighting -- see
 #'   [fit_calibration_curve()].
+#' @param model_type Calibration model (`"linear"`, `"quadratic"`,
+#'   `"bilinear"`) -- see [fit_calibration_curve()].
 #' @param signal_col Which column to use as signal; `NULL` auto-detects
 #'   (see [fit_calibration_curve()]).
 #' @param min_points Minimum calibration standard points required per
@@ -812,11 +956,15 @@ plot_calibration_curve <- function(curve_result, quant_points = NULL) {
 #' @export
 quantify_absolute <- function(batch_matches, met_ids, sample_meta,
                                weighting = c("1/x2", "1/x", "none"),
+                               model_type = c("linear", "quadratic", "bilinear"),
                                signal_col = NULL, min_points = 3) {
   weighting <- match.arg(weighting)
+  model_type <- match.arg(model_type)
   curves <- stats::setNames(
     lapply(met_ids, function(mid)
-      fit_calibration_curve(batch_matches, mid, sample_meta, weighting, signal_col, min_points)),
+      fit_calibration_curve(batch_matches, mid, sample_meta, weighting = weighting,
+                            model_type = model_type, signal_col = signal_col,
+                            min_points = min_points)),
     met_ids)
 
   rows <- lapply(met_ids, function(mid) {
@@ -834,7 +982,7 @@ quantify_absolute <- function(batch_matches, met_ids, sample_meta,
     if (!"sample_type" %in% names(d)) d$sample_type <- NA_character_
     if (!"concentration" %in% names(d)) d$concentration <- NA_character_
 
-    d$concentration_calc <- (d$signal - curve$intercept) / curve$slope
+    d$concentration_calc <- .calib_backcalc(curve, d$signal)
     d$extrapolated <- d$concentration_calc < curve$conc_range[1] | d$concentration_calc > curve$conc_range[2]
     d$nominal_concentration <- suppressWarnings(as.numeric(d$concentration))
     is_ref <- !is.na(d$sample_type) & d$sample_type %in% c("standard", "quality_control") &
@@ -848,6 +996,7 @@ quantify_absolute <- function(batch_matches, met_ids, sample_meta,
                extrapolated = d$extrapolated, nominal_concentration = d$nominal_concentration,
                percent_re = d$percent_re, curve_r_squared = curve$r_squared,
                curve_n_points = curve$n_points, curve_weighting = curve$weighting,
+               curve_model = curve$model_type %||% "linear",
                stringsAsFactors = FALSE)
   })
   rows <- rows[!vapply(rows, is.null, logical(1))]
@@ -1003,6 +1152,8 @@ quantify_relative <- function(batch_matches, met_ids, sample_meta,
 #'   [quantify_relative()].
 #' @param weighting Calibration curve weighting -- see
 #'   [fit_calibration_curve()].
+#' @param model_type Calibration model (`"linear"`, `"quadratic"`,
+#'   `"bilinear"`) -- see [fit_calibration_curve()].
 #' @param signal_col Which column to use as signal; `NULL` auto-detects.
 #' @param min_points Minimum calibration standard points required per
 #'   metabolite -- see [fit_calibration_curve()].
@@ -1027,9 +1178,11 @@ quantify_metabolites <- function(batch_matches, sample_meta, absolute_met_ids = 
                                   mode = c("time_series", "group"), control_group = NULL,
                                   reference_timepoint = NULL,
                                   weighting = c("1/x2", "1/x", "none"),
+                                  model_type = c("linear", "quadratic", "bilinear"),
                                   signal_col = NULL, min_points = 3) {
   mode <- match.arg(mode)
   weighting <- match.arg(weighting)
+  model_type <- match.arg(model_type)
   if (is.null(batch_matches) || nrow(batch_matches) == 0) {
     return(list(absolute = data.frame(), calibration_curves = list(), relative = data.frame(),
                 notes = "no matches to quantify"))
@@ -1041,7 +1194,7 @@ quantify_metabolites <- function(batch_matches, sample_meta, absolute_met_ids = 
 
   abs_res <- if (length(absolute_met_ids) > 0) {
     quantify_absolute(batch_matches, absolute_met_ids, sample_meta, weighting = weighting,
-                       signal_col = signal_col, min_points = min_points)
+                       model_type = model_type, signal_col = signal_col, min_points = min_points)
   } else list(quant = data.frame(), curves = list())
 
   # The relative half has design prerequisites (a control group, or a
