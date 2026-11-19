@@ -546,7 +546,18 @@ ui <- fluidPage(
                    "to disk automatically, so a browser timeout during a long run ",
                    "can't lose the result. Reload the most recent one here, or ",
                    "download it to keep."),
-            uiOutput("autosave_recover_ui")
+            uiOutput("autosave_recover_ui"),
+            if (interactive()) tagList(
+              tags$hr(style = "margin: 10px 0;"),
+              actionButton("export_r_session", "Send results to R console",
+                           class = "btn-outline-primary w-100"),
+              tags$p(style = "font-size: 10.5px; color: var(--muted); margin-top: 6px;",
+                     "Copies the current library, batch results, metadata, stats ",
+                     "and quantification into the R global environment (objects ",
+                     tags$code("oligomet"), ", ", tags$code("oligomet_batch_results"),
+                     ", ...), so you can inspect them in the console and keep them ",
+                     "with save.image(). Happens automatically when a batch run ",
+                     "finishes. Shown only when the app runs from an R session."))
           ),
           tags$div(class = "sidebar-section",
             tags$h5("Workflow Status"),
@@ -2964,6 +2975,33 @@ server <- function(input, output, session) {
     })
   }
 
+  # When the app is launched interactively from an R console (RStudio's Run
+  # App in the foreground runs in the same process as the console), mirror the
+  # finished results into the global environment. They then appear in the
+  # Environment pane and are captured by save.image() / the saved workspace
+  # .RData, so the backend data is available for later console work after the
+  # app stops. Guarded by interactive(): a hosted, non-interactive Shiny
+  # Server/Connect process never populates its global env this way.
+  .export_to_r_session <- function(announce = TRUE) {
+    if (!interactive()) return(invisible(FALSE))
+    tryCatch({
+      g <- globalenv()
+      assign("oligomet", .build_analysis_state(), envir = g)
+      assign("oligomet_mets", rv$mets, envir = g)
+      assign("oligomet_batch_results", rv$batch_ms_results, envir = g)
+      assign("oligomet_sample_meta", rv$sample_meta, envir = g)
+      assign("oligomet_quant", rv$quant_results, envir = g)
+      assign("oligomet_stats", rv$stats_results, envir = g)
+      if (announce) rv$status_text <- paste0(rv$status_text %||% "",
+        "Results mirrored to the R global environment: oligomet (full state), ",
+        "oligomet_mets, oligomet_batch_results, oligomet_sample_meta, ",
+        "oligomet_quant, oligomet_stats. In the console, keep them with ",
+        "save.image(\"project.RData\") or saveRDS(oligomet, \"project.rds\").\n")
+      invisible(TRUE)
+    }, error = function(e) invisible(FALSE))
+  }
+  observeEvent(input$export_r_session, .export_to_r_session())
+
   output$dl_analysis_state <- downloadHandler(
     filename = function() paste0(input$oligo_name %||% "oligomet", "_analysis_state.rds"),
     content = function(file) saveRDS(.build_analysis_state(), file, compress = "xz")
@@ -4091,8 +4129,11 @@ server <- function(input, output, session) {
       rv$ready <- TRUE
 
       # Processing is done: persist a recoverable copy now, server-side, so a
-      # browser that timed out during the run hasn't cost the result.
+      # browser that timed out during the run hasn't cost the result, and (when
+      # launched from an R console) mirror the results into the global
+      # environment so they can be saved with the workspace image.
       .autosave_write("batch")
+      .export_to_r_session()
 
     })  # end withProgress
 
