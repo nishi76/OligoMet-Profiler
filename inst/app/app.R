@@ -1872,20 +1872,12 @@ server <- function(input, output, session) {
   ## ---- Studio tab (R/studio.R) -------------------------------------------
   studio_server(input, output, session, rv, tab = "Studio")
 
-  ## Studio is the primary workspace, so focus it automatically the first time
-  ## a processing run or a loaded project produces matches. The flag resets
-  ## when results are cleared (e.g. a library regeneration), so each genuine
-  ## new run lands in Studio once without yanking the user away afterwards.
-  .studio_focused <- shiny::reactiveVal(FALSE)
-  shiny::observeEvent(rv$batch_ms_results, {
-    br <- rv$batch_ms_results
-    ok <- !is.null(br) && !is.null(br$ms1_matches) && nrow(br$ms1_matches) > 0
-    if (!ok) { .studio_focused(FALSE); return() }
-    if (!isTRUE(.studio_focused())) {
-      .studio_focused(TRUE)
-      shiny::updateTabsetPanel(session, "main_nav", selected = "Studio")
-    }
-  }, ignoreInit = TRUE, ignoreNULL = FALSE)
+  ## Studio stays the primary workspace by sitting at position 2, but the app
+  ## does NOT auto-switch the active tab. An earlier version jumped to Studio
+  ## whenever batch results changed, which fired on many transitions (library
+  ## regeneration, a cleared run, a no-op processing pass) and could land the
+  ## user on Studio's empty state. Navigation is left to the user; Studio
+  ## renders the current library/results whenever it is opened.
 
   ## ---- Guided/Expert shell: context header + top stepper --------------------
   # One reactive source of workflow state, reused by the top stepper, the
