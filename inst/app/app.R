@@ -538,7 +538,15 @@ ui <- fluidPage(
                    "quantification tables, so reloading doesn't require re-running ",
                    "the batch. Raw mzML/raw files and per-hit MS2 spectra (needed only ",
                    "for redrawing mirror plots) are never included -- re-run with MS2 ",
-                   "confirmation on if you need those back.")
+                   "confirmation on if you need those back."),
+            tags$hr(style = "margin: 10px 0;"),
+            tags$h6(style = "font-weight:600; color:var(--ink);", "Recover auto-saved project"),
+            tags$p(style = "font-size: 10.5px; color: var(--muted); margin-top: 2px;",
+                   "When a batch run finishes, a full analysis-state .rds is written ",
+                   "to disk automatically, so a browser timeout during a long run ",
+                   "can't lose the result. Reload the most recent one here, or ",
+                   "download it to keep."),
+            uiOutput("autosave_recover_ui")
           ),
           tags$div(class = "sidebar-section",
             tags$h5("Workflow Status"),
@@ -2866,32 +2874,30 @@ server <- function(input, output, session) {
     list(ms_results = ms_results, batch_ms_results = batch_ms_results, quant_results = quant_results)
   }
 
-  output$dl_analysis_state <- downloadHandler(
-    filename = function() paste0(input$oligo_name %||% "oligomet", "_analysis_state.rds"),
-    content = function(file) {
-      stripped <- .strip_for_analysis_state(rv$ms_results, rv$batch_ms_results, rv$quant_results)
-      state <- list(
-        app = "OligoMetProfiler", format_version = 1L,
-        saved_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
-        spec = rv$spec, mets = rv$mets, dict = rv$dict, prm = rv$prm,
-        batch_features = rv$batch_features, sample_meta = rv$sample_meta,
-        ms_results = stripped$ms_results,
-        batch_ms_results = stripped$batch_ms_results,
-        stats_results = rv$stats_results, kind_stats_results = rv$kind_stats_results,
-        quant_results = stripped$quant_results
-      )
-      saveRDS(state, file, compress = "xz")
-    }
-  )
+  # The single source of truth for the saveable project state, used by the
+  # manual "Save Analysis State" download AND the automatic server-side
+  # autosave below, so the two can never drift.
+  .build_analysis_state <- function() {
+    stripped <- .strip_for_analysis_state(rv$ms_results, rv$batch_ms_results, rv$quant_results)
+    list(
+      app = "OligoMetProfiler", format_version = 1L,
+      saved_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
+      spec = rv$spec, mets = rv$mets, dict = rv$dict, prm = rv$prm,
+      batch_features = rv$batch_features, sample_meta = rv$sample_meta,
+      ms_results = stripped$ms_results,
+      batch_ms_results = stripped$batch_ms_results,
+      stats_results = rv$stats_results, kind_stats_results = rv$kind_stats_results,
+      quant_results = stripped$quant_results
+    )
+  }
 
-  observeEvent(input$load_analysis_state_file, {
-    req(input$load_analysis_state_file)
-    state <- tryCatch(readRDS(input$load_analysis_state_file$datapath), error = function(e) NULL)
+  # Restore a state list into the reactive values. Shared by the manual
+  # upload and the one-click autosave recovery, so both behave identically.
+  .restore_analysis_state <- function(state, source_label) {
     if (is.null(state) || is.null(state$format_version)) {
-      rv$status_text <- paste0(
-        "ERROR: could not read '", input$load_analysis_state_file$name, "' -- not a ",
-        "valid OligoMet Profiler analysis state .rds file.\n")
-      return()
+      rv$status_text <- paste0("ERROR: could not read ", source_label,
+        " -- not a valid OligoMet Profiler analysis state .rds file.\n")
+      return(invisible(FALSE))
     }
     rv$spec <- state$spec; rv$mets <- state$mets; rv$dict <- state$dict; rv$prm <- state$prm
     rv$batch_features <- state$batch_features
@@ -2905,14 +2911,101 @@ server <- function(input, output, session) {
     rv$library_ready <- !is.null(rv$mets)
     rv$ready <- !is.null(rv$mets)
     rv$status_text <- paste0(
-      "Loaded analysis state from '", input$load_analysis_state_file$name,
-      "' (saved ", state$saved_at %||% "unknown time", "). Library, batch results, ",
+      "Loaded analysis state from ", source_label,
+      " (saved ", state$saved_at %||% "unknown time", "). Library, batch results, ",
       "statistics, and quantification are restored -- no need to re-run unless ",
       "you're adding new data. Mirror plots and the empirical MS2 library need ",
-      "MS2 spectra, which this file doesn't carry -- re-run with \"Confirm hits ",
-      "with MS2\" on if you need those back. Raw mzML/raw files are never stored ",
-      "here either way.\n")
+      "MS2 spectra, which this file doesn't carry. Raw mzML/raw files are never ",
+      "stored here either way.\n")
+    invisible(TRUE)
+  }
+
+  # ---- Automatic crash/timeout-proof autosave -------------------------------
+  # A long batch run can outlive the browser's websocket (a reverse-proxy idle
+  # timeout drops the connection well before 100 files finish). The R process
+  # keeps running the batch to completion regardless, so writing the project
+  # .rds to disk HERE -- server-side, the moment processing finishes -- means
+  # the result survives even when there is no live browser left to click the
+  # download button. The recovery picker on the Dashboard reloads it later.
+  # Directory is overridable (option > env var > per-user data dir) so a
+  # hosted deployment can point it at durable storage.
+  .autosave_dir <- function() {
+    base <- getOption("oligomet.autosave_dir", {
+      e <- Sys.getenv("OLIGOMET_AUTOSAVE_DIR")
+      if (nzchar(e)) e else tools::R_user_dir("OligoMetProfiler", "data")
+    })
+    d <- file.path(base, "autosave")
+    if (!dir.exists(d)) dir.create(d, recursive = TRUE, showWarnings = FALSE)
+    d
+  }
+  .autosave_write <- function(reason = "batch") {
+    tryCatch({
+      if (is.null(rv$mets)) return(invisible(NULL))
+      d <- .autosave_dir()
+      nm <- gsub("[^A-Za-z0-9._-]", "_", input$oligo_name %||% "oligomet")
+      f <- file.path(d, sprintf("%s_%s_%s.rds", nm, reason,
+                                format(Sys.time(), "%Y%m%d-%H%M%S")))
+      saveRDS(.build_analysis_state(), f, compress = "xz")
+      files <- list.files(d, pattern = "\\.rds$", full.names = TRUE)
+      if (length(files) > 15) {  # keep the 15 most recent, by mtime
+        ord <- order(file.info(files)$mtime, decreasing = TRUE)
+        unlink(files[ord][-seq_len(15)])
+      }
+      rv$last_autosave <- f
+      rv$status_text <- paste0(rv$status_text %||% "",
+        "Auto-saved a recoverable copy of this project to:\n  ", f, "\n",
+        "If the browser disconnects, reopen the app and use ",
+        "Dashboard -> Recover auto-saved project.\n")
+      invisible(f)
+    }, error = function(e) {
+      rv$status_text <- paste0(rv$status_text %||% "",
+        "NOTE: automatic autosave could not be written (", conditionMessage(e), ").\n")
+      invisible(NULL)
+    })
+  }
+
+  output$dl_analysis_state <- downloadHandler(
+    filename = function() paste0(input$oligo_name %||% "oligomet", "_analysis_state.rds"),
+    content = function(file) saveRDS(.build_analysis_state(), file, compress = "xz")
+  )
+
+  observeEvent(input$load_analysis_state_file, {
+    req(input$load_analysis_state_file)
+    state <- tryCatch(readRDS(input$load_analysis_state_file$datapath), error = function(e) NULL)
+    .restore_analysis_state(state, paste0("'", input$load_analysis_state_file$name, "'"))
   })
+
+  ## ---- Recover an auto-saved project ----------------------------------------
+  output$autosave_recover_ui <- renderUI({
+    rv$last_autosave            # refresh after each new autosave
+    input$refresh_autosaves     # and on manual refresh
+    d <- tryCatch(.autosave_dir(), error = function(e) NULL)
+    files <- if (!is.null(d)) list.files(d, pattern = "\\.rds$", full.names = TRUE) else character(0)
+    if (length(files) == 0)
+      return(tags$p(style = "font-size: 10.5px; color: var(--muted);",
+                    "No auto-saved projects yet. One is written automatically ",
+                    "when a batch run finishes, so a browser timeout can't lose it. ",
+                    actionLink("refresh_autosaves", "Refresh")))
+    info <- file.info(files); ord <- order(info$mtime, decreasing = TRUE)
+    files <- files[ord]
+    labs <- sprintf("%s  (%s)", basename(files), format(info$mtime[ord], "%Y-%m-%d %H:%M"))
+    tagList(
+      selectInput("autosave_pick", NULL, choices = stats::setNames(files, labs), width = "100%"),
+      tags$div(style = "display:flex; gap:8px; flex-wrap:wrap;",
+        actionButton("reload_autosave", "Reload selected", class = "btn-primary"),
+        downloadButton("dl_autosave", "Download .rds", class = "btn-outline-primary")),
+      tags$div(style = "height:4px;"),
+      actionLink("refresh_autosaves", "Refresh list"))
+  })
+  observeEvent(input$reload_autosave, {
+    req(input$autosave_pick)
+    state <- tryCatch(readRDS(input$autosave_pick), error = function(e) NULL)
+    .restore_analysis_state(state, paste0("auto-save '", basename(input$autosave_pick), "'"))
+  })
+  output$dl_autosave <- downloadHandler(
+    filename = function() basename(input$autosave_pick %||% "autosave.rds"),
+    content = function(file) file.copy(input$autosave_pick, file, overwrite = TRUE)
+  )
 
   ## ---- About ---------------------------------------------------------------
   output$about_version <- renderText({
@@ -3996,6 +4089,10 @@ server <- function(input, output, session) {
       warnings_so_far <- sub("^Running\\.\\.\\.\n", "", rv$status_text)
       rv$status_text <- paste0(warnings_so_far, status)
       rv$ready <- TRUE
+
+      # Processing is done: persist a recoverable copy now, server-side, so a
+      # browser that timed out during the run hasn't cost the result.
+      .autosave_write("batch")
 
     })  # end withProgress
 
