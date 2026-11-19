@@ -437,8 +437,14 @@ studio_server <- function(input, output, session, rv, tab = "Studio") {
          ms2_spectra = br$ms2_spectra, sample_meta = rv$sample_meta)
   })
 
+  # Keep the Studio pane current as soon as the library or results change,
+  # whatever tab is active. Gating this on `input$main_nav == tab` meant Studio
+  # was only filled while it was already on screen, so a library generated on
+  # another tab never reached it, and a long batch run (which blocks the single
+  # R process) left the stale empty state showing when the user opened Studio
+  # mid-run. Pushing the payload here, up front, means the client already holds
+  # the rendered library/results before processing ever blocks the server.
   shiny::observe({
-    shiny::req(identical(input$main_nav, tab))
     inp <- .inputs()
     if (is.null(inp)) { .send("oms-studio-empty", list(has_library = FALSE)); return() }
     ttl <- if (identical(inp$mode, "demo")) "Givosiran sense strand" else {
