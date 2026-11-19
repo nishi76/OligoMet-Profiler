@@ -409,7 +409,7 @@ plot_xic_traces <- function(traces, quant, met_id, samples = NULL, sample_meta =
                     paste0(if (smoothed) "Savitzky-Golay smoothed (7 pt, as used for peak finding)" else "Raw summed trace",
                            "; shaded = integration window (median across shown samples)"),
                     note), collapse = "\n")) +
-    ggplot2::theme_minimal(base_size = 12, base_family = "Liberation Sans") +
+    theme_oligomet() +
     ggplot2::theme(
       plot.background = ggplot2::element_rect(fill = "white", color = NA),
       panel.background = ggplot2::element_rect(fill = "white", color = NA),
@@ -419,7 +419,6 @@ plot_xic_traces <- function(traces, quant, met_id, samples = NULL, sample_meta =
       axis.line.x = ggplot2::element_line(color = "#5F6368", linewidth = 0.4),
       axis.ticks = ggplot2::element_line(color = "#5F6368", linewidth = 0.3),
       axis.text = ggplot2::element_text(color = "#3C4043"),
-      plot.subtitle = ggplot2::element_text(color = "#5F6368", size = 9.5),
       legend.position = "right", legend.key.width = ggplot2::unit(18, "pt"))
 }
 
@@ -449,6 +448,6 @@ plot_xic_contributions <- function(contributions, met_id) {
     ggplot2::labs(x = "Isotope cluster", y = "Charge state",
                   title = paste0("Where the signal is -- ", met_id),
                   subtitle = "% of all extracted candidate signal (reference samples); outlined = summed") +
-    ggplot2::theme_minimal(base_size = 11, base_family = "Liberation Sans") +
+    theme_oligomet() +
     ggplot2::theme(panel.grid = ggplot2::element_blank())
 }

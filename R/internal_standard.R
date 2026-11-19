@@ -320,5 +320,5 @@ plot_is_response <- function(summary) {
                   title = "Internal standard response",
                   subtitle = sprintf("Reference: mean of standards/QCs. Window %g-%g%%; x = outside window.",
                                      w[1], w[2])) +
-    ggplot2::theme_minimal(base_size = 11, base_family = "Liberation Sans")
+    theme_oligomet()
 }

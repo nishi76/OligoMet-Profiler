@@ -30,10 +30,8 @@
 .LIBFIG_KENDRICK_NOMINAL <- 63
 
 .libfig_theme <- function() {
-  ggplot2::theme_bw(base_size = 11, base_family = "Liberation Sans") +
+  theme_oligomet(variant = "bw") +
     ggplot2::theme(panel.grid.minor = ggplot2::element_blank(),
-                   plot.title = ggplot2::element_text(face = "bold", size = 12),
-                   plot.subtitle = ggplot2::element_text(size = 9, color = "grey40"),
                    legend.position = "right",
                    strip.background = ggplot2::element_rect(fill = "grey92", colour = NA))
 }

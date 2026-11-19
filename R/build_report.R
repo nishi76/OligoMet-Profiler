@@ -41,8 +41,7 @@ plot_charge_envelope <- function(met, dict = STANDARD_DICT, z_range = 3:12,
     ggplot2::scale_color_manual(values = okabe_ito(kmax + 1)) +
     ggplot2::labs(x = "Charge State (z)", y = "m/z",
                   color = "PS→PO\nOxidation") +
-    ggplot2::theme_minimal(base_size = 11,
-                           base_family = "Liberation Sans") +
+    theme_oligomet() +
     ggplot2::theme(legend.position = "right")
 }
 
@@ -69,9 +68,7 @@ plot_isotope_pattern <- function(met, dict = STANDARD_DICT, z = 6,
                        vjust = -0.3, size = 3) +
     ggplot2::labs(x = sprintf("m/z (z=%d)", z), y = "Relative Abundance (%)",
                   title = sprintf("Isotope Pattern: %s", met$name)) +
-    ggplot2::theme_minimal(base_size = 11,
-                           base_family = "Liberation Sans") +
-    ggplot2::theme(plot.title = ggplot2::element_text(size = 10))
+    theme_oligomet()
 }
 
 ## ---- Plot 3: Truncation series --------------------------------------------
@@ -96,8 +93,7 @@ plot_truncation_series <- function(mets, dict = STANDARD_DICT) {
       "3' Exonuclease" = "#0072B2", "5' Exonuclease" = "#E69F00")) +
     ggplot2::labs(x = "Length (nt)", y = "Monoisotopic Mass (Da)",
                   color = "Series") +
-    ggplot2::theme_minimal(base_size = 11,
-                           base_family = "Liberation Sans")
+    theme_oligomet()
 }
 
 ## ---- Plot 4: PS oxidation mass shift --------------------------------------
@@ -111,9 +107,7 @@ plot_oxidation_series <- function(met, dict = STANDARD_DICT, max_oxid = 6) {
     ggplot2::labs(x = "PS→PO Oxidation Events (k)",
                   y = "Mass Shift (Da)",
                   title = sprintf("PS Oxidation Series: %s", met$name)) +
-    ggplot2::theme_minimal(base_size = 11,
-                           base_family = "Liberation Sans") +
-    ggplot2::theme(plot.title = ggplot2::element_text(size = 10))
+    theme_oligomet()
 }
 
 ## ---- Plot 5: Fragment ion map ---------------------------------------------
@@ -135,9 +129,7 @@ plot_fragment_map <- function(met, dict = STANDARD_DICT, z_range = 1:2) {
     ggplot2::scale_fill_viridis_c(name = "Mass (Da)") +
     ggplot2::labs(x = "Cleavage Site", y = "Ion Type",
                   title = sprintf("Fragment Ion Map: %s", met$name)) +
-    ggplot2::theme_minimal(base_size = 11,
-                           base_family = "Liberation Sans") +
-    ggplot2::theme(plot.title = ggplot2::element_text(size = 10))
+    theme_oligomet()
 }
 
 ## ---- Save plots to files ---------------------------------------------------

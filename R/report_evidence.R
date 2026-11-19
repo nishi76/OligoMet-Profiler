@@ -158,10 +158,8 @@ collect_metabolite_evidence <- function(met_ids, ms1_matches, features = NULL, m
 
 ## ---- Plots -------------------------------------------------------------------
 .ev_theme <- function() {
-  ggplot2::theme_minimal(base_size = 9) +
-    ggplot2::theme(panel.grid.minor = ggplot2::element_blank(),
-                   plot.title = ggplot2::element_text(size = 9.5, face = "bold"),
-                   plot.subtitle = ggplot2::element_text(size = 8, colour = "#44546a"))
+  theme_oligomet() +
+    ggplot2::theme(panel.grid.minor = ggplot2::element_blank())
 }
 
 #' Plot the extracted-ion chromatogram of a metabolite's precursor

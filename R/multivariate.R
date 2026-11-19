@@ -184,7 +184,7 @@ plot_pca_scores <- function(pca_result, color_by = NULL) {
       name = if (has_color) color_by else NULL, guide = if (has_color) "legend" else "none") +
     ggplot2::labs(x = paste0("PC1 (", pc1_pct, "%)"), y = paste0("PC2 (", pc2_pct, "%)"),
                   title = "PCA -- sample scores") +
-    ggplot2::theme_minimal(base_size = 11, base_family = "Liberation Sans")
+    theme_oligomet()
 }
 
 ## ---- Hierarchical clustering ---------------------------------------------------

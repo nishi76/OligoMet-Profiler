@@ -185,7 +185,7 @@ plot_degradation_composition <- function(degradation, by = c("sample", "conditio
              ggplot2::labs(title = "No degradation data to plot"))
   }
   pal <- function(k) kind_colors(k)
-  theme <- ggplot2::theme_minimal(base_size = 11, base_family = "Liberation Sans")
+  theme <- theme_oligomet()
   sub <- paste0("Signal: ", degradation$signal_used %||% "n/a")
 
   if (by == "condition") {
@@ -232,8 +232,7 @@ plot_degradation_composition <- function(degradation, by = c("sample", "conditio
   # Samples sit inside their own group/timepoint panel instead of one
   # alphabetical row, so replicates of a condition stay together.
   if (has_g || has_t) {
-    p <- p + ggplot2::facet_grid(~ .cond, scales = "free_x", space = "free_x") +
-      ggplot2::theme(strip.text = ggplot2::element_text(size = 9))
+    p <- p + ggplot2::facet_grid(~ .cond, scales = "free_x", space = "free_x")
   }
   p
 }
@@ -362,7 +361,7 @@ plot_degradation_by_condition <- function(degradation) {
   per$hi <- per$mean_pct_degradation + ifelse(is.na(per$sd_pct_degradation), 0, per$sd_pct_degradation)
   groups <- sort(unique(per$group))
   cols <- stats::setNames(okabe_ito(length(groups)), groups)
-  theme <- ggplot2::theme_minimal(base_size = 11, base_family = "Liberation Sans")
+  theme <- theme_oligomet()
   facet <- if (has_m) ggplot2::facet_wrap(~ matrix, nrow = 1) else NULL
 
   # Matrix-only design: one bar per matrix.
@@ -520,5 +519,5 @@ plot_degradation_vs_reference <- function(deg_ref) {
                   title = "Parent remaining relative to reference timepoint",
                   subtitle = paste0("Reference timepoint: ",
                                     paste(unique(d$reference_timepoint), collapse = ", "))) +
-    ggplot2::theme_minimal(base_size = 11, base_family = "Liberation Sans")
+    theme_oligomet()
 }

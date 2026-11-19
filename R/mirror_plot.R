@@ -263,7 +263,7 @@ plot_mirror_spectrum <- function(spec, title = NULL,
     ggplot2::coord_cartesian(xlim = xlim, expand = TRUE) +
     ggplot2::labs(x = "m/z", y = "Relative intensity (%)",
                   title = title, subtitle = subtitle) +
-    ggplot2::theme_bw() +
+    theme_oligomet(variant = "bw") +
     ggplot2::theme(legend.position = "top")
 }
 

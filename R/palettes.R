@@ -55,3 +55,36 @@ kind_colors <- function(kinds) {
   }
   stats::setNames(out, kinds)
 }
+
+# =============================================================================
+# Typography: one font family and one type scale for every figure, so titles,
+# subtitles, axes, legends and facet strips read at the same size and in the
+# same face across the app, the report and the exports. The whole scale is
+# derived from a single base size, so a figure never sets its own title or
+# axis size by hand.
+# =============================================================================
+OLIGO_FONT <- "Liberation Sans"
+OLIGO_BASE_SIZE <- 11
+
+#' Shared ggplot theme (uniform font family and type scale)
+#'
+#' Every figure uses this so type is consistent. Title, subtitle, legend and
+#' strip sizes are derived from `base_size`, keeping one proportion everywhere;
+#' change it in one place to rescale a figure without breaking the proportions.
+#'
+#' @param base_size Root font size in points.
+#' @param variant Panel style: "minimal" (default) or "bw".
+#' @return A ggplot2 theme object.
+#' @export
+theme_oligomet <- function(base_size = OLIGO_BASE_SIZE, variant = c("minimal", "bw")) {
+  variant <- match.arg(variant)
+  base <- switch(variant,
+    minimal = ggplot2::theme_minimal(base_size = base_size, base_family = OLIGO_FONT),
+    bw      = ggplot2::theme_bw(base_size = base_size, base_family = OLIGO_FONT))
+  base + ggplot2::theme(
+    plot.title    = ggplot2::element_text(face = "bold", size = base_size + 1),
+    plot.subtitle = ggplot2::element_text(size = base_size - 2, colour = "grey40"),
+    legend.title  = ggplot2::element_text(size = base_size - 1),
+    legend.text   = ggplot2::element_text(size = base_size - 1),
+    strip.text    = ggplot2::element_text(size = base_size - 1))
+}

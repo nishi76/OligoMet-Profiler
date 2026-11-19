@@ -428,7 +428,7 @@ plot_volcano <- function(two_group_result, fc_thresh = 1, p_thresh = 0.05, label
     ggplot2::geom_text(data = top, ggplot2::aes(label = .data$met_name),
                         size = 3, color = "#333333", vjust = -0.6, check_overlap = TRUE) +
     ggplot2::labs(x = "log2 fold change", y = "-log10(adjusted p)", title = "Group comparison") +
-    ggplot2::theme_minimal(base_size = 11, base_family = "Liberation Sans")
+    theme_oligomet()
 }
 
 plot_trend <- function(time_series_long, met_id) {
@@ -438,7 +438,7 @@ plot_trend <- function(time_series_long, met_id) {
     ggplot2::geom_smooth(method = "lm", se = TRUE, color = "#E69F00", fill = "#E69F00", alpha = 0.15) +
     ggplot2::labs(x = "Timepoint", y = "Intensity",
                   title = if (nrow(sub) > 0) sub$met_name[1] else met_id) +
-    ggplot2::theme_minimal(base_size = 11, base_family = "Liberation Sans")
+    theme_oligomet()
 }
 
 plot_group_boxplot <- function(abundance_long, met_id) {
@@ -449,7 +449,7 @@ plot_group_boxplot <- function(abundance_long, met_id) {
     ggplot2::scale_fill_manual(values = okabe_ito(length(unique(sub$group))), guide = "none") +
     ggplot2::labs(x = NULL, y = "Intensity",
                   title = if (nrow(sub) > 0) sub$met_name[1] else met_id) +
-    ggplot2::theme_minimal(base_size = 11, base_family = "Liberation Sans")
+    theme_oligomet()
 }
 
 ## ---- Multi-metabolite time-course trend (Time Course tab) ------------------
@@ -551,7 +551,7 @@ plot_multi_trend <- function(trend_summary, normalize = TRUE, reference_timepoin
                             width = 0, na.rm = TRUE) +
     ggplot2::scale_color_manual(values = okabe_ito(n_met), name = NULL) +
     ggplot2::labs(x = "Timepoint", y = y_lab, title = "Multi-metabolite time course") +
-    ggplot2::theme_minimal(base_size = 11, base_family = "Liberation Sans")
+    theme_oligomet()
 }
 
 ## =============================================================================
@@ -759,7 +759,7 @@ plot_calibration_curve <- function(curve_result, quant_points = NULL) {
     subtitle = sprintf("R^2 = %.4f   n = %d standards   weighting = %s   signal = %s",
                         curve_result$r_squared, curve_result$n_points,
                         curve_result$weighting, curve_result$signal_col)) +
-    ggplot2::theme_minimal(base_size = 11, base_family = "Liberation Sans")
+    theme_oligomet()
 }
 
 ## ---- Absolute quantification (a set of metabolites, all study samples) -----
