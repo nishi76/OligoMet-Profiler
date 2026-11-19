@@ -551,6 +551,13 @@ ui <- fluidPage(
     ),
 
     ## =========================================================================
+    ## TAB: Studio -- three-pane workbench (R/studio.R, inst/app/www/studio.*)
+    ## Primary workspace: sits right after the Dashboard and the app focuses it
+    ## automatically once a project is processed or loaded.
+    ## =========================================================================
+    tabPanel("Studio", studio_ui(if (exists(".module_dir", inherits = TRUE)) .module_dir else NULL)),
+
+    ## =========================================================================
     ## TAB: Library Generation
     ## =========================================================================
     tabPanel("Library Generation",
@@ -1518,11 +1525,6 @@ ui <- fluidPage(
     ),
 
     ## =========================================================================
-    ## TAB: Studio -- three-pane workbench (R/studio.R, inst/app/www/studio.*)
-    ## =========================================================================
-    tabPanel("Studio", studio_ui(if (exists(".module_dir", inherits = TRUE)) .module_dir else NULL)),
-
-    ## =========================================================================
     ## TAB: Statistical Analysis
     ## =========================================================================
     tabPanel("Statistical Analysis",
@@ -1831,6 +1833,21 @@ server <- function(input, output, session) {
 
   ## ---- Studio tab (R/studio.R) -------------------------------------------
   studio_server(input, output, session, rv, tab = "Studio")
+
+  ## Studio is the primary workspace, so focus it automatically the first time
+  ## a processing run or a loaded project produces matches. The flag resets
+  ## when results are cleared (e.g. a library regeneration), so each genuine
+  ## new run lands in Studio once without yanking the user away afterwards.
+  .studio_focused <- shiny::reactiveVal(FALSE)
+  shiny::observeEvent(rv$batch_ms_results, {
+    br <- rv$batch_ms_results
+    ok <- !is.null(br) && !is.null(br$ms1_matches) && nrow(br$ms1_matches) > 0
+    if (!ok) { .studio_focused(FALSE); return() }
+    if (!isTRUE(.studio_focused())) {
+      .studio_focused(TRUE)
+      shiny::updateTabsetPanel(session, "main_nav", selected = "Studio")
+    }
+  }, ignoreInit = TRUE, ignoreNULL = FALSE)
 
   ## ---- Guided/Expert shell: context header + top stepper --------------------
   # One reactive source of workflow state, reused by the top stepper, the

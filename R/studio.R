@@ -487,7 +487,8 @@ studio_server <- function(input, output, session, rv, tab = "Studio") {
   }, ignoreInit = TRUE)
   shiny::observeEvent(input$studio_nav, {
     target <- input$studio_nav
-    if (target %in% c("Library Generation", "Batch Processing", "Empirical MS2 Library"))
+    if (target %in% c("Dashboard", "Library Generation", "Empirical MS2 Library",
+                      "Batch Processing", "Statistical Analysis", "Ask OligoMet"))
       shiny::updateTabsetPanel(session, "main_nav", selected = target)
   })
   invisible(NULL)
