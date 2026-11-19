@@ -95,6 +95,41 @@ options(shiny.maxRequestSize = 20 * 1024^3)  # 20 GB
   nzchar(Sys.getenv("CONNECT_SERVER")) || nzchar(Sys.getenv("SHINY_PORT"))
 }
 
+# Raw-file (.mzML/.raw) deconvolution runs through the Python backend. It is
+# intentionally gated to the local desktop/RStudio install: the online app is a
+# free preview (library generation, the bundled example data, results-matrix
+# import, and every analysis view). Any hosted deployment is preview, by
+# design, so the browser never attempts processing even if a python3 binary
+# happens to be present without the backend packages; a local run additionally
+# needs Python 3 on PATH. This predicate is the single gate for that split.
+.raw_processing_available <- function() {
+  !.is_hosted_deployment() && !is.na(find_python())
+}
+
+# The message shown when raw processing is gated. Framed as a preview on a
+# hosted deployment, and as a setup step when running locally without Python.
+.preview_processing_message <- function() {
+  if (.is_hosted_deployment()) {
+    paste0(
+      "This online version is a free preview. Raw-file (.mzML / .mzXML / .raw) ",
+      "deconvolution and matching run in the full desktop version of the app ",
+      "(run in RStudio). In the preview you can still generate the predicted ",
+      "metabolite library, load the bundled example dataset, import a processed ",
+      "results matrix (CSV) under the data-matrix example, and explore every ",
+      "analysis view: Studio, degradation, statistics, calibration and the ",
+      "report. To process your own raw files, run the app locally in RStudio ",
+      "(see the README Quick Start)."
+    )
+  } else {
+    paste0(
+      "Raw-file processing needs a Python 3 interpreter on PATH, which was not ",
+      "found. Install Python 3 with the packages in inst/python/requirements.txt ",
+      "(README), then restart the app. You can still generate libraries, load the ",
+      "example dataset, import a results matrix, and explore every analysis view."
+    )
+  }
+}
+
 ## ---- Example sequences (illustrative, not the assumed input) --------------
 # A generic gapmer built entirely from standard dictionary codes, plus four
 # approved oligonucleotide therapeutics -- one per modality class in
@@ -1127,6 +1162,7 @@ ui <- fluidPage(
     ## =========================================================================
     tabPanel("Batch Processing",
       tags$div(style = "height: 14px;"),
+      uiOutput("preview_mode_banner"),
       fluidRow(
         column(4,
           tags$div(class = "sidebar-section",
@@ -2126,7 +2162,6 @@ server <- function(input, output, session) {
     files <- input$batch_files
     total_mb <- if (!is.null(files)) sum(files$size) / 1024^2 else NA_real_
     large <- !is.na(total_mb) && total_mb > 200
-    no_python <- is.na(find_python())
 
     if (!hosted && !large) return(NULL)
 
@@ -2146,14 +2181,31 @@ server <- function(input, output, session) {
         "large upload gets rejected, running this app locally in RStudio ",
         "removes that limit entirely -- or use the local-folder input below.")
     }
-    if (hosted && no_python) {
-      msg <- paste(msg,
-        "Batch (multi-file, parallel) MS processing also needs a Python 3 ",
-        "interpreter on PATH, which this hosted deployment does not have -- ",
-        "batch processing will fail here. Run the app locally in RStudio ",
-        "for batch MS processing.")
-    }
+    # The Python/raw-processing split is explained by the preview banner at the
+    # top of this tab, so the upload notice no longer repeats it; it only warns
+    # about upload-size limits, which still apply where raw processing is on.
     tags$p(style = "font-size: 11px; color: #a3231b; font-weight: 600; margin: 2px 0 6px;", msg)
+  })
+
+  # Preview banner: shown wherever raw-file processing is gated (the free online
+  # preview with no Python backend, or a local run without Python). Positive
+  # framing -- what the preview CAN do -- rather than an error.
+  output$preview_mode_banner <- renderUI({
+    if (.raw_processing_available()) return(NULL)
+    hosted <- .is_hosted_deployment()
+    tags$div(class = "dashboard-callout",
+      style = "border-left-color: var(--accent); margin-bottom: 14px;",
+      tags$p(style = "margin: 0 0 6px;",
+        tags$b(if (hosted) "Free online preview. " else "Raw processing not enabled. "),
+        if (hosted)
+          "Raw-file (.mzML / .mzXML / .raw) deconvolution runs in the full desktop version of the app (run in RStudio). Here you can generate the predicted library, load the bundled example data, import a pre-processed results matrix, and explore every analysis view."
+        else
+          "No Python 3 interpreter was found on PATH, so raw-file deconvolution is off. You can still generate the library, load the example data, import a results matrix, and explore every analysis view."),
+      tags$p(style = "font-size: 12px; margin: 0; color: var(--muted);",
+        if (hosted)
+          "To process your own raw files, run the app locally in RStudio (README Quick Start). Or switch Data Source to \"Pre-processed data matrix\" to load results you already have."
+        else
+          "Install Python 3 with inst/python/requirements.txt (README), then restart. Or use the \"Pre-processed data matrix\" data source."))
   })
 
   # A timepoint value must be numeric-coercible or it's silently dropped
@@ -3774,6 +3826,19 @@ server <- function(input, output, session) {
         "Processing tab to re-process the raw files.\n", rv$status_text)
       showNotification("Reused existing batch results; recomputed statistics and quantification.",
                        type = "message", duration = 6)
+      return()
+    }
+
+    # Raw-file deconvolution is gated to builds with the Python backend (the
+    # local desktop/RStudio install). In the free online preview there is no
+    # Python, so short-circuit with a clear message instead of attempting a
+    # run that would produce nothing -- the library, example data, data-matrix
+    # import and every analysis view remain available here.
+    if (!.raw_processing_available()) {
+      rv$status_text <- paste0(.preview_processing_message(), "\n")
+      showNotification(
+        "Raw-file processing runs in the full desktop version -- see the note on the Batch Processing tab.",
+        type = "warning", duration = 12)
       return()
     }
 
