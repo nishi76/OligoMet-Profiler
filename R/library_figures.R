@@ -208,3 +208,49 @@ plot_metabolite_categories <- function(mass_frame, oligo_name = "oligo") {
                   x = NULL, y = "Number of metabolites") +
     .libfig_theme()
 }
+
+# Standalone figure legends (mass-spectrometry terminology), for the app's
+# "Figure legends (.txt)" export. The regulatory report writes its own
+# contextualized versions of the same explanations.
+.LIBFIG_LEGENDS <- c(
+  "Predicted metabolite library figures - legends",
+  "================================================",
+  "",
+  "1. Mass-shift waterfall.",
+  "   Monoisotopic mass shift (delta m, Da) of each theoretical species relative to the",
+  "   full-length parent, ordered by mass and colored by cleavage mechanism. The 3'- and",
+  "   5'-exonuclease ladders step down in register with sequential nucleotide loss;",
+  "   endonuclease fragments populate the intermediate-mass region. Sets the expected",
+  "   position of each degradant's deconvoluted neutral mass relative to the parent.",
+  "",
+  "2. Mass-defect plot.",
+  "   Mass defect (fractional part of the monoisotopic mass, Da) versus monoisotopic mass.",
+  "   The mass defect is governed by elemental composition, dominated by hydrogen and the",
+  "   P/S content of the phosphorothioate backbone, so oligonucleotide species fall on a",
+  "   characteristic near-linear trend. Used to assign deconvoluted masses and to reject",
+  "   chemical-noise features that sit off the oligonucleotide mass-defect trend.",
+  "",
+  "3. Phosphorothioate-base Kendrick mass-defect plot.",
+  "   Kendrick mass defect referenced to the phosphorothioate repeat unit. Rescaling the",
+  "   mass axis by the PS->PO desulfurization unit (-15.977 Da per S->O event) collapses",
+  "   each desulfurization series onto a horizontal track, so the number of desulfurization",
+  "   events reads from the vertical spacing; each facet is one oxidation level. The",
+  "   oligonucleotide analogue of Kendrick analysis used to resolve homologous series in",
+  "   petroleomics and lipidomics.",
+  "",
+  "4. Charge-state precursor m/z heatmap.",
+  "   Theoretical precursor m/z of each unoxidized metabolite across charge states, as the",
+  "   deprotonated ions [M-zH]^z- of negative-ion electrospray. Each species appears across",
+  "   an extended charge envelope; the tabulated values are targets for extracted-ion",
+  "   chromatogram (EIC/XIC) construction and for setting PRM/MS1 isolation windows.",
+  "",
+  "5. Targeted inclusion-list m/z distribution.",
+  "   Distribution of every theoretical precursor m/z in the inclusion list, over all",
+  "   metabolites, desulfurization levels, and charge states. Shows target density and where",
+  "   isolation windows crowd, informing window width and duty cycle for a PRM or MS1",
+  "   inclusion-list method.",
+  "",
+  "6. Predicted species by degradation mechanism.",
+  "   Count of predicted species by cleavage mechanism (3'/5' exonuclease truncation,",
+  "   endonuclease fragmentation): the theoretical search space the identification draws from."
+)

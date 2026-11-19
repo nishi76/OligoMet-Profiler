@@ -63,4 +63,13 @@ if (requireNamespace("ggplot2", quietly = TRUE)) {
   cat("  (skipping figure-build checks: ggplot2 not installed)\n")
 }
 
+## ---- figure legends for the report / export --------------------------------
+check("legend text exists for all six figures (MS terminology)", {
+  leg <- paste(.LIBFIG_LEGENDS, collapse = "\n")
+  is.character(.LIBFIG_LEGENDS) && length(.LIBFIG_LEGENDS) > 10 &&
+    all(vapply(c("mass defect", "Kendrick", "charge envelope", "desulfurization",
+                 "precursor m/z", "exonuclease"),
+               function(w) grepl(w, leg, fixed = TRUE), logical(1)))
+})
+
 cat("\nAll library-figures checks passed.\n")

@@ -789,6 +789,13 @@ ui <- fluidPage(
                     "aligns the PS→PO desulfurization series), charge-state m/z heatmap, PRM ",
                     "target m/z distribution, and class counts. All titled with the oligo name."),
                   fluidRow(
+                    column(8, downloadButton("dl_libfigs_zip", "Download all figures (PNG, 300 dpi)",
+                                             class = "btn-sm btn-primary w-100")),
+                    column(4, downloadButton("dl_libfig_report_note", "Figure legends (.txt)",
+                                             class = "btn-sm btn-outline-secondary w-100"))
+                  ),
+                  tags$div(style = "height: 10px;"),
+                  fluidRow(
                     column(6, plotOutput("libfig_waterfall", height = "320px")),
                     column(6, plotOutput("libfig_massdefect", height = "320px"))
                   ),
@@ -4042,6 +4049,42 @@ server <- function(input, output, session) {
   output$libfig_heatmap <- renderPlot({ req(rv$prm); plot_charge_heatmap(rv$prm, .libfig_name()) })
   output$libfig_mzdist <- renderPlot({ req(rv$prm); plot_prm_mz_distribution(rv$prm, .libfig_name()) })
   output$libfig_categories <- renderPlot(plot_metabolite_categories(.lib_mass_frame(), .libfig_name()))
+
+  # High-resolution export (300 dpi PNG) of the library figures, zipped.
+  .libfig_set <- function(mf, prm, nm) {
+    figs <- list(
+      `01_mass_shift_waterfall` = list(plot_mass_shift_waterfall(mf, nm), 10, 5),
+      `02_mass_defect`          = list(plot_mass_defect(mf, nm), 8, 5),
+      `06_metabolite_classes`   = list(plot_metabolite_categories(mf, nm), 7, 4))
+    if (!is.null(prm) && nrow(prm) > 0) {
+      figs[["03_kendrick_mass_defect"]] <- list(plot_kendrick_defect(prm, mf, nm), 10, 7)
+      figs[["04_charge_heatmap"]]       <- list(plot_charge_heatmap(prm, nm), 8, 10)
+      figs[["05_prm_mz_distribution"]]  <- list(plot_prm_mz_distribution(prm, nm), 9, 5)
+    }
+    figs
+  }
+  output$dl_libfigs_zip <- downloadHandler(
+    filename = function() sprintf("%s_library_figures.zip",
+                                  gsub("[^A-Za-z0-9_.-]", "_", .libfig_name())),
+    content = function(file) {
+      req(rv$ready, rv$mets)
+      mf <- .lib_mass_frame(); nm <- .libfig_name()
+      td <- tempfile("libfigs"); dir.create(td)
+      figs <- .libfig_set(mf, rv$prm, nm)
+      safe <- gsub("[^A-Za-z0-9_.-]", "_", nm)
+      for (k in names(figs)) {
+        ggplot2::ggsave(file.path(td, sprintf("%s_%s.png", safe, k)), figs[[k]][[1]],
+                        width = figs[[k]][[2]], height = figs[[k]][[3]], dpi = 300,
+                        units = "in", bg = "white")
+      }
+      zip::zip(file, files = list.files(td), root = td)
+    }
+  )
+  output$dl_libfig_report_note <- downloadHandler(
+    filename = function() sprintf("%s_library_figure_legends.txt",
+                                  gsub("[^A-Za-z0-9_.-]", "_", .libfig_name())),
+    content = function(file) writeLines(.LIBFIG_LEGENDS, file)
+  )
 
   ## ---- Structure annotation (cleavage map) ---------------------------------
   # Populate the metabolite picker whenever the library changes.

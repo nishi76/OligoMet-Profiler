@@ -362,10 +362,10 @@
              widths = widths, header = header))
     invisible(n_tab)
   }
-  FIG <- function(plot, caption, w = 6.2, h = 3.4) {
+  FIG <- function(plot, caption, w = 6.2, h = 3.4, dpi = 200) {
     if (is.null(plot)) return(invisible(NA_integer_))
     n_fig <<- n_fig + 1L
-    add(list(type = "figure", plot = plot, caption = sprintf("Figure %d. %s", n_fig, caption), w = w, h = h))
+    add(list(type = "figure", plot = plot, caption = sprintf("Figure %d. %s", n_fig, caption), w = w, h = h, dpi = dpi))
     invisible(n_fig)
   }
   SVG <- function(svg, caption) {
@@ -969,6 +969,73 @@
     H2("Sequence and Chemistry by Position")
     TAB(chem$per_pos, sprintf("Per-position chemistry of %s.", ta), widths = c(0.8, 1.9, 2.0, 1.57))
   }
+
+  # ---- predicted-library characterization figures ----
+  if (!is.null(ctx$mets) && length(ctx$mets) > 0) {
+    mf <- tryCatch(library_mass_frame(ctx$mets, dict), error = function(e) NULL)
+    zr <- (params$z_min %||% 4):(params$z_max %||% 12)
+    prm_lib <- tryCatch(ctx$prm %||% prm_inclusion_list(ctx$mets, dict, z_range = zr,
+                          max_oxid = params$max_oxid %||% 6), error = function(e) NULL)
+    if (!is.null(mf) && nrow(mf) > 0) {
+      H2("Predicted Metabolite Library Characterization")
+      P("These figures characterize the theoretical metabolite library enumerated for ", ta,
+        " (the in silico set of nuclease-cleavage and phosphorothioate-to-phosphodiester ",
+        "(PS→PO) desulfurization products the identification is drawn from), independent of ",
+        "any acquired data. They define the target space for extracted-ion chromatogram ",
+        "construction and for the targeted inclusion list.")
+
+      FIG(plot_mass_shift_waterfall(mf, ta),
+          "Predicted metabolite mass-shift waterfall.", w = 6.4, h = 3.3, dpi = 300)
+      P("Monoisotopic mass shift (Δm, Da) of each theoretical species relative to the ",
+        "full-length parent, ordered by mass and colored by cleavage mechanism. The 3'- and ",
+        "5'-exonuclease ladders step down in register with sequential nucleotide loss, while ",
+        "endonuclease fragments populate the intermediate-mass region. It sets the expected ",
+        "position of each degradant's deconvoluted neutral mass relative to the parent.")
+
+      FIG(plot_mass_defect(mf, ta),
+          "Metabolite mass-defect plot.", w = 6.2, h = 3.6, dpi = 300)
+      P("Mass defect (the fractional part of the monoisotopic mass, Da) versus monoisotopic ",
+        "mass for every predicted species. Because the mass defect is set by elemental ",
+        "composition, dominated here by hydrogen and the phosphorus/sulfur content of the ",
+        "phosphorothioate backbone, oligonucleotide species fall on a characteristic, nearly ",
+        "linear trend. The plot is used to assign deconvoluted masses with confidence and to ",
+        "reject chemical-noise features that sit off the oligonucleotide mass-defect trend.")
+
+      if (!is.null(prm_lib) && nrow(prm_lib) > 0) {
+        FIG(plot_kendrick_defect(prm_lib, mf, ta),
+            "Phosphorothioate-base Kendrick mass-defect plot.", w = 6.4, h = 4.4, dpi = 300)
+        P("Kendrick mass defect referenced to the phosphorothioate repeat unit. Rescaling the ",
+          "mass axis by the PS→PO desulfurization unit (−15.977 Da per S→O event) ",
+          "collapses each desulfurization series onto a horizontal track, so the number of ",
+          "desulfurization events reads directly from the vertical spacing; each facet is one ",
+          "oxidation level. This is the oligonucleotide analogue of the Kendrick analysis used ",
+          "to resolve homologous series in high-resolution petroleomics and lipidomics, applied ",
+          "here to backbone desulfurization.")
+
+        FIG(plot_charge_heatmap(prm_lib, ta),
+            "Charge-state precursor m/z heatmap.", w = 5.8, h = 6.8, dpi = 300)
+        P("Theoretical precursor m/z of each unoxidized metabolite across charge states, as the ",
+          "deprotonated ions [M−zH]^z− of negative-ion electrospray. Oligonucleotides ",
+          "ionize as an extended charge envelope, so each species is observed at several m/z; ",
+          "the tabulated values are the targets for extracted-ion chromatogram (EIC/XIC) ",
+          "construction and for setting PRM/MS1 isolation windows.")
+
+        FIG(plot_prm_mz_distribution(prm_lib, ta),
+            "Targeted inclusion-list m/z distribution.", w = 6.2, h = 3.1, dpi = 300)
+        P("Distribution of every theoretical precursor m/z in the targeted inclusion list, over ",
+          "all metabolites, desulfurization levels, and charge states. It shows the density of ",
+          "targets the acquisition must cover and where isolation windows will crowd, which ",
+          "informs isolation-window width and duty-cycle choices for a PRM or MS1 inclusion-list ",
+          "method.")
+      }
+
+      FIG(plot_metabolite_categories(mf, ta),
+          "Predicted species by degradation mechanism.", w = 5.8, h = 3.1, dpi = 300)
+      P("Count of predicted species by cleavage mechanism: 3'- and 5'-exonuclease truncation and ",
+        "endonuclease fragmentation. It summarizes the theoretical search space the ",
+        "identification is drawn from.")
+    }
+  }
   if (!is.null(per_sample) && nrow(per_sample) > 0) {
     H2("Individual Study-Sample Results")
     ist <- data.frame(Sample = per_sample$sample, Condition = per_sample$condition, stringsAsFactors = FALSE)
@@ -1074,7 +1141,7 @@ build_regulatory_report_html <- function(ctx) {
       bullets = paste0("<ul>", paste0("<li>", .reg_xml_escape(b$items), "</li>", collapse = ""), "</ul>"),
       table = .reg_html_table(b$df, b$caption, b$header),
       figure = {
-        uri <- .reg_b64img(.reg_fig_png(b$plot, b$w, b$h))
+        uri <- .reg_b64img(.reg_fig_png(b$plot, b$w, b$h, dpi = b$dpi %||% 200))
         if (is.null(uri)) "" else sprintf("<figure><img class='fig' src='%s'/><figcaption>%s</figcaption></figure>", uri, .reg_xml_escape(b$caption))
       },
       svg = sprintf("<figure class='struct'>%s<figcaption>%s</figcaption></figure>", b$svg, .reg_xml_escape(b$caption)),
@@ -1284,7 +1351,7 @@ build_regulatory_report_docx <- function(ctx, file) {
       },
       table = add_tbl(doc, b$df, b$caption, b$widths, b$header),
       figure = {
-        png <- .reg_fig_png(b$plot, b$w, b$h)
+        png <- .reg_fig_png(b$plot, b$w, b$h, dpi = b$dpi %||% 200)
         if (is.null(png)) doc else {
           doc <- add_cap(doc, b$caption)
           officer::body_add_img(doc, png, width = b$w, height = b$h)
