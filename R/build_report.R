@@ -38,8 +38,7 @@ plot_charge_envelope <- function(met, dict = STANDARD_DICT, z_range = 3:12,
   ggplot2::ggplot(df, ggplot2::aes(x = z, y = mz, color = k_oxid)) +
     ggplot2::geom_line(linewidth = 0.8) +
     ggplot2::geom_point(size = 2) +
-    ggplot2::scale_color_manual(values = grDevices::colorRampPalette(
-      c("#0279EE", "#FF9400", "#75A025", "#FD9BED", "#E9ED4C"))(kmax + 1)) +
+    ggplot2::scale_color_manual(values = okabe_ito(kmax + 1)) +
     ggplot2::labs(x = "Charge State (z)", y = "m/z",
                   color = "PS→PO\nOxidation") +
     ggplot2::theme_minimal(base_size = 11,
@@ -65,7 +64,7 @@ plot_isotope_pattern <- function(met, dict = STANDARD_DICT, z = 6,
   if (is.null(cl)) return(NULL)
   cl$iso <- factor(cl$iso)
   ggplot2::ggplot(cl, ggplot2::aes(x = mz, y = abundance * 100)) +
-    ggplot2::geom_col(fill = "#0279EE", width = .isotope_bar_width(cl$mz, z)) +
+    ggplot2::geom_col(fill = "#0072B2", width = .isotope_bar_width(cl$mz, z)) +
     ggplot2::geom_text(ggplot2::aes(label = sprintf("%.1f", abundance * 100)),
                        vjust = -0.3, size = 3) +
     ggplot2::labs(x = sprintf("m/z (z=%d)", z), y = "Relative Abundance (%)",
@@ -93,8 +92,8 @@ plot_truncation_series <- function(mets, dict = STANDARD_DICT) {
   ggplot2::ggplot(df, ggplot2::aes(x = n, y = mass, color = series)) +
     ggplot2::geom_line(linewidth = 0.8) +
     ggplot2::geom_point(size = 2.5) +
-    ggplot2::scale_color_manual(values = c("Parent" = "#333333",
-      "3' Exonuclease" = "#0279EE", "5' Exonuclease" = "#FF9400")) +
+    ggplot2::scale_color_manual(values = c("Parent" = "#000000",
+      "3' Exonuclease" = "#0072B2", "5' Exonuclease" = "#E69F00")) +
     ggplot2::labs(x = "Length (nt)", y = "Monoisotopic Mass (Da)",
                   color = "Series") +
     ggplot2::theme_minimal(base_size = 11,
@@ -106,7 +105,7 @@ plot_oxidation_series <- function(met, dict = STANDARD_DICT, max_oxid = 6) {
   series <- ps_oxidation_series(met, max_oxid = max_oxid, dict = dict)
   series$delta <- series$mono_mass - series$mono_mass[1]
   ggplot2::ggplot(series, ggplot2::aes(x = k, y = delta)) +
-    ggplot2::geom_col(fill = "#0279EE", width = 0.6) +
+    ggplot2::geom_col(fill = "#0072B2", width = 0.6) +
     ggplot2::geom_text(ggplot2::aes(label = sprintf("%.2f", delta)),
                        vjust = -0.3, size = 3.5) +
     ggplot2::labs(x = "PS→PO Oxidation Events (k)",
@@ -133,8 +132,7 @@ plot_fragment_map <- function(met, dict = STANDARD_DICT, z_range = 1:2) {
   ggplot2::ggplot(rows, ggplot2::aes(x = cleavage_site, y = ion_type,
                                       fill = mass)) +
     ggplot2::geom_tile(color = "white", linewidth = 0.3) +
-    ggplot2::scale_fill_gradient(low = "#ECE9E2", high = "#0279EE",
-                                  name = "Mass (Da)") +
+    ggplot2::scale_fill_viridis_c(name = "Mass (Da)") +
     ggplot2::labs(x = "Cleavage Site", y = "Ion Type",
                   title = sprintf("Fragment Ion Map: %s", met$name)) +
     ggplot2::theme_minimal(base_size = 11,

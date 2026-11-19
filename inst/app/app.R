@@ -42,7 +42,7 @@
 .module_dir <- .find_module_dir()
 
 if (!is.null(.module_dir)) {
-  for (.f in c("about.R", "default_params.R", "progress_utils.R",
+  for (.f in c("about.R", "default_params.R", "progress_utils.R", "palettes.R",
                "chemistry_dict.R", "oligo_io.R",
                "metabolites.R", "mass_isotope.R", "fragments.R",
                "ms_matching.R", "spectra_io.R", "batch_ms_processing.R", "statistics.R",

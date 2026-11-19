@@ -276,12 +276,12 @@ degradation_position_model <- function(matches, mets, spec, sample_meta = NULL,
 <style>
 .dmap{--s:#fcfcfb;--pl:#f6f6f3;--pa:#fff;--ink:#0b0b0b;--ink2:#52514e;--mut:#898781;
  --grid:#e1e0d9;--ring:rgba(11,11,11,.10);
- --ox:#2a78d6;--aB:#eb6834;--dA:#1baf7a;--e3:#6250d6;--e5:#e87ba4;--en:#008300;--gn:#eda100;
+ --ox:#56B4E9;--aB:#CC79A7;--dA:#F0E442;--e3:#0072B2;--e5:#E69F00;--en:#009E73;--gn:#D55E00;
  --cov:#d8d7d0;--wing:#b9c6d6;--gap:#e7cdb6;--li:#fff;
  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);font-size:13px}
 @media (prefers-color-scheme:dark){.dmap{--s:#1a1a19;--pl:#141413;--pa:#1f1f1d;--ink:#f0efec;
  --ink2:#c3c2b7;--mut:#898781;--grid:#2c2c2a;--ring:rgba(255,255,255,.10);
- --ox:#3987e5;--aB:#d95926;--dA:#199e70;--e3:#9085e9;--e5:#d55181;--en:#2fae2f;--gn:#c98500;
+ --ox:#7cc5ee;--aB:#db9bc3;--dA:#f3ec72;--e3:#3f94d6;--e5:#f0b23a;--en:#30bf8f;--gn:#ef7338;
  --cov:#38382f;--wing:#3a485c;--gap:#4a3a2c}}
 .dmap *{box-sizing:border-box}
 .dmap .tabs{display:flex;gap:4px;flex-wrap:wrap;margin:0 0 12px}
@@ -315,6 +315,7 @@ degradation_position_model <- function(matches, mets, spec, sample_meta = NULL,
 .dmap .sw{width:16px;height:16px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;
  font-size:8.5px;font-weight:700;color:var(--li);flex:none}
 .dmap .sw.cov{background:var(--cov);color:var(--mut)}
+.dmap .sw.lt{color:#0b0b0b}
 .dmap .note{font-size:11.5px;color:var(--mut);margin-top:9px;line-height:1.5}
 .dmap .mkdot{width:11px;height:11px;border-radius:50%;background:var(--cov);position:relative;display:inline-block}
 .dmap .mkdot::after{content:"";position:absolute;right:0;bottom:0;width:5px;height:5px;border-radius:50%;background:var(--ox);box-shadow:0 0 0 1px var(--s)}
@@ -460,12 +461,12 @@ degradation_map_html <- function(model, id = "dmap1") {
   legend <- paste0(
     '<div class="panel"><h3>Legend</h3><div class="legend">',
     '<div class="lg"><span class="t">Base modification</span>',
-    '<span class="lr"><span class="sw" style="background:var(--ox)">ox</span> Oxidation</span>',
+    '<span class="lr"><span class="sw lt" style="background:var(--ox)">ox</span> Oxidation</span>',
     '<span class="lr"><span class="sw" style="background:var(--aB)">aB</span> Depurination / abasic</span>',
-    '<span class="lr"><span class="sw" style="background:var(--dA)">dA</span> Deamination</span></div>',
+    '<span class="lr"><span class="sw lt" style="background:var(--dA)">dA</span> Deamination</span></div>',
     '<div class="lg"><span class="t">Backbone cleavage</span>',
     '<span class="lr"><span class="sw" style="background:var(--e3)">3&prime;</span> 3&prime;-exonuclease</span>',
-    '<span class="lr"><span class="sw" style="background:var(--e5)">5&prime;</span> 5&prime;-exonuclease</span>',
+    '<span class="lr"><span class="sw lt" style="background:var(--e5)">5&prime;</span> 5&prime;-exonuclease</span>',
     '<span class="lr"><span class="sw" style="background:var(--en)">en</span> Endonuclease</span></div>',
     '<div class="lg"><span class="t">Conjugate / coverage</span>',
     '<span class="lr"><span class="sw" style="background:var(--gn)">Gn</span> GalNAc loss</span>',

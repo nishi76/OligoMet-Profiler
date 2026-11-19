@@ -13,7 +13,7 @@
   }, error = function(e) NULL)
   if (!is.null(this)) dirname(dirname(this)) else ".."
 })
-for (.f in c("about.R", "chemistry_dict.R", "oligo_io.R", "metabolites.R",
+for (.f in c("palettes.R", "about.R", "chemistry_dict.R", "oligo_io.R", "metabolites.R",
              "mass_isotope.R", "fragments.R", "ms_matching.R",
              "batch_ms_processing.R", "statistics.R", "degradation.R")) {
   source(file.path(.pkg_root, "R", .f))

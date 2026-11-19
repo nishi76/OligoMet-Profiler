@@ -184,7 +184,7 @@ plot_degradation_composition <- function(degradation, by = c("sample", "conditio
     return(ggplot2::ggplot() + ggplot2::theme_void() +
              ggplot2::labs(title = "No degradation data to plot"))
   }
-  pal <- function(k) grDevices::colorRampPalette(c("#0279EE", "#FF9400", "#75A025", "#FD9BED", "#E9ED4C"))(length(k))
+  pal <- function(k) kind_colors(k)
   theme <- ggplot2::theme_minimal(base_size = 11, base_family = "Liberation Sans")
   sub <- paste0("Signal: ", degradation$signal_used %||% "n/a")
 
@@ -361,13 +361,13 @@ plot_degradation_by_condition <- function(degradation) {
   per$lo <- per$mean_pct_degradation - ifelse(is.na(per$sd_pct_degradation), 0, per$sd_pct_degradation)
   per$hi <- per$mean_pct_degradation + ifelse(is.na(per$sd_pct_degradation), 0, per$sd_pct_degradation)
   groups <- sort(unique(per$group))
-  cols <- stats::setNames(grDevices::colorRampPalette(c("#0279EE", "#FF9400", "#75A025", "#FD9BED", "#E9ED4C"))(length(groups)), groups)
+  cols <- stats::setNames(okabe_ito(length(groups)), groups)
   theme <- ggplot2::theme_minimal(base_size = 11, base_family = "Liberation Sans")
   facet <- if (has_m) ggplot2::facet_wrap(~ matrix, nrow = 1) else NULL
 
   # Matrix-only design: one bar per matrix.
   if (bc$design == "matrix") {
-    mcols <- stats::setNames(grDevices::colorRampPalette(c("#0279EE", "#FF9400", "#75A025", "#FD9BED", "#E9ED4C"))(nrow(per)), per$matrix)
+    mcols <- stats::setNames(okabe_ito(nrow(per)), per$matrix)
     return(ggplot2::ggplot(per, ggplot2::aes(x = .data$matrix, y = .data$mean_pct_degradation, fill = .data$matrix)) +
       ggplot2::geom_col(width = 0.6, alpha = 0.85) +
       ggplot2::geom_errorbar(ggplot2::aes(ymin = .data$lo, ymax = .data$hi), width = 0.2) +
@@ -515,8 +515,7 @@ plot_degradation_vs_reference <- function(deg_ref) {
     ggplot2::geom_hline(yintercept = 100, linetype = "dotted", color = "#B7B2A7") +
     ggplot2::geom_line(linewidth = 0.8) +
     ggplot2::geom_point(size = 2.5) +
-    ggplot2::scale_color_manual(values = grDevices::colorRampPalette(
-      c("#0279EE", "#FF9400", "#75A025", "#FD9BED", "#E9ED4C"))(n_grp), name = NULL) +
+    ggplot2::scale_color_manual(values = okabe_ito(n_grp), name = NULL) +
     ggplot2::labs(x = "Timepoint", y = "% parent remaining",
                   title = "Parent remaining relative to reference timepoint",
                   subtitle = paste0("Reference timepoint: ",

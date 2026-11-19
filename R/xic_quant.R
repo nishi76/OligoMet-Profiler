@@ -444,8 +444,8 @@ plot_xic_contributions <- function(contributions, met_id) {
     ggplot2::geom_tile(data = d[d$selected, , drop = FALSE], fill = NA, color = "#1f2430",
                        linewidth = 0.9) +
     ggplot2::geom_text(ggplot2::aes(label = sprintf("%.1f", .data$pct_of_candidate_signal)),
-                       size = 3, color = "#1f2430") +
-    ggplot2::scale_fill_gradient(low = "#F4F1EA", high = "#C8912E", name = "% signal") +
+                       size = 3, color = "white") +
+    ggplot2::scale_fill_viridis_c(name = "% signal") +
     ggplot2::labs(x = "Isotope cluster", y = "Charge state",
                   title = paste0("Where the signal is -- ", met_id),
                   subtitle = "% of all extracted candidate signal (reference samples); outlined = summed") +

@@ -10,7 +10,7 @@
   }, error = function(e) NULL)
   if (!is.null(this)) dirname(dirname(this)) else ".."
 })
-for (.f in c("chemistry_dict.R", "degradation.R", "statistics.R", "multivariate.R")) {
+for (.f in c("palettes.R", "chemistry_dict.R", "degradation.R", "statistics.R", "multivariate.R")) {
   source(file.path(.pkg_root, "R", .f))
 }
 

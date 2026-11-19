@@ -209,8 +209,8 @@ mirror_spectrum_data <- function(met, ms2_peaks, dict = STANDARD_DICT,
 #' @seealso [mirror_spectrum_data()]
 #' @export
 plot_mirror_spectrum <- function(spec, title = NULL,
-                                  acquired_color = "#0279EE",
-                                  theoretical_color = "#E08214",
+                                  acquired_color = "#0072B2",
+                                  theoretical_color = "#E69F00",
                                   unmatched_color = "#B7B2A7",
                                   matched_color = NULL,
                                   xlim_pad_frac = 0.03,

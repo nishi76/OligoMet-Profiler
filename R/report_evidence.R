@@ -171,8 +171,8 @@ collect_metabolite_evidence <- function(met_ids, ms1_matches, features = NULL, m
 plot_evidence_xic <- function(e) {
   if (is.null(e$xic) || nrow(e$xic) < 2) return(NULL)
   ggplot2::ggplot(e$xic, ggplot2::aes(x = .data$rt, y = .data$intensity)) +
-    ggplot2::geom_area(fill = "#1f3864", alpha = 0.15) +
-    ggplot2::geom_line(colour = "#1f3864", linewidth = 0.5) +
+    ggplot2::geom_area(fill = "#0072B2", alpha = 0.15) +
+    ggplot2::geom_line(colour = "#0072B2", linewidth = 0.5) +
     ggplot2::geom_vline(xintercept = e$row$rt, linetype = "dashed", colour = "#c0392b", linewidth = 0.3) +
     ggplot2::labs(x = "Retention time (min)", y = "Intensity",
                   title = sprintf("Extracted-ion chromatogram, %s", .ev_ion_label(e$row$z, e$row$adduct)),
@@ -200,11 +200,11 @@ plot_evidence_isotopes <- function(e, ppm = 10) {
     lab <- ob[ob$matched & ob$rel >= 5, , drop = FALSE]
     p <- p + ggplot2::geom_segment(data = ob, ggplot2::aes(x = .data$mz, xend = .data$mz, y = 0, yend = .data$rel,
                                                             colour = .data$matched), linewidth = 0.6) +
-      ggplot2::scale_colour_manual(values = c(`TRUE` = "#1f3864", `FALSE` = "#a5b1c2"),
+      ggplot2::scale_colour_manual(values = c(`TRUE` = "#0072B2", `FALSE` = "#a5b1c2"),
                                    labels = c(`TRUE` = "observed, isotope match", `FALSE` = "observed, other"),
                                    name = NULL) +
       ggplot2::geom_text(data = lab, ggplot2::aes(x = .data$mz, y = .data$rel, label = sprintf("%.4f", .data$mz)),
-                         size = 2.2, vjust = -0.4, colour = "#1f3864")
+                         size = 2.2, vjust = -0.4, colour = "#0072B2")
     sub <- sprintf("Apex MS1 scan, %.2f min, sample %s; diamonds: theoretical isotope distribution",
                    ob$scan_rt[1], e$row$sample)
   }
@@ -227,7 +227,7 @@ plot_evidence_envelope <- function(e) {
   if (is.null(env) || nrow(env) == 0) return(NULL)
   env$zl <- factor(paste0(env$z, "-"), levels = paste0(sort(unique(env$z)), "-"))
   ggplot2::ggplot(env, ggplot2::aes(x = .data$zl, y = .data$intensity)) +
-    ggplot2::geom_col(fill = "#1f3864", width = 0.6) +
+    ggplot2::geom_col(fill = "#0072B2", width = 0.6) +
     ggplot2::geom_text(ggplot2::aes(label = sprintf("m/z %.4f\n%+.1f ppm", .data$obs_mz, .data$ppm_error)),
                        vjust = -0.25, size = 2.2, lineheight = 0.9) +
     ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0, 0.3))) +

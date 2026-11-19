@@ -422,9 +422,9 @@ plot_volcano <- function(two_group_result, fc_thresh = 1, p_thresh = 0.05, label
 
   ggplot2::ggplot(df, ggplot2::aes(x = .data$log2fc, y = .data$neglog10p, color = .data$sig)) +
     ggplot2::geom_point(size = 2, alpha = 0.8) +
-    ggplot2::scale_color_manual(values = c(`TRUE` = "#0279EE", `FALSE` = "#B7B2A7"), guide = "none") +
-    ggplot2::geom_vline(xintercept = c(-fc_thresh, fc_thresh), linetype = "dashed", color = "#75A025") +
-    ggplot2::geom_hline(yintercept = -log10(p_thresh), linetype = "dashed", color = "#75A025") +
+    ggplot2::scale_color_manual(values = c(`TRUE` = "#0072B2", `FALSE` = "#B7B2A7"), guide = "none") +
+    ggplot2::geom_vline(xintercept = c(-fc_thresh, fc_thresh), linetype = "dashed", color = "#009E73") +
+    ggplot2::geom_hline(yintercept = -log10(p_thresh), linetype = "dashed", color = "#009E73") +
     ggplot2::geom_text(data = top, ggplot2::aes(label = .data$met_name),
                         size = 3, color = "#333333", vjust = -0.6, check_overlap = TRUE) +
     ggplot2::labs(x = "log2 fold change", y = "-log10(adjusted p)", title = "Group comparison") +
@@ -434,8 +434,8 @@ plot_volcano <- function(two_group_result, fc_thresh = 1, p_thresh = 0.05, label
 plot_trend <- function(time_series_long, met_id) {
   sub <- time_series_long[time_series_long$met_id == met_id, ]
   ggplot2::ggplot(sub, ggplot2::aes(x = .data$timepoint, y = .data$intensity)) +
-    ggplot2::geom_jitter(width = 0, height = 0, size = 2, color = "#0279EE", alpha = 0.8) +
-    ggplot2::geom_smooth(method = "lm", se = TRUE, color = "#FF9400", fill = "#FF9400", alpha = 0.15) +
+    ggplot2::geom_jitter(width = 0, height = 0, size = 2, color = "#0072B2", alpha = 0.8) +
+    ggplot2::geom_smooth(method = "lm", se = TRUE, color = "#E69F00", fill = "#E69F00", alpha = 0.15) +
     ggplot2::labs(x = "Timepoint", y = "Intensity",
                   title = if (nrow(sub) > 0) sub$met_name[1] else met_id) +
     ggplot2::theme_minimal(base_size = 11, base_family = "Liberation Sans")
@@ -446,8 +446,7 @@ plot_group_boxplot <- function(abundance_long, met_id) {
   ggplot2::ggplot(sub, ggplot2::aes(x = .data$group, y = .data$intensity, fill = .data$group)) +
     ggplot2::geom_boxplot(alpha = 0.6, outlier.shape = NA) +
     ggplot2::geom_jitter(width = 0.15, size = 2, color = "#333333") +
-    ggplot2::scale_fill_manual(values = grDevices::colorRampPalette(
-      c("#0279EE", "#FF9400", "#75A025", "#FD9BED", "#E9ED4C"))(length(unique(sub$group))), guide = "none") +
+    ggplot2::scale_fill_manual(values = okabe_ito(length(unique(sub$group))), guide = "none") +
     ggplot2::labs(x = NULL, y = "Intensity",
                   title = if (nrow(sub) > 0) sub$met_name[1] else met_id) +
     ggplot2::theme_minimal(base_size = 11, base_family = "Liberation Sans")
@@ -550,8 +549,7 @@ plot_multi_trend <- function(trend_summary, normalize = TRUE, reference_timepoin
     ggplot2::geom_point(size = 2) +
     ggplot2::geom_errorbar(ggplot2::aes(ymin = .data$mean_value - .data$sem, ymax = .data$mean_value + .data$sem),
                             width = 0, na.rm = TRUE) +
-    ggplot2::scale_color_manual(values = grDevices::colorRampPalette(
-      c("#0279EE", "#FF9400", "#75A025", "#FD9BED", "#E9ED4C"))(n_met), name = NULL) +
+    ggplot2::scale_color_manual(values = okabe_ito(n_met), name = NULL) +
     ggplot2::labs(x = "Timepoint", y = y_lab, title = "Multi-metabolite time course") +
     ggplot2::theme_minimal(base_size = 11, base_family = "Liberation Sans")
 }
@@ -738,9 +736,9 @@ plot_calibration_curve <- function(curve_result, quant_points = NULL) {
   p <- ggplot2::ggplot() +
     ggplot2::geom_vline(xintercept = curve_result$conc_range, linetype = "dotted", color = "#B7B2A7") +
     ggplot2::geom_abline(intercept = curve_result$intercept, slope = curve_result$slope,
-                          color = "#75A025", linewidth = 0.8) +
+                          color = "#009E73", linewidth = 0.8) +
     ggplot2::geom_point(data = pts, ggplot2::aes(x = .data$concentration, y = .data$signal),
-                         color = "#0279EE", size = 2.5, alpha = 0.85)
+                         color = "#0072B2", size = 2.5, alpha = 0.85)
 
   if (!is.null(quant_points) && nrow(quant_points) > 0) {
     qp <- quant_points[!is.na(quant_points$concentration_calc) & !is.na(quant_points$signal), ]
@@ -750,7 +748,7 @@ plot_calibration_curve <- function(curve_result, quant_points = NULL) {
       qp$.type <- ifelse(!is.na(qp$sample_type) & qp$sample_type == "quality_control", "QC", "unknown")
       p <- p + ggplot2::geom_point(
         data = qp, ggplot2::aes(x = .data$concentration_calc, y = .data$signal, shape = .data$.type),
-        color = "#FD9BED", size = 2.5, alpha = 0.85) +
+        color = "#CC79A7", size = 2.5, alpha = 0.85) +
         ggplot2::scale_shape_manual(values = c(QC = 17, unknown = 15), name = NULL)
     }
   }

@@ -310,13 +310,12 @@ plot_is_response <- function(summary) {
   types <- sort(unique(d$sample_type))
   ggplot2::ggplot(d, ggplot2::aes(x = .data$run_order, y = .data$pct_of_reference)) +
     ggplot2::annotate("rect", xmin = -Inf, xmax = Inf, ymin = w[1], ymax = w[2],
-                      fill = "#75A025", alpha = 0.08) +
+                      fill = "#009E73", alpha = 0.08) +
     ggplot2::geom_hline(yintercept = c(w[1], 100, w[2]), linetype = c("dotted", "solid", "dotted"),
                         color = "#B7B2A7") +
     ggplot2::geom_point(ggplot2::aes(color = .data$sample_type, shape = .data$flagged), size = 2.8) +
     ggplot2::scale_shape_manual(values = c(`FALSE` = 16, `TRUE` = 4), guide = "none") +
-    ggplot2::scale_color_manual(values = stats::setNames(grDevices::colorRampPalette(
-      c("#0279EE", "#FF9400", "#75A025", "#FD9BED", "#E9ED4C"))(length(types)), types), name = NULL) +
+    ggplot2::scale_color_manual(values = stats::setNames(okabe_ito(length(types)), types), name = NULL) +
     ggplot2::labs(x = "Injection order (sample table order)", y = "IS response (% of reference mean)",
                   title = "Internal standard response",
                   subtitle = sprintf("Reference: mean of standards/QCs. Window %g-%g%%; x = outside window.",

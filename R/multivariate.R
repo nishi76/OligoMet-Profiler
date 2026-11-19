@@ -180,8 +180,7 @@ plot_pca_scores <- function(pca_result, color_by = NULL) {
   ggplot2::ggplot(df, ggplot2::aes(x = .data$PC1, y = .data$PC2, color = .data$.color, label = .data$sample)) +
     ggplot2::geom_point(size = 3, alpha = 0.85) +
     ggplot2::geom_text(vjust = -0.9, size = 3, show.legend = FALSE, check_overlap = TRUE) +
-    ggplot2::scale_color_manual(values = grDevices::colorRampPalette(
-      c("#0279EE", "#FF9400", "#75A025", "#FD9BED", "#E9ED4C"))(n_col),
+    ggplot2::scale_color_manual(values = okabe_ito(n_col),
       name = if (has_color) color_by else NULL, guide = if (has_color) "legend" else "none") +
     ggplot2::labs(x = paste0("PC1 (", pc1_pct, "%)"), y = paste0("PC2 (", pc2_pct, "%)"),
                   title = "PCA -- sample scores") +
@@ -266,6 +265,6 @@ plot_dendrogram <- function(hclust_result, k = NULL) {
     return(invisible(NULL))
   }
   graphics::plot(hc, main = "Hierarchical clustering (samples)", xlab = "", sub = "", hang = -1)
-  if (!is.null(k) && k >= 2) stats::rect.hclust(hc, k = k, border = "#0279EE")
+  if (!is.null(k) && k >= 2) stats::rect.hclust(hc, k = k, border = "#0072B2")
   invisible(NULL)
 }

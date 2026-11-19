@@ -12,7 +12,7 @@
   }, error = function(e) NULL)
   if (!is.null(this)) dirname(dirname(this)) else ".."
 })
-for (.f in c("about.R", "progress_utils.R", "chemistry_dict.R", "oligo_io.R", "metabolites.R",
+for (.f in c("palettes.R", "about.R", "progress_utils.R", "chemistry_dict.R", "oligo_io.R", "metabolites.R",
              "mass_isotope.R", "fragments.R", "ms_matching.R", "batch_ms_processing.R",
              "degradation.R", "statistics.R", "blank_correction.R", "xic_quant.R",
              "internal_standard.R")) {

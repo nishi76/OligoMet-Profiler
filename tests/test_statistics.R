@@ -11,6 +11,7 @@
   }, error = function(e) NULL)
   if (!is.null(this)) dirname(dirname(this)) else ".."
 })
+source(file.path(.pkg_root, "R", "palettes.R"))
 source(file.path(.pkg_root, "R", "statistics.R"))
 
 cat("==== Statistics suite validation ====\n\n")
