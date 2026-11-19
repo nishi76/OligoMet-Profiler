@@ -190,7 +190,7 @@ options(shiny.maxRequestSize = 20 * 1024^3)  # 20 GB
 # in the README.
 .info_icon <- function(text) {
   tags$span("ⓘ", title = text,
-            style = "cursor: help; color: #6c757d; margin-left: 4px; font-size: 12px;")
+            style = "cursor: help; color: var(--muted); margin-left: 4px; font-size: 12px;")
 }
 .with_info <- function(label, ...) tagList(label, .info_icon(paste0(...)))
 
@@ -325,7 +325,9 @@ options(shiny.maxRequestSize = 20 * 1024^3)  # 20 GB
 ## =============================================================================
 ui <- fluidPage(
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly",
-                          primary = "#C8912E", secondary = "#2c3e50"),
+                          primary = "#0a7872", secondary = "#566867",
+                          base_font = bslib::font_google("Instrument Sans", local = FALSE),
+                          code_font = bslib::font_google("JetBrains Mono", local = FALSE)),
 
   titlePanel("OligoMet Profiler"),
 
@@ -343,30 +345,41 @@ ui <- fluidPage(
   ),
 
   tags$head(tags$style(HTML("
+    /* Deep Teal app theme: one token set for the whole chrome, lifted from the
+       Studio design system. Data colors (Okabe-Ito) and semantic good/warn/
+       error colors stay literal so plots and status cues never shift hue. */
+    :root {
+      --bg: #eef2f2; --panel: #fafcfc; --panel-2: #f0f4f4; --line: #d3dcdc;
+      --ink: #132020; --muted: #566867; --accent: #0a7872; --accent-ink: #fff;
+      --accent-soft: rgba(10,120,114,.11);
+    }
+    body { background: var(--bg); color: var(--ink); }
+    a { color: var(--accent); }
+    .nav-tabs .nav-link:hover { border-color: var(--line); }
     .sidebar-section { margin-bottom: 18px; }
-    .sidebar-section h5 { font-weight: 600; color: #2c3e50;
-                          border-bottom: 1px solid #ecf0f1; padding-bottom: 4px; }
-    .metric-card { background: #f8f9fa; border-radius: 6px; padding: 10px 14px;
-                   text-align: center; border: 1px solid #dee2e6; }
-    .metric-card .label { font-size: 11px; color: #6c757d; text-transform: uppercase;
+    .sidebar-section h5 { font-weight: 600; color: var(--ink);
+                          border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+    .metric-card { background: var(--panel-2); border-radius: 6px; padding: 10px 14px;
+                   text-align: center; border: 1px solid var(--line); }
+    .metric-card .label { font-size: 11px; color: var(--muted); text-transform: uppercase;
                           letter-spacing: 0.5px; }
-    .metric-card .value { font-size: 18px; font-weight: 600; color: #C8912E; }
-    .manual-entry { background: #f8f9fa; border: 1px solid #dee2e6;
+    .metric-card .value { font-size: 18px; font-weight: 600; color: var(--accent); }
+    .manual-entry { background: var(--panel-2); border: 1px solid var(--line);
                     border-radius: 6px; padding: 14px 16px 6px;
                     margin-bottom: 14px; }
-    .manual-entry h5 { font-weight: 600; color: #2c3e50; }
-    .manual-entry .hint { font-size: 12px; color: #6c757d; }
+    .manual-entry h5 { font-weight: 600; color: var(--ink); }
+    .manual-entry .hint { font-size: 12px; color: var(--muted); }
     .manual-entry .form-group { margin-bottom: 8px; }
     .man-ok { color: #18632f; font-size: 13px; }
     .man-err { color: #a3231b; font-size: 13px; }
     .man-seq { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
                font-size: 12px; word-break: break-all; }
-    .help-panel { border: 1px solid #dee2e6; border-radius: 6px;
+    .help-panel { border: 1px solid var(--line); border-radius: 6px;
                   margin-bottom: 14px; background: #fff; }
     .help-panel > summary { cursor: pointer; padding: 10px 16px;
-                            font-weight: 600; color: #2c3e50;
+                            font-weight: 600; color: var(--ink);
                             list-style: revert; }
-    .help-panel[open] > summary { border-bottom: 1px solid #dee2e6; }
+    .help-panel[open] > summary { border-bottom: 1px solid var(--line); }
     .help-body { padding: 10px 16px 4px; }
     .help-doc { max-height: 60vh; overflow-y: auto; padding: 12px 4px 0;
                 font-size: 13px; }
@@ -375,9 +388,9 @@ ui <- fluidPage(
     .help-doc h3 { font-size: 15px; margin-top: 14px; }
     .help-doc table { font-size: 12px; margin-bottom: 12px;
                       border-collapse: collapse; }
-    .help-doc th, .help-doc td { border: 1px solid #dee2e6;
+    .help-doc th, .help-doc td { border: 1px solid var(--line);
                                  padding: 3px 8px; }
-    .help-doc pre { background: #f8f9fa; border: 1px solid #e9ecef;
+    .help-doc pre { background: var(--panel-2); border: 1px solid var(--line);
                     border-radius: 4px; padding: 8px; font-size: 12px;
                     overflow-x: auto; }
     .help-doc code { font-size: 12px; }
@@ -388,64 +401,64 @@ ui <- fluidPage(
     .ruo-tag { display: inline-block; background: #a3231b; color: #fff;
                font-weight: 700; font-size: 10.5px; letter-spacing: 0.6px;
                border-radius: 3px; padding: 1px 7px; margin-right: 8px; }
-    .about-block h6 { font-weight: 600; color: #2c3e50; font-size: 13px;
+    .about-block h6 { font-weight: 600; color: var(--ink); font-size: 13px;
                       margin-bottom: 4px; }
-    .about-block p { margin-bottom: 8px; font-size: 12px; color: #6c757d; }
-    .adv-panel { border: 1px solid #dee2e6; border-radius: 6px;
+    .about-block p { margin-bottom: 8px; font-size: 12px; color: var(--muted); }
+    .adv-panel { border: 1px solid var(--line); border-radius: 6px;
                  margin-bottom: 14px; background: #fff; }
     .adv-panel > summary { cursor: pointer; padding: 8px 12px;
-                           font-weight: 600; color: #2c3e50;
+                           font-weight: 600; color: var(--ink);
                            list-style: revert; font-size: 14px; }
-    .adv-panel[open] > summary { border-bottom: 1px solid #dee2e6; }
+    .adv-panel[open] > summary { border-bottom: 1px solid var(--line); }
     .adv-body { padding: 10px 12px 4px; }
     .session-row .btn { font-size: 12px; }
-    .chem-hint { font-size: 12px; color: #6c757d; }
+    .chem-hint { font-size: 12px; color: var(--muted); }
     /* Gold active-tab fill, matching the reconciled mockup */
-    .nav-tabs .nav-link.active { background-color: #C8912E !important;
+    .nav-tabs .nav-link.active { background-color: var(--accent) !important;
                                  color: #fff !important; font-weight: 700;
-                                 border-color: #C8912E; }
-    .nav-tabs .nav-link { color: #4B5563; }
+                                 border-color: var(--accent); }
+    .nav-tabs .nav-link { color: var(--muted); }
     .workflow-status-row { display: flex; align-items: center; gap: 9px;
-                           font-size: 12px; color: #374151; margin-bottom: 10px; }
+                           font-size: 12px; color: var(--ink); margin-bottom: 10px; }
     .status-dot { width: 20px; height: 20px; border-radius: 50%; display: flex;
                  align-items: center; justify-content: center; font-size: 11px;
                  color: #fff; flex-shrink: 0; font-weight: 700; }
     .status-dot.done { background: #22C55E; }
     .status-dot.pending { background: #D1D5DB; }
-    .oligo-box { background: #FAFAFA; border: 1px solid #dee2e6; border-radius: 6px;
-                padding: 10px 12px; font-size: 11.5px; color: #374151; }
+    .oligo-box { background: #FAFAFA; border: 1px solid var(--line); border-radius: 6px;
+                padding: 10px 12px; font-size: 11.5px; color: var(--ink); }
     .stepper { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
     .wf-step { flex: 1; background: #F1F1F1; border-radius: 8px; padding: 14px 6px;
               text-align: center; }
-    .wf-step.wf-active { background: #C8912E; }
+    .wf-step.wf-active { background: var(--accent); }
     .wf-step .wf-circ { width: 32px; height: 32px; border-radius: 50%; background: #fff;
-                        color: #9CA3AF; display: flex; align-items: center;
+                        color: var(--muted); display: flex; align-items: center;
                         justify-content: center; margin: 0 auto 6px; font-weight: 800; }
-    .wf-step.wf-active .wf-circ { color: #C8912E; }
-    .wf-step .wf-lbl { font-size: 11.5px; font-weight: 700; color: #6B7280; }
+    .wf-step.wf-active .wf-circ { color: var(--accent); }
+    .wf-step .wf-lbl { font-size: 11.5px; font-weight: 700; color: var(--muted); }
     .wf-step.wf-active .wf-lbl { color: #fff; }
     .wf-arrow { color: #C0C0C0; font-size: 16px; }
-    .dashboard-callout { background: #FDFBF3; border-left: 4px solid #C8912E;
+    .dashboard-callout { background: var(--accent-soft); border-left: 4px solid var(--accent);
                          border-radius: 6px; padding: 14px 18px; }
-    .dashboard-callout p { font-size: 13px; margin: 0 0 10px; color: #374151; }
+    .dashboard-callout p { font-size: 13px; margin: 0 0 10px; color: var(--ink); }
     .placeholder-note { font-size: 11px; color: #B45309; background: #FFF7ED;
                         border: 1px solid #FED7AA; border-radius: 5px;
                         padding: 6px 10px; margin-top: 6px; }
     /* --- Guided/Expert shell: mode bar, context header, top stepper --- */
     .mode-bar { display: flex; align-items: center; gap: 12px; margin: 2px 0 10px; }
-    .mode-bar .mb-title { font-size: 12px; color: #6c757d; font-weight: 600; }
+    .mode-bar .mb-title { font-size: 12px; color: var(--muted); font-weight: 600; }
     .mode-bar .shiny-options-group { display: inline-flex; gap: 4px; margin: 0;
                         background: #eef1f4; border-radius: 999px; padding: 3px; }
     .mode-bar .radio-inline { margin: 0; padding: 0; }
     .mode-bar .radio-inline > label { padding: 4px 14px; border-radius: 999px;
-                        font-size: 12.5px; color: #6c757d; cursor: pointer; margin: 0; }
+                        font-size: 12.5px; color: var(--muted); cursor: pointer; margin: 0; }
     .mode-bar input[type=radio] { display: none; }
-    .mode-bar label:has(input:checked) { background: #fff; color: #1d2733;
+    .mode-bar label:has(input:checked) { background: #fff; color: var(--ink);
                         font-weight: 600; box-shadow: 0 1px 2px rgba(16,24,40,.10); }
     .ctx-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px;
-                        background: #fbfcfd; border: 1px solid #e5e8ec; border-radius: 10px;
+                        background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
                         padding: 9px 14px; margin-bottom: 12px; font-size: 12.5px; }
-    .ctx-header .k { color: #6c757d; } .ctx-header b { color: #1d2733; }
+    .ctx-header .k { color: var(--muted); } .ctx-header b { color: var(--ink); }
     .ctx-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11px;
                         padding: 3px 10px; border-radius: 999px; font-weight: 600; }
     .ctx-chip .d { width: 7px; height: 7px; border-radius: 50%; }
@@ -460,29 +473,29 @@ ui <- fluidPage(
                         background: #f3f5f7; }
     /* --- Batch results: KPI tiles + report-threshold filter --- */
     .kpi-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
-    .kpi-tile { flex: 1; min-width: 120px; background: #fff; border: 1px solid #e5e8ec;
+    .kpi-tile { flex: 1; min-width: 120px; background: #fff; border: 1px solid var(--line);
                         border-radius: 10px; padding: 10px 14px; }
     .kpi-tile .kpi-n { font-size: 24px; font-weight: 800; line-height: 1.1; }
-    .kpi-tile .kpi-l { font-size: 11.5px; color: #6c757d; margin-top: 2px; }
+    .kpi-tile .kpi-l { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
     .kpi-tile.a .kpi-n { color: #0072B2; } .kpi-tile.b .kpi-n { color: #009E73; }
     .kpi-tile.c .kpi-n { color: #E69F00; } .kpi-tile.d .kpi-n { color: #CC79A7; }
-    .pct-filter { background: #fbfcfd; border: 1px solid #e5e8ec; border-radius: 10px;
+    .pct-filter { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
                         padding: 6px 14px 2px; margin-bottom: 12px; }
     /* --- Batch results: selected-metabolite inspector --- */
-    .inspector-panel { background: #fbfcfd; border: 1px solid #e5e8ec; border-radius: 10px;
+    .inspector-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
                         padding: 12px 14px; min-height: 120px; }
     .insp-empty { display: flex; align-items: center; min-height: 100px; }
     .insp-title { font-weight: 800; font-size: 14px; line-height: 1.2; }
-    .insp-sub { color: #6c757d; font-size: 12px; margin-bottom: 10px; }
+    .insp-sub { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
     .insp-kv { display: flex; justify-content: space-between; gap: 10px;
-                        font-size: 12px; padding: 4px 0; border-bottom: 1px dashed #e5e8ec; }
-    .insp-kv .k { color: #6c757d; } .insp-kv .v, .insp-kv .mono { text-align: right; }
+                        font-size: 12px; padding: 4px 0; border-bottom: 1px dashed var(--line); }
+    .insp-kv .k { color: var(--muted); } .insp-kv .v, .insp-kv .mono { text-align: right; }
     .insp-kv .mono, .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; }
     .insp-ms2 { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
     .insp-ring { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; }
-    .insp-ring i { width: 36px; height: 36px; border-radius: 50%; background: #fbfcfd;
+    .insp-ring i { width: 36px; height: 36px; border-radius: 50%; background: var(--panel);
                         display: grid; place-items: center; font-style: normal; font-weight: 800;
-                        font-size: 12px; color: #1d2733; }
+                        font-size: 12px; color: var(--ink); }
   "))),
 
   tags$div(class = "mode-bar",
@@ -511,7 +524,7 @@ ui <- fluidPage(
             tags$div(style = "height: 8px;"),
             fileInput("load_session_file", NULL, accept = ".json",
                       buttonLabel = "Load Session (JSON)...", placeholder = ""),
-            tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -8px;",
+            tags$p(style = "font-size: 10.5px; color: var(--muted); margin-top: -8px;",
                    "Saves/restores the sequence, custom chemistry, and all ",
                    "parameters as a .json file -- not uploaded MS/batch files, ",
                    "and not results (see Analysis State below)."),
@@ -520,7 +533,7 @@ ui <- fluidPage(
             tags$div(style = "height: 8px;"),
             fileInput("load_analysis_state_file", NULL, accept = ".rds",
                       buttonLabel = "Load Analysis State (.rds)...", placeholder = ""),
-            tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -8px;",
+            tags$p(style = "font-size: 10.5px; color: var(--muted); margin-top: -8px;",
                    "Saves/restores the library, batch results, statistics, and ",
                    "quantification tables, so reloading doesn't require re-running ",
                    "the batch. Raw mzML/raw files and per-hit MS2 spectra (needed only ",
@@ -575,7 +588,7 @@ ui <- fluidPage(
                           placeholder = "e.g. Te-sSe-sAe-sSe-... or OH-Am*-Gm*-...-OH or a pasted FASTA record"),
             fileInput("seq_file", NULL, accept = c(".fasta", ".fa", ".fas", ".txt"),
                       buttonLabel = "Load sequences (.fasta/.txt)...", placeholder = ""),
-            tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -10px;",
+            tags$p(style = "font-size: 10.5px; color: var(--muted); margin-top: -10px;",
                    "One analyte plus internal standards as multi-record FASTA: each record ",
                    "starts with '>name'. A name with an IS, SIL, ISTD or 'internal standard' ",
                    "token (or 'role=IS' in the header) is an internal standard: its mass comes ",
@@ -597,7 +610,7 @@ ui <- fluidPage(
                 shinyFiles::shinyDirButton("browse_output_dir", "Browse...", "Choose a folder",
                                            class = "btn-sm btn-outline-secondary w-100"))
             ),
-            tags$p(style = "font-size: 11px; color: #6c757d; margin-top: -6px;",
+            tags$p(style = "font-size: 11px; color: var(--muted); margin-top: -6px;",
                    "Leave blank to only use the download buttons below. If set, ",
                    "the workbook, report, PRM list, and acquisition method lists ",
                    "are also written directly to this folder when you click Generate Library."),
@@ -620,12 +633,12 @@ ui <- fluidPage(
                          selected = DEFAULT_PIPELINE_PARAMS$endo_sites, inline = TRUE),
             numericInput("min_frag_len", "Min fragment length (nt)",
                         value = DEFAULT_PIPELINE_PARAMS$min_frag_len, min = 1, max = 20),
-            tags$p(class = "help-note", style = "font-size:10.5px;color:#6c757d;margin:-4px 0 6px;",
+            tags$p(class = "help-note", style = "font-size:10.5px;color:var(--muted);margin:-4px 0 6px;",
                    "Auto restricts endonuclease cleavage to the DNA gap for gapmers, ",
                    "where it dominates, and searches all bonds otherwise."),
             checkboxInput("conj_catab", "GalNAc conjugate catabolism",
                           value = DEFAULT_PIPELINE_PARAMS$conj_catab),
-            tags$p(class = "help-note", style = "font-size:10.5px;color:#6c757d;margin:-4px 0 6px;",
+            tags$p(class = "help-note", style = "font-size:10.5px;color:var(--muted);margin:-4px 0 6px;",
                    "For a GalNAc-conjugated strand, adds the stepwise sugar-loss ",
                    "and linker-cleavage catabolites that dominate the early profile."),
             fluidRow(
@@ -636,7 +649,7 @@ ui <- fluidPage(
               column(6, numericInput("incl_max", "Max targets (0=all)",
                          value = DEFAULT_PIPELINE_PARAMS$incl_max, min = 0, max = 100000))
             ),
-            tags$p(class = "help-note", style = "font-size:10.5px;color:#6c757d;margin:-4px 0 2px;",
+            tags$p(class = "help-note", style = "font-size:10.5px;color:var(--muted);margin:-4px 0 2px;",
                    "Tier 1 = parent + 3'-exonuclease ladder + short 5'-exo products, the ",
                    "species that dominate real profiles. The cap keeps Tier 1 and higher ",
                    "charge states first.")
@@ -699,7 +712,7 @@ ui <- fluidPage(
           tags$hr(),
           actionButton("run_phase1", "Generate Library",
                        class = "btn-primary btn-lg w-100"),
-          tags$p(style = "font-size: 11px; color: #6c757d; margin: 4px 0 10px;",
+          tags$p(style = "font-size: 11px; color: var(--muted); margin: 4px 0 10px;",
                  "Builds the MS1-only library -- .mgf/.msp, inclusion lists, and the ",
                  "Excel workbook. No MS2 library yet: that comes from real data ",
                  "in the Empirical MS2 Library tab.")
@@ -772,7 +785,7 @@ ui <- fluidPage(
                                   "2',3'-cyclic phosphate" = "cyclic_phosphate"),
                       selected = "none", width = "100%"))
                   ),
-                  tags$p(style = "font-size: 12px; color: #6c757d;",
+                  tags$p(style = "font-size: 12px; color: var(--muted);",
                     "Draws one structure at a time. Pick a metabolite and, optionally, one ",
                     "modification variant to badge on it. To search for modifications across ",
                     "the library, use the Variable modifications checkboxes on the sidebar. ",
@@ -790,7 +803,7 @@ ui <- fluidPage(
               tabPanel("Oxidation Series", plotOutput("plot_oxidation", height = "380px")),
               tabPanel("Library Figures",
                 tags$div(style = "padding-top: 12px;",
-                  tags$p(style = "font-size: 12px; color: #6c757d; margin-bottom: 8px;",
+                  tags$p(style = "font-size: 12px; color: var(--muted); margin-bottom: 8px;",
                     "Characterization figures for the predicted library: mass-shift waterfall, ",
                     "mass-defect plot, phosphorothioate-base Kendrick mass-defect plot (which ",
                     "aligns the PS→PO desulfurization series), charge-state m/z heatmap, PRM ",
@@ -820,7 +833,7 @@ ui <- fluidPage(
               tabPanel("MS2 Explorer (predicted)",
                 tags$div(style = "padding-top: 12px;",
                   fluidRow(
-                    column(8, tags$p(style = "font-size: 12px; color: #6c757d;",
+                    column(8, tags$p(style = "font-size: 12px; color: var(--muted);",
                       "Predicted (theoretical) MS2 library for interactive browsing --",
                       " see Empirical MS2 Library for spectra built from real data.")),
                     column(4, actionButton("build_ms2_explorer", "Build / Refresh Library",
@@ -993,11 +1006,11 @@ ui <- fluidPage(
                   column(6, numericInput("align_loess_span", "Loess span",
                             value = DEFAULT_PIPELINE_PARAMS$align_loess_span, min = 0.1, max = 1, step = 0.1))
                 ),
-                tags$p(class = "help-note", style = "font-size:10.5px;color:#6c757d;margin:-4px 0 6px;",
+                tags$p(class = "help-note", style = "font-size:10.5px;color:var(--muted);margin:-4px 0 6px;",
                        "peakGroups-style alignment. Internal standards are used as anchors; ",
                        "samples with too few anchors keep their raw retention time.")
               ),
-              tags$p(style = "font-size: 10.5px; color: #6c757d;",
+              tags$p(style = "font-size: 10.5px; color: var(--muted);",
                      "Sample metadata (group/timepoint/type) is set on the Batch ",
                      "Processing tab -- not needed just to build the empirical library.")
             )
@@ -1009,7 +1022,7 @@ ui <- fluidPage(
           ),
           conditionalPanel(
             condition = "output.library_ready != 'true'",
-            tags$p(style = "font-size: 11px; color: #6c757d;",
+            tags$p(style = "font-size: 11px; color: var(--muted);",
                    "Run \"Generate Library\" on the Library Generation tab first.")
           )
         ),
@@ -1050,7 +1063,7 @@ ui <- fluidPage(
                 ),
                 conditionalPanel(
                   condition = "output.ms2_mirror_ready != 'true'",
-                  tags$p(style = "color: #6c757d;",
+                  tags$p(style = "color: var(--muted);",
                     "Enable MS matching, upload an MS2-containing file, and run to see the mirror plot here.")
                 )
               )
@@ -1070,7 +1083,7 @@ ui <- fluidPage(
                 ),
                 conditionalPanel(
                   condition = "output.batch_ready != 'true'",
-                  tags$p(style = "color: #6c757d;",
+                  tags$p(style = "color: var(--muted);",
                     "Upload raw files above and click \"Generate Empirical MS2 Library\" to see results here.")
                 ),
                 tags$hr(),
@@ -1114,7 +1127,7 @@ ui <- fluidPage(
                                 "Quant / calibration example (data matrix)" = "data_matrix_example"))),
                   column(4, actionButton("load_example_data", "Load", class = "btn-sm btn-outline-secondary w-100"))
                 ),
-                tags$p(style = "font-size: 10.5px; color: #6c757d; margin: -6px 0 2px;",
+                tags$p(style = "font-size: 10.5px; color: var(--muted); margin: -6px 0 2px;",
                        "Bundled data matrices you can load and explore without any files, ",
                        "library, or the Python backend. Analyte names are generic placeholders.")
               ),
@@ -1132,7 +1145,7 @@ ui <- fluidPage(
                             "metabolite with the most total signal."),
                           choices = character(0)),
               uiOutput("dm_status"),
-              tags$p(style = "font-size: 10.5px; color: #6c757d;",
+              tags$p(style = "font-size: 10.5px; color: var(--muted);",
                      "Wide: met_id (optional met_name, kind) plus one numeric column per ",
                      "sample. Long: sample, met_id, intensity/area (optional matrix, group, ",
                      "timepoint, sample_type, concentration). Both are exactly what the ",
@@ -1151,7 +1164,7 @@ ui <- fluidPage(
                                    accept = c(".csv", ".tsv", ".txt", ".xlsx", ".xls"),
                                    placeholder = "Upload sample info (.csv/.tsv/.xlsx)..."))
             ),
-            tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -10px;",
+            tags$p(style = "font-size: 10.5px; color: var(--muted); margin-top: -10px;",
                    "Columns: sample, matrix, group, timepoint, sample_type, concentration. ",
                    "Matrix (e.g. plasma, CSF, urine, liver) enables per-matrix analysis. ",
                    "Timepoint must be numeric (0, 4, 24) -- flagged live below if not. ",
@@ -1160,7 +1173,7 @@ ui <- fluidPage(
             DT::DTOutput("sample_meta_table"),
             uiOutput("sample_meta_timepoint_warn"),
             uiOutput("sample_meta_type_warn"),
-            tags$p(style = "font-size: 11px; color: #6c757d; margin-top: 4px;",
+            tags$p(style = "font-size: 11px; color: var(--muted); margin-top: 4px;",
                    "One row per uploaded file (see Empirical MS2 Library tab to upload ",
                    "raw files). Fill in Group (2+ groups) or Timepoint (time series) ",
                    "before running -- leave both blank to only extract and match ",
@@ -1170,12 +1183,12 @@ ui <- fluidPage(
             condition = "input.data_source == 'raw'",
             tags$div(class = "sidebar-section",
               tags$h5("Processing Options"),
-              tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -6px;",
+              tags$p(style = "font-size: 10.5px; color: var(--muted); margin-top: -6px;",
                      "Re-uses the same noise-threshold and confirmation settings as ",
                      "Empirical MS2 Library -- set there before running here."),
               checkboxInput("batch_force_rerun",
                             "Force re-run of peak picking and matching", value = FALSE),
-              tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -8px;",
+              tags$p(style = "font-size: 10.5px; color: var(--muted); margin-top: -8px;",
                      "Off (default): once raw files are processed (here or via Generate ",
                      "Empirical MS2 Library), Run Batch Processing reuses those results and ",
                      "only recomputes statistics and quantification from the current sample ",
@@ -1201,7 +1214,7 @@ ui <- fluidPage(
                   column(6, numericInput("xic_rt_window", "RT search (\u00b1min)", value = 0.5,
                                          min = 0.05, max = 5, step = 0.05))
                 ),
-                tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -6px;",
+                tags$p(style = "font-size: 10.5px; color: var(--muted); margin-top: -6px;",
                        "Isotopes are ranked by theoretical abundance; charge states by summed ",
                        "signal in the calibration standards/QCs, then fixed for every sample. ",
                        "Changing the counts or the fixed list re-sums instantly (no re-extraction); ",
@@ -1231,7 +1244,7 @@ ui <- fluidPage(
                             "sample (response ratio) when Signal basis is IS-normalized. ",
                             "Per-metabolite assignments are set on the Internal Standard tab."),
                           choices = c("None" = "none")),
-              tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: -10px;",
+              tags$p(style = "font-size: 10.5px; color: var(--muted); margin-top: -10px;",
                      "Selected metabolites are absolute-quantified from their own ",
                      "calibration curve (Sample Type = standard rows with a ",
                      "Concentration value; linear regression). Every other ",
@@ -1245,7 +1258,7 @@ ui <- fluidPage(
           ),
           conditionalPanel(
             condition = "input.data_source == 'raw' && output.library_ready != 'true'",
-            tags$p(style = "font-size: 11px; color: #6c757d;",
+            tags$p(style = "font-size: 11px; color: var(--muted);",
                    "Run \"Generate Library\" on the Library Generation tab first, or ",
                    "switch Data Source to a pre-processed data matrix.")
           ),
@@ -1253,7 +1266,7 @@ ui <- fluidPage(
             condition = "input.data_source == 'matrix'",
             actionButton("run_matrix_analysis", "Analyze Data Matrix",
                          class = "btn-primary btn-lg w-100"),
-            tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: 4px;",
+            tags$p(style = "font-size: 10.5px; color: var(--muted); margin-top: 4px;",
                    "Runs statistics, calibration curves, back-calculated concentrations, ",
                    "relative quantification, and degradation on the uploaded matrix. ",
                    "No peak picking, no Python.")
@@ -1275,7 +1288,7 @@ ui <- fluidPage(
                       column(5, tags$div(style = "padding-top: 26px;",
                         checkboxInput("batch_apply_pct",
                           "Show only metabolites at or above threshold", value = TRUE),
-                        tags$p(style = "font-size:10.5px;color:#6c757d;margin-top:-6px;",
+                        tags$p(style = "font-size:10.5px;color:var(--muted);margin-top:-6px;",
                           "Parent and internal standard are always kept.")))
                     )),
                   fluidRow(
@@ -1288,7 +1301,7 @@ ui <- fluidPage(
                     column(4, downloadButton("dl_bp_matrix_wide", "Data matrix -- wide (.csv)", class = "btn-primary w-100")),
                     column(4, downloadButton("dl_bp_matrix_long", "Data matrix -- long (.csv)", class = "btn-primary w-100"))
                   ),
-                  tags$p(style = "font-size: 10.5px; color: #6c757d; margin-top: 4px;",
+                  tags$p(style = "font-size: 10.5px; color: var(--muted); margin-top: 4px;",
                     "Export the data matrix once identification is done, then re-load it ",
                     "any time with Data Source = pre-processed data matrix -- no re-run of ",
                     "peak picking or matching needed. Raw signal (not blank-corrected)."),
@@ -1296,7 +1309,7 @@ ui <- fluidPage(
                   tags$details(class = "adv-panel",
                     tags$summary("Regulatory study report (HTML / Word)"),
                     tags$div(class = "adv-body",
-                      tags$p(style = "font-size: 11px; color: #6c757d;",
+                      tags$p(style = "font-size: 11px; color: var(--muted);",
                         "Scientific sections (test article, methods, results, structure maps, ",
                         "degradation, metabolite table) are filled from this run. Administrative, ",
                         "GLP and interpretive fields in brackets are completed by the study team; ",
@@ -1321,14 +1334,14 @@ ui <- fluidPage(
                     )),
                   tags$hr(),
                   tags$h6("MS2 Mirror Plot"),
-                  tags$p(style = "font-size: 12px; color: #6c757d;",
+                  tags$p(style = "font-size: 12px; color: var(--muted);",
                     "Select a row above with MS2 confirmation data (n_ms2_peaks > 0) to plot it."),
                   plotOutput("batch_mirror_plot", height = "380px")
                 )
               ),
               conditionalPanel(
                 condition = "output.batch_ready != 'true'",
-                tags$p(style = "padding-top: 12px; color: #6c757d;",
+                tags$p(style = "padding-top: 12px; color: var(--muted);",
                        "Upload files (Empirical MS2 Library tab) and click Run Batch Processing, ",
                        "or load a pre-processed data matrix, to see results here.")
               )
@@ -1340,7 +1353,7 @@ ui <- fluidPage(
                   uiOutput("xic_met_selector"),
                   tags$h6("Where the signal is: charge state x isotope"),
                   plotOutput("plot_xic_contributions", height = "340px"),
-                  tags$p(style = "font-size: 10.5px; color: #6c757d;",
+                  tags$p(style = "font-size: 10.5px; color: var(--muted);",
                     "Each cell is that ion's share of all extracted candidate signal in the ",
                     "reference samples (standards/QCs, else all). Outlined cells are the ions ",
                     "being summed. Aim for a set that covers the bulk of the distribution in ",
@@ -1372,7 +1385,7 @@ ui <- fluidPage(
               ),
               conditionalPanel(
                 condition = "output.xic_ready != 'true'",
-                tags$p(style = "padding-top: 12px; color: #6c757d;",
+                tags$p(style = "padding-top: 12px; color: var(--muted);",
                   "Run Batch Processing on raw files with \"Targeted summed-XIC quantitation\" ",
                   "ticked to see the ion map, chromatograms, and areas here.")
               )
@@ -1395,13 +1408,13 @@ ui <- fluidPage(
                   tags$h6("Calibration curve plot"),
                   uiOutput("calib_curve_selector"),
                   plotOutput("plot_calibration_curve", height = "380px"),
-                  tags$p(style = "font-size: 10.5px; color: #6c757d;",
+                  tags$p(style = "font-size: 10.5px; color: var(--muted);",
                     "Blue = standards the curve is fit from. Pink triangle/square = QC/unknown ",
                     "samples' own back-calculated concentration. Dotted lines mark the ",
                     "calibrated range -- a sample past either one is extrapolated."),
                   tags$hr(),
                   tags$h6("Calibration curves"),
-                  tags$p(style = "font-size: 12px; color: #6c757d;",
+                  tags$p(style = "font-size: 12px; color: var(--muted);",
                     "One row per metabolite selected for absolute quantification. ",
                     "\"note\" explains why a curve is missing instead of just disappearing."),
                   DT::DTOutput("calibration_curves_table"),
@@ -1440,7 +1453,7 @@ ui <- fluidPage(
                   downloadButton("dl_is_response_csv", "Download IS response (.csv)", class = "btn-outline-primary"),
                   tags$hr(),
                   tags$h6("IS assignment per metabolite"),
-                  tags$p(style = "font-size: 11px; color: #6c757d;",
+                  tags$p(style = "font-size: 11px; color: var(--muted);",
                     "Every metabolite uses the global IS (sidebar) unless assigned one here."),
                   fluidRow(
                     column(5, selectizeInput("is_ov_mets", "Metabolite(s)", choices = character(0), multiple = TRUE)),
@@ -1456,7 +1469,7 @@ ui <- fluidPage(
               ),
               conditionalPanel(
                 condition = "output.is_ready != 'true'",
-                tags$p(style = "padding-top: 12px; color: #6c757d;",
+                tags$p(style = "padding-top: 12px; color: var(--muted);",
                   "No internal standard in the results. Add one as a second FASTA record ",
                   "with 'IS' in its name (Library Generation), or, for a data matrix, give ",
                   "its row kind = IS or pick it as the global internal standard in the sidebar.")
@@ -1492,7 +1505,7 @@ ui <- fluidPage(
                   ),
                   tags$hr(),
                   tags$h6("Degradation relative to an earlier timepoint"),
-                  tags$p(style = "font-size: 11px; color: #6c757d;",
+                  tags$p(style = "font-size: 11px; color: var(--muted);",
                     "Per group and timepoint: % parent remaining and % parent loss against ",
                     "the reference timepoint (Statistical Analysis tab, default = earliest), ",
                     "the change in % degradation in percentage points, and the parent change ",
@@ -1508,7 +1521,7 @@ ui <- fluidPage(
               conditionalPanel(
                 condition = "output.batch_ready == 'true'",
                 tags$div(style = "padding-top: 12px;",
-                  tags$p(style = "font-size: 12px; color: #6c757d; margin-bottom: 10px;",
+                  tags$p(style = "font-size: 12px; color: var(--muted); margin-bottom: 10px;",
                     "Every identified metabolite placed on the parent sequence and colored by ",
                     "degradation class, across the study's timepoints and matrices (after the ",
                     "manner of Shen et al., OligoFragger 2026, Fig 3d). Rows are timepoints, ",
@@ -1538,13 +1551,13 @@ ui <- fluidPage(
               column(6, selectInput("stats_group_a", "Group A (optional override)", choices = character(0))),
               column(6, selectInput("stats_group_b", "Group B (optional override)", choices = character(0)))
             ),
-            tags$p(style = "font-size: 10px; color: #6c757d; margin-top: -8px;",
+            tags$p(style = "font-size: 10px; color: var(--muted); margin-top: -8px;",
                    "Leave both blank to auto-pick the first two Group values found. ",
                    "Only used for a 2-group design; ignored for 3+ groups or time-course."),
             uiOutput("stats_matrix_ui"),
             selectInput("stats_reference_timepoint", "Reference timepoint (baseline)",
                         choices = c("Auto (earliest)" = "")),
-            tags$p(style = "font-size: 10px; color: #6c757d; margin-top: -8px;",
+            tags$p(style = "font-size: 10px; color: var(--muted); margin-top: -8px;",
                    "Time-course relative quantification and the Time Course trend plot ",
                    "normalize every sample to this timepoint's mean signal. \"Auto\" picks ",
                    "the smallest Timepoint value -- override this when pre-dose/reference ",
@@ -1566,7 +1579,7 @@ ui <- fluidPage(
           tags$details(class = "adv-panel",
             tags$summary("Charge Grouping (Advanced)"),
             tags$div(class = "adv-body",
-              tags$p(style = "font-size: 9.5px; color: #6c757d; font-style: italic;",
+              tags$p(style = "font-size: 9.5px; color: var(--muted); font-style: italic;",
                      "Groups co-eluting peaks by neutral mass agreement (charge_group.py logic)."),
               fluidRow(
                 column(6, numericInput("cg_rt_tol", "RT tolerance (min)", value = 0.15, min = 0, step = 0.01)),
@@ -1579,7 +1592,7 @@ ui <- fluidPage(
             )
           ),
           actionButton("run_stats", "Run Statistical Analysis", class = "btn-primary btn-lg w-100"),
-          tags$p(style = "font-size: 10.5px; color: #6c757d;",
+          tags$p(style = "font-size: 10.5px; color: var(--muted);",
                  "Statistics already run automatically as part of Batch Processing when ",
                  "Group/Timepoint is filled in -- this button just re-applies the ",
                  "P-adjustment/threshold settings above to the existing results.")
@@ -1591,7 +1604,7 @@ ui <- fluidPage(
               conditionalPanel(
                 condition = "output.batch_ready == 'true'",
                 tags$div(style = "padding-top: 12px;",
-                  tags$p(style = "font-size: 12px; color: #6c757d;",
+                  tags$p(style = "font-size: 12px; color: var(--muted);",
                     "One row per metabolite (kind/z), one column per sample -- ",
                     "max-intensity match per metabolite per sample, matching how the ",
                     "batch pipeline already collapses charge states before matching. ",
@@ -1604,7 +1617,7 @@ ui <- fluidPage(
                   ),
                   tags$hr(),
                   tags$h6("Blank value (reagent/matrix blank subtraction)"),
-                  tags$p(style = "font-size: 11px; color: #6c757d;",
+                  tags$p(style = "font-size: 11px; color: var(--muted);",
                     "Per-metabolite mean signal across every reagent_blank/matrix_blank ",
                     "sample (Sample Type or RB/MB in name), pooled together -- this is ",
                     "exactly what gets subtracted for the \"Blank-corrected\" Signal basis ",
@@ -1616,7 +1629,7 @@ ui <- fluidPage(
               ),
               conditionalPanel(
                 condition = "output.batch_ready != 'true'",
-                tags$p(style = "padding-top: 12px; color: #6c757d;",
+                tags$p(style = "padding-top: 12px; color: var(--muted);",
                        "Run Batch Processing to see the data matrix here.")
               )
             ),
@@ -1633,7 +1646,7 @@ ui <- fluidPage(
               ),
               conditionalPanel(
                 condition = "output.stats_ready != 'true'",
-                tags$p(style = "padding-top: 12px; color: #6c757d;",
+                tags$p(style = "padding-top: 12px; color: var(--muted);",
                        "Fill in Group or Timepoint in the batch sample table to see comparisons here. ",
                        "Time-course vs. group comparison is auto-detected from that column.")
               )
@@ -1642,7 +1655,7 @@ ui <- fluidPage(
               conditionalPanel(
                 condition = "output.kind_stats_ready == 'true'",
                 tags$div(style = "padding-top: 12px;",
-                  tags$p(style = "font-size: 12px; color: #6c757d;",
+                  tags$p(style = "font-size: 12px; color: var(--muted);",
                     "Same comparison, rolled up by metabolite class (parent / 5' exonuclease / ",
                     "3' exonuclease / endonuclease) instead of per-metabolite."),
                   DT::DTOutput("kind_stats_table"),
@@ -1655,7 +1668,7 @@ ui <- fluidPage(
               conditionalPanel(
                 condition = "output.batch_ready == 'true'",
                 tags$div(style = "padding-top: 12px;",
-                  tags$p(style = "font-size: 12px; color: #6c757d;",
+                  tags$p(style = "font-size: 12px; color: var(--muted);",
                     "Per-metabolite time-course comparison already runs automatically under ",
                     "Univariate Statistics when Timepoint is filled in -- this is the same ",
                     "data, several metabolites overlaid on one shared scale so their kinetics ",
@@ -1675,7 +1688,7 @@ ui <- fluidPage(
               ),
               conditionalPanel(
                 condition = "output.batch_ready != 'true'",
-                tags$p(style = "padding-top: 12px; color: #6c757d;",
+                tags$p(style = "padding-top: 12px; color: var(--muted);",
                        "Run Batch Processing with Timepoint filled in to see a multi-metabolite trend here.")
               )
             ),
@@ -1683,7 +1696,7 @@ ui <- fluidPage(
               conditionalPanel(
                 condition = "output.batch_ready == 'true'",
                 tags$div(style = "padding-top: 12px;",
-                  tags$p(style = "font-size: 12px; color: #6c757d;",
+                  tags$p(style = "font-size: 12px; color: var(--muted);",
                     "PCA and hierarchical clustering of samples by metabolite profile. ",
                     "Calibration standards, QC, and blanks are excluded (Sample Type on the ",
                     "Batch Processing tab), same as everywhere else in this tab."),
@@ -1696,7 +1709,7 @@ ui <- fluidPage(
                   uiOutput("multivariate_note"),
                   tags$h6("PCA -- sample scores"),
                   plotOutput("plot_pca_scores", height = "320px"),
-                  tags$p(style = "font-size: 11px; color: #6c757d; margin-top: -4px;",
+                  tags$p(style = "font-size: 11px; color: var(--muted); margin-top: -4px;",
                          "Loadings: which metabolites drive each component, ranked by |PC1|."),
                   DT::DTOutput("pca_loadings_table"),
                   fluidRow(
@@ -1714,7 +1727,7 @@ ui <- fluidPage(
               ),
               conditionalPanel(
                 condition = "output.batch_ready != 'true'",
-                tags$p(style = "padding-top: 12px; color: #6c757d;",
+                tags$p(style = "padding-top: 12px; color: var(--muted);",
                        "Run Batch Processing to see PCA / clustering here.")
               )
             )
@@ -1736,13 +1749,13 @@ ui <- fluidPage(
                          choices = c("Anthropic Claude" = "anthropic", "OpenAI" = "openai"),
                          inline = TRUE),
             textOutput("agent_key_status"),
-            tags$p(style = "font-size: 11px; color: #6c757d; margin-top: 6px;",
+            tags$p(style = "font-size: 11px; color: var(--muted); margin-top: 6px;",
                    "API keys are read from the ANTHROPIC_API_KEY / OPENAI_API_KEY ",
                    "environment variables -- never typed into this page.")
           ),
           tags$div(class = "sidebar-section",
             tags$h5("What it can see"),
-            tags$p(style = "font-size: 12px; color: #6c757d;",
+            tags$p(style = "font-size: 12px; color: var(--muted);",
                    "Whatever sequence / library / batch results are already loaded in ",
                    "this session, across all tabs. It does not write back into the main ",
                    "tabs -- re-run the relevant tab yourself if you want a suggestion ",
@@ -1765,7 +1778,7 @@ ui <- fluidPage(
               actionButton("agent_clear", "Clear", class = "btn-outline-secondary btn-sm w-100"))
           ),
           conditionalPanel(condition = "output.agent_busy_flag == 'true'",
-            tags$p(style = "color: #6c757d; font-size: 12px;", "Thinking..."))
+            tags$p(style = "color: var(--muted); font-size: 12px;", "Thinking..."))
         )
       )
     ),
@@ -2543,7 +2556,7 @@ server <- function(input, output, session) {
   output$stats_matrix_ui <- renderUI({
     lv <- .matrix_levels()
     if (length(lv) == 0) {
-      return(tags$p(style = "font-size: 10px; color: #6c757d; margin: 0 0 10px;",
+      return(tags$p(style = "font-size: 10px; color: var(--muted); margin: 0 0 10px;",
         "Add a 'matrix' column to the sample metadata (e.g. plasma, CSF, urine, liver) to analyze one matrix at a time."))
     }
     selectInput("stats_matrix", "Matrix (per-matrix analysis)",
@@ -3516,7 +3529,7 @@ server <- function(input, output, session) {
   output$stats_design_summary <- renderUI({
     meta <- rv$sample_meta
     if (is.null(meta)) {
-      return(tags$p(style = "font-size: 10.5px; color: #6c757d;",
+      return(tags$p(style = "font-size: 10.5px; color: var(--muted);",
                     "Run Batch Processing with Group or Timepoint filled in to see the detected design here."))
     }
     has_time <- !is.null(meta$timepoint) && any(nzchar(meta$timepoint))
@@ -3534,12 +3547,12 @@ server <- function(input, output, session) {
     meta <- batch_meta_data()
     if (is.null(bres) || is.null(.qm(bres)) || nrow(.qm(bres)) == 0 ||
         is.null(meta) || nrow(meta) == 0) {
-      return(tags$p(style = "font-size: 10px; color: #6c757d; margin-top: -6px;",
+      return(tags$p(style = "font-size: 10px; color: var(--muted); margin-top: -6px;",
                     "No batch results yet."))
     }
     blank <- compute_blank_signal(.qm(bres), meta)
     if (nzchar(blank$note) && all(blank$table$n_blank == 0)) {
-      tags$p(style = "font-size: 10px; color: #6c757d; margin-top: -6px;",
+      tags$p(style = "font-size: 10px; color: var(--muted); margin-top: -6px;",
              "No reagent_blank/matrix_blank samples detected (by Sample Type or RB/MB in name).")
     } else {
       n_met <- sum(blank$table$n_blank > 0)
@@ -4304,7 +4317,7 @@ server <- function(input, output, session) {
     r <- ms2_lib_rv()[[sel]]
     ggplot2::ggplot(r$peaks, ggplot2::aes(x = mz, y = intensity)) +
       ggplot2::geom_segment(ggplot2::aes(xend = mz, yend = 0),
-                            color = "#2c3e50", linewidth = 0.3, alpha = 0.7) +
+                            color = "var(--ink)", linewidth = 0.3, alpha = 0.7) +
       ggplot2::labs(x = "m/z", y = "Relative intensity (rule-based heuristic)",
                     title = r$name,
                     subtitle = paste0(nrow(r$peaks), " predicted fragment ions")) +
@@ -4434,7 +4447,7 @@ server <- function(input, output, session) {
     } else {
       "Run batch processing with Group/Timepoint (and Sample Type = standard for calibration) filled in to see this here."
     }
-    tags$p(style = "padding-top: 12px; color: #6c757d;", msg)
+    tags$p(style = "padding-top: 12px; color: var(--muted);", msg)
   })
 
   # Flattens rv$quant_results$calibration_curves (a named list of
@@ -4796,7 +4809,7 @@ server <- function(input, output, session) {
     esc <- gsub("\n", "<br/>", htmltools::htmlEscape(text), fixed = TRUE)
     style <- switch(role,
       user = "background:#0279EE; color:#fff; margin-left:auto; margin-right:0;",
-      tool = paste("background:#fff; color:#6c757d; border:1px dashed #ccc;",
+      tool = paste("background:#fff; color:var(--muted); border:1px dashed #ccc;",
                    "font-family:monospace; font-size:11px; margin-right:auto;"),
       "background:#fff; border:1px solid #ddd; margin-right:auto;")
     label <- switch(role, user = "You", tool = "Tool call", "Assistant")
@@ -4810,7 +4823,7 @@ server <- function(input, output, session) {
   output$agent_chat_html <- renderUI({
     entries <- .agent_display_entries(rv$agent_messages)
     if (length(entries) == 0) {
-      return(tags$p(style = "color: #6c757d;",
+      return(tags$p(style = "color: var(--muted);",
                     "Ask a question about your sequence, a match, or what's degrading."))
     }
     HTML(paste(vapply(entries, function(e) .agent_chat_bubble_html(e$role, e$text), character(1)),
@@ -4972,11 +4985,11 @@ server <- function(input, output, session) {
       ringcol <- if (conf) "#009E73" else "#E69F00"
       ms2_ui <- tags$div(class = "insp-ms2",
         tags$div(class = "insp-ring",
-          style = sprintf("background:conic-gradient(%s 0 %d%%, #e5e8ec %d%% 100%%);", ringcol, pctdeg, pctdeg),
+          style = sprintf("background:conic-gradient(%s 0 %d%%, var(--line) %d%% 100%%);", ringcol, pctdeg, pctdeg),
           tags$i(sprintf("%.2f", sc))),
         tags$div(style = "font-size:12px;",
           tags$b(if (conf) "MS2 confirmed" else "MS2 partial"), tags$br(),
-          tags$span(style = "color:#6c757d;",
+          tags$span(style = "color:var(--muted);",
             paste(c(cov, if (!is.na(row$n_frag_matches)) sprintf("%d frags", row$n_frag_matches)), collapse = " · "))))
     }
 
@@ -5100,7 +5113,7 @@ server <- function(input, output, session) {
       none = "No Group or Timepoint in the sample table: fill them in (Batch Processing > Sample Metadata) to group degradation by experimental condition.",
       group = "Grouped by Group.", timepoint = "Grouped by Timepoint.",
       group_timepoint = "Grouped by Group x Timepoint.")
-    tags$p(style = paste0("font-size: 11px; color: ", if (bc$design == "none") "#a3231b" else "#6c757d", ";"),
+    tags$p(style = paste0("font-size: 11px; color: ", if (bc$design == "none") "#a3231b" else "var(--muted)", ";"),
            txt, if (bc$design != "none") " Calibration standards, QCs and blanks are excluded.")
   })
   output$plot_degradation_by_condition <- renderPlot({
