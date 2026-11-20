@@ -101,7 +101,9 @@
 #' @export
 degradation_position_model <- function(matches, mets, spec, sample_meta = NULL,
                                        oligo_name = "parent", signal_col = "area",
-                                       min_pct = 0.1, ms2_cutoff = 0) {
+                                       min_pct = 0.1, ms2_cutoff = 0,
+                                       norm = c("sample_parent", "initial_parent")) {
+  norm <- match.arg(norm)
   parent_n <- spec$n %||% length(spec$bases)
   gap <- NULL
   if (!is.null(spec$sugars)) {
@@ -112,6 +114,7 @@ degradation_position_model <- function(matches, mets, spec, sample_meta = NULL,
   empty <- function() data.frame()
   model <- list(oligo = oligo_name, seq = as.character(spec$bases),
                 gap = gap, times = character(0), matrices = character(0),
+                norm = norm,
                 base = empty(), cleave = empty(), conj = empty(),
                 covered = empty(), parent = empty())
   if (is.null(matches) || nrow(matches) == 0) return(model)
@@ -171,6 +174,24 @@ degradation_position_model <- function(matches, mets, spec, sample_meta = NULL,
   ctrl_key <- unlist(lapply(names(ctrl_info), function(x)
     paste(x, ctrl_info[[x]]$levels[ctrl_info[[x]]$ctrl], sep = "\r")), use.names = FALSE)
   m$.predose <- paste(m$.mx, m$.tp, sep = "\r") %in% (ctrl_key %||% character(0))
+
+  # Normalization basis for a cell's percent. "sample_parent" (default): each
+  # cell is a percent of the parent in the SAME sample/timepoint (a within-
+  # sample composition snapshot). "initial_parent": each cell is a percent of
+  # the parent at the arm's reference timepoint (earliest non-control), a fixed
+  # denominator so a species' trajectory over time is not distorted by the
+  # shrinking same-sample parent -- the kinetic view (see
+  # parent_relative_timecourse() and its references).
+  if (identical(norm, "initial_parent") && length(ctrl_info) > 0) {
+    refp <- vapply(names(ctrl_info), function(x) {
+      ci <- ctrl_info[[x]]
+      nz <- which(!ci$ctrl & is.finite(ci$sig) & ci$sig > 0)
+      if (length(nz) > 0) ci$sig[nz[1]] else suppressWarnings(max(ci$sig, na.rm = TRUE))
+    }, numeric(1))
+    names(refp) <- names(ctrl_info)
+    denom <- refp[m$.mx]
+    m$.pct <- ifelse(is.na(denom) | denom <= 0, NA_real_, 100 * m$.sig / denom)
+  }
 
   mod <- if ("mod" %in% names(m)) as.character(m$mod) else rep("none", nrow(m))
   mod[is.na(mod)] <- "none"
@@ -473,7 +494,9 @@ degradation_map_html <- function(model, id = "dmap1") {
     '<span class="lr"><span class="sw cov">&nbsp;</span> Covered, no modification</span></div>',
     '<div class="lg"><span class="t">Confidence</span>',
     '<span class="lr"><span class="mkdot"></span>&nbsp; MS2-confirmed</span>',
-    '<span class="lr" style="color:var(--mut)">Opacity &prop; % of parent &middot; &gt;p = cyclic phosphate</span></div>',
+    sprintf('<span class="lr" style="color:var(--mut)">Opacity &prop; %s &middot; &gt;p = cyclic phosphate</span></div>',
+            if (identical(model$norm %||% "sample_parent", "initial_parent"))
+              "% of initial parent (reference timepoint)" else "% of same-sample parent"),
     '</div></div>')
   body <- paste0(
     '<div class="dmap" id="', id, '">',

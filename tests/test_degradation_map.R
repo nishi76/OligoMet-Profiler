@@ -108,6 +108,19 @@ check("min_pct filter drops sub-threshold base cells", {
   m2 <- degradation_position_model(matches, mets, spec, sm, min_pct = 4.5)
   all(m2$base$pct >= 4.5)
 })
+check("norm = 'initial_parent' is carried on the model", {
+  mi <- degradation_position_model(matches, mets, spec, sm, min_pct = 0.1, norm = "initial_parent")
+  identical(mi$norm, "initial_parent") && identical(model$norm, "sample_parent")
+})
+check("initial-parent basis divides by the reference-timepoint parent, not the same-sample one", {
+  # At 168h plasma the parent has collapsed, so the same-sample denominator is
+  # small (large %) while the fixed reference-timepoint denominator is the full
+  # 24h parent (smaller %). The two must differ in that direction.
+  mi <- degradation_position_model(matches, mets, spec, sm, min_pct = 0.0, norm = "initial_parent")
+  sp <- model$base$pct[model$base$cls == "dA" & model$base$matrix == "plasma" & model$base$time == "168h"]
+  ip <- mi$base$pct[mi$base$cls == "dA" & mi$base$matrix == "plasma" & mi$base$time == "168h"]
+  length(sp) == 1 && length(ip) == 1 && ip < sp
+})
 check("empty matches returns an empty model, no error", {
   m0 <- degradation_position_model(data.frame(), mets, spec, sm)
   nrow(m0$base) == 0 && nrow(m0$cleave) == 0 && length(m0$matrices) == 0

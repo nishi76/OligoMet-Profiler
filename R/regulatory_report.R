@@ -718,6 +718,25 @@
       `Observed at` = rep_mets$at,
       check.names = FALSE, stringsAsFactors = FALSE)
     TAB(ab_tab, "Maximum abundance of each reported species in study samples.", widths = c(1.6, 1.0, 1.0, 1.15, 1.52))
+    P("Normalization. Abundances are reported on two complementary bases. ",
+      "The within-sample basis expresses each species as a percentage of the parent (or of the ",
+      "total drug-related signal) in the same injection: a composition snapshot that answers what ",
+      "fraction of the material present is each species, as used in oligonucleotide purity and ",
+      "impurity profiling (Wong and Rye, Agilent BioConfirm application note; Zhao et al., J. Pharm. ",
+      "Biomed. Anal. 270, 2026). For the time course, the application additionally provides a ",
+      "parent-relative kinetic basis in which every species is divided by the intact parent at each ",
+      "arm's reference timepoint (the earliest dosed timepoint; a leading pre-dose negative control ",
+      "with no drug is detected by signal and excluded as the reference). On this fixed denominator ",
+      "the parent declines from 100% and degradants rise from near 0%, so a species' trajectory ",
+      "reflects its own change rather than the shrinking same-sample parent. This follows the ",
+      "parent-versus-T0 normalization used for oligonucleotide degradation by Ye et al. (J. ",
+      "Chromatogr. B 1254, 2025) and the recommendation of the LC-MS metabolomics normalization ",
+      "literature against a moving total or same-sample basis when the analytes themselves change in ",
+      "concentration (Gorrochategui et al., Trends Anal. Chem. 82, 2016). Values are semi-quantitative: ",
+      "a same-analyte parent ratio cancels ionization efficiency, but a degradant divided by the parent ",
+      "mixes two species with different response factors and is a response ratio rather than a molar ",
+      "percentage unless an internal-standard-normalized response is used (Kumar et al., J. Chromatogr. ",
+      "B 1270, 2026) or authentic reference standards are applied.")
     excl <- if (!is.null(pm)) pm[!pm$reported & pm$kind != "internal_standard" & pm$n_detected > 0, , drop = FALSE] else NULL
     if (!is.null(excl) && nrow(excl) > 0)
       P(sprintf("%d further species were detected below the %s%% reporting threshold (%s) and are not reported.",

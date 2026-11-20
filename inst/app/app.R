@@ -1574,7 +1574,23 @@ ui <- fluidPage(
                   plotOutput("plot_degradation_vs_ref", height = "300px"),
                   DT::DTOutput("degradation_vs_ref_table"),
                   tags$div(style = "height: 8px;"),
-                  downloadButton("dl_degradation_vs_ref_csv", "Download degradation vs reference (.csv)", class = "btn-outline-primary")
+                  downloadButton("dl_degradation_vs_ref_csv", "Download degradation vs reference (.csv)", class = "btn-outline-primary"),
+                  tags$hr(),
+                  tags$h6("Parent-relative time course (% of initial parent)"),
+                  tags$p(style = "font-size: 11px; color: var(--muted);",
+                    "Every species, parent and degradants, on one fixed denominator: the intact ",
+                    "parent at the reference timepoint. The parent declines from ~100% and ",
+                    "short-mers/degradants rise from ~0%, so each trajectory reflects its own ",
+                    "change rather than the shrinking same-sample parent. This is the kinetic ",
+                    "normalization (Ye et al. 2025 normalize parent degradation to T0; the ",
+                    "metabolomics normalization literature advises against a moving total/parent ",
+                    "basis when the analytes themselves change, Gorrochategui et al. 2016). Signal ",
+                    "is semi-quantitative: a degradant divided by the parent is a response ratio, ",
+                    "not a molar percent, unless signal is internal-standard-normalized."),
+                  plotOutput("plot_parent_relative_tc", height = "320px"),
+                  DT::DTOutput("parent_relative_tc_table"),
+                  tags$div(style = "height: 8px;"),
+                  downloadButton("dl_parent_relative_tc_csv", "Download parent-relative time course (.csv)", class = "btn-outline-primary")
                 )
               )
             ),
@@ -1587,8 +1603,19 @@ ui <- fluidPage(
                     "degradation class, across the study's timepoints and matrices (after the ",
                     "manner of Shen et al., OligoFragger 2026, Fig 3d). Rows are timepoints, ",
                     "columns are residue and linkage positions; cell opacity scales with abundance ",
-                    "relative to the full-length parent. Needs sample metadata (timepoint / matrix) ",
-                    "for the axes."),
+                    "relative to the parent. Needs sample metadata (timepoint / matrix) for the axes."),
+                  radioButtons("deg_map_norm", "Abundance basis (cell opacity)",
+                    choices = c(
+                      "% of initial parent (reference timepoint, kinetic)" = "initial_parent",
+                      "% of same-sample parent (per-timepoint composition)" = "sample_parent"),
+                    selected = "initial_parent"),
+                  tags$p(style = "font-size: 10.5px; color: var(--muted); margin-top: -6px;",
+                    "Initial-parent: each cell is a percent of the intact parent at the arm's ",
+                    "reference timepoint, a fixed denominator, so a species' rise over time is not ",
+                    "distorted by the shrinking same-sample parent (the kinetic view; Ye et al. 2025 ",
+                    "normalize parent degradation to T0 this way). Same-sample: composition within ",
+                    "each injection (the purity-profiling view; Agilent BioConfirm, Zhao et al. 2026). ",
+                    "The parent track is always shown as % remaining vs the reference timepoint."),
                   uiOutput("degradation_map_ui")
                 )
               )
@@ -5345,7 +5372,8 @@ server <- function(input, output, session) {
       degradation_position_model(
         br$ms1_matches, rv$mets, rv$spec, sample_meta = meta,
         oligo_name = input$oligo_name %||% "parent",
-        signal_col = "area", min_pct = input$parent_pct_min %||% 0.1),
+        signal_col = "area", min_pct = input$parent_pct_min %||% 0.1,
+        norm = input$deg_map_norm %||% "initial_parent"),
       error = function(e) {
         rv$status_text <- paste0(rv$status_text, "Degradation map: ", conditionMessage(e), "\n")
         NULL
@@ -5402,6 +5430,31 @@ server <- function(input, output, session) {
   output$plot_degradation_vs_ref <- renderPlot({
     plot_degradation_vs_reference(.degradation_vs_ref())
   })
+
+  # Parent-relative ("% of initial parent") time course: every species on the
+  # fixed reference-timepoint-parent denominator (R/degradation.R).
+  .parent_relative_tc <- reactive({
+    br <- rv$batch_ms_results
+    if (is.null(br) || is.null(br$ms1_matches) || nrow(br$ms1_matches) == 0) return(data.frame())
+    meta <- batch_meta_data()
+    if (is.null(meta) || !"timepoint" %in% names(meta)) return(data.frame())
+    parent_relative_timecourse(br$ms1_matches, meta,
+                               reference_timepoint = .resolve_reference_timepoint())
+  })
+  output$plot_parent_relative_tc <- renderPlot({
+    plot_parent_relative_timecourse(.parent_relative_tc())
+  })
+  output$parent_relative_tc_table <- DT::renderDT({
+    pr <- .parent_relative_tc()
+    req(.has_rows(pr))
+    DT::datatable(pr, rownames = FALSE, options = list(pageLength = 10, scrollX = TRUE)) |>
+      DT::formatRound(intersect(c("mean_signal", "sd_signal", "pct_of_initial_parent"), names(pr)),
+                      digits = 2)
+  })
+  output$dl_parent_relative_tc_csv <- downloadHandler(
+    filename = function() paste0(input$output_prefix, "_parent_relative_timecourse.csv"),
+    content = function(file) utils::write.csv(.parent_relative_tc(), file, row.names = FALSE)
+  )
 
   output$degradation_vs_ref_table <- DT::renderDT({
     df <- .degradation_vs_ref()

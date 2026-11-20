@@ -521,3 +521,148 @@ plot_degradation_vs_reference <- function(deg_ref) {
                                     paste(unique(d$reference_timepoint), collapse = ", "))) +
     theme_oligomet()
 }
+
+## ---- Parent-relative ("% of initial parent") time course -------------------
+#' Parent-relative time course (every species vs. the initial parent)
+#'
+#' Expresses every species, parent and degradants alike, as a percentage of
+#' the intact parent signal at the reference timepoint of its arm. The parent
+#' declines from ~100% and degradants rise from ~0% on one fixed denominator,
+#' so a species' trajectory reflects its own change rather than the shrinking
+#' same-sample parent. This is the kinetic normalization used for parent
+#' degradation by Ye et al. (J. Chromatogr. B 1254, 2025, parent peak area vs
+#' the T0 sample) and the denominator the metabolomics normalization literature
+#' recommends over a moving same-sample/total basis, which "can cause serious
+#' data distortions" when the analytes themselves change in concentration
+#' (Gorrochategui et al., TrAC 82, 2016). The within-sample composition views
+#' ([degradation_summary()]'s `pct_of_total`; the degradation map's default)
+#' answer a different, snapshot question and remain available.
+#'
+#' A leading predose negative control (no drug dosed, near-zero parent signal)
+#' is detected by signal, not the clock, and excluded as the reference, the
+#' same < 10%-of-arm-max leading-run rule as [degradation_vs_reference()], so a
+#' genuine t=0 dosing point stays the 100% anchor.
+#'
+#' The measure is semi-quantitative. `parent(t)/parent(t_ref)` is a clean
+#' within-analyte ratio (ionization efficiency cancels), but a degradant
+#' divided by the parent mixes two molecules with different response factors,
+#' so a degradant value is a response ratio, not a molar percentage, unless an
+#' internal-standard-normalized `signal_col` is supplied (recommended, per the
+#' bioanalysis roadmap of Kumar et al., J. Chromatogr. B 1270, 2026) or
+#' authentic standards are used. For a duplex, pass one strand's species at a
+#' time (or group by strand) so each parent anchors its own family.
+#'
+#' @param ms1_matches `ms1_matches` (see [annotate_metabolites_batch()]).
+#' @param sample_meta data.frame with `sample`, `timepoint`, optional `group`
+#'   and `sample_type` (only study samples are kept when `sample_type` given).
+#' @param reference_timepoint Numeric reference timepoint, or `NULL` (default)
+#'   for the earliest non-predose timepoint per arm.
+#' @param signal_col Signal column; `NULL` auto-detects `area` then
+#'   `intensity`. Pass an IS-normalized column to remove recovery/injection
+#'   drift.
+#' @return A long data.frame: `group`, `met_id`, `met_name`, `kind`,
+#'   `timepoint`, `n`, `mean_signal`, `sd_signal`, `pct_of_initial_parent`,
+#'   `reference_timepoint`, `is_predose`. Empty when there is no numeric
+#'   timepoint or no parent signal to anchor to.
+#' @seealso [degradation_vs_reference()], [plot_parent_relative_timecourse()]
+#' @export
+parent_relative_timecourse <- function(ms1_matches, sample_meta,
+                                       reference_timepoint = NULL, signal_col = NULL) {
+  if (is.null(ms1_matches) || nrow(ms1_matches) == 0 ||
+      is.null(sample_meta) || !"timepoint" %in% names(sample_meta)) return(data.frame())
+  if (is.null(signal_col)) {
+    signal_col <- if ("area" %in% names(ms1_matches) && any(!is.na(ms1_matches$area))) "area"
+                  else if ("intensity" %in% names(ms1_matches)) "intensity" else return(data.frame())
+  } else if (!signal_col %in% names(ms1_matches) || all(is.na(ms1_matches[[signal_col]]))) {
+    return(data.frame())
+  }
+  m <- ms1_matches[!is.na(ms1_matches[[signal_col]]), , drop = FALSE]
+  if ("kind" %in% names(m)) m <- m[is.na(m$kind) | m$kind != "internal_standard", , drop = FALSE]
+  if ("sample_type" %in% names(sample_meta)) {
+    keep <- sample_meta$sample[.is_study_sample(sample_meta$sample_type)]
+    m <- m[m$sample %in% keep, , drop = FALSE]
+  }
+  if (nrow(m) == 0 || !"kind" %in% names(m)) return(data.frame())
+
+  best <- .best_signal_per_met(m, signal_col)
+  best <- merge(best, unique(m[, c("met_id", "met_name", "kind")]), by = "met_id")
+  meta_cols <- intersect(c("sample", "group", "timepoint"), names(sample_meta))
+  best <- merge(best, sample_meta[, meta_cols, drop = FALSE], by = "sample")
+  best$timepoint <- suppressWarnings(as.numeric(best$timepoint))
+  best <- best[!is.na(best$timepoint), , drop = FALSE]
+  if (nrow(best) == 0) return(data.frame())
+  best$group <- if ("group" %in% names(best)) ifelse(is.na(best$group), "", as.character(best$group)) else ""
+  names(best)[names(best) == signal_col] <- "signal"
+
+  rows <- lapply(split(best, best$group), function(g) {
+    par <- g[g$kind == "parent", , drop = FALSE]
+    if (nrow(par) == 0) return(NULL)
+    ptp <- stats::aggregate(signal ~ timepoint, data = par, FUN = mean)
+    ptp <- ptp[order(ptp$timepoint), , drop = FALSE]
+    maxp <- suppressWarnings(max(ptp$signal, na.rm = TRUE))
+    is_pre <- rep(FALSE, nrow(ptp))
+    if (is.finite(maxp) && maxp > 0) is_pre <- cumprod(as.integer(ptp$signal < 0.10 * maxp)) == 1
+    ref_t <- if (is.null(reference_timepoint) || is.na(reference_timepoint)) {
+      cand <- ptp$timepoint[!is_pre]; if (length(cand) > 0) min(cand) else min(ptp$timepoint)
+    } else reference_timepoint
+    ref_parent <- ptp$signal[ptp$timepoint == ref_t][1]
+    if (length(ref_parent) == 0 || !is.finite(ref_parent) || ref_parent <= 0) return(NULL)
+    predose_tps <- ptp$timepoint[is_pre]
+    ag <- stats::aggregate(signal ~ met_id + met_name + kind + timepoint, data = g,
+                           FUN = function(v) c(mean = mean(v), sd = stats::sd(v), n = length(v)))
+    out <- data.frame(group = g$group[1],
+                      ag[, c("met_id", "met_name", "kind", "timepoint")],
+                      n = ag$signal[, "n"], mean_signal = ag$signal[, "mean"],
+                      sd_signal = ag$signal[, "sd"], stringsAsFactors = FALSE)
+    out$pct_of_initial_parent <- round(100 * out$mean_signal / ref_parent, 3)
+    out$reference_timepoint <- ref_t
+    out$is_predose <- out$timepoint %in% predose_tps
+    out[order(out$met_id, out$timepoint), , drop = FALSE]
+  })
+  res <- do.call(rbind, rows[!vapply(rows, is.null, logical(1))])
+  if (is.null(res)) return(data.frame())
+  rownames(res) <- NULL
+  res
+}
+
+#' Plot the parent-relative ("% of initial parent") time course
+#'
+#' Parent declines from ~100% and the top degradants rise from ~0% on the fixed
+#' reference-parent denominator, faceted per arm. The parent is drawn in black;
+#' degradants take colourblind-safe colours. A dotted line marks the reference
+#' timepoint and a dashed line marks 100%.
+#'
+#' @param pr Output of [parent_relative_timecourse()].
+#' @param max_species Maximum degradant species to draw, by peak value; the
+#'   parent is always shown. Default 8.
+#' @return A ggplot object (placeholder when `pr` is empty).
+#' @seealso [parent_relative_timecourse()]
+#' @export
+plot_parent_relative_timecourse <- function(pr, max_species = 8) {
+  if (is.null(pr) || nrow(pr) == 0)
+    return(ggplot2::ggplot() + ggplot2::theme_void() +
+             ggplot2::labs(title = "No time-course data to show"))
+  peak <- stats::aggregate(pct_of_initial_parent ~ met_id + met_name + kind, data = pr, FUN = max)
+  deg <- peak[peak$kind != "parent", , drop = FALSE]
+  deg <- deg[order(-deg$pct_of_initial_parent), , drop = FALSE]
+  keep_ids <- c(peak$met_id[peak$kind == "parent"], utils::head(deg$met_id, max_species))
+  d <- pr[pr$met_id %in% keep_ids, , drop = FALSE]
+  d$label <- ifelse(d$kind == "parent", "Parent", d$met_name)
+  sp <- unique(d$label)
+  pal <- stats::setNames(okabe_ito(length(sp)), sp)
+  if ("Parent" %in% sp) pal[["Parent"]] <- "#000000"
+  ref <- unique(d$reference_timepoint)
+  ggplot2::ggplot(d, ggplot2::aes(x = .data$timepoint, y = .data$pct_of_initial_parent,
+                                  colour = .data$label, group = .data$met_id)) +
+    ggplot2::geom_vline(xintercept = ref, linetype = "dotted", colour = "#B7B2A7") +
+    ggplot2::geom_hline(yintercept = 100, linetype = "dashed", colour = "#B7B2A7") +
+    ggplot2::geom_line(linewidth = 0.8) +
+    ggplot2::geom_point(size = 2) +
+    ggplot2::scale_colour_manual(values = pal, name = NULL) +
+    (if (length(unique(d$group)) > 1) ggplot2::facet_wrap(~ group) else NULL) +
+    ggplot2::labs(x = "Timepoint", y = "% of initial parent",
+                  title = "Parent-relative degradation time course",
+                  subtitle = sprintf("Every species vs. parent at reference timepoint %s",
+                                     paste(unique(ref), collapse = ", "))) +
+    theme_oligomet()
+}
