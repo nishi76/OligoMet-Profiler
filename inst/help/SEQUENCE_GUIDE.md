@@ -117,6 +117,7 @@ which is enough to make nothing match.
 | `e` | 2'-O-methoxyethyl (MOE) | 2'-MOE, 2'-O-(2-methoxyethyl) |
 | `cEt` | constrained ethyl | cEt, (S)-cEt |
 | `LNA` | locked nucleic acid | LNA, BNA |
+| `Mo` | morpholino (PMO) | morpholino, PMO, phosphorodiamidate morpholino |
 
 ### Linkages
 
@@ -125,6 +126,7 @@ which is enough to make nothing match.
 | `o` or `p` | phosphodiester -- the natural bond | PO, phosphodiester, "natural backbone" |
 | `s` | phosphorothioate | PS, phosphorothioate, "sulfur-modified" |
 | `mp` | methylphosphonate | MP, methylphosphonate |
+| `pd` | phosphorodiamidate | PMO backbone, morpholino, "uncharged backbone" |
 
 `o` and `p` mean the same thing and weigh the same. `p` exists because
 that is what BioPharma Finder writes; use whichever you prefer.
@@ -136,6 +138,37 @@ MOE, then 10 DNA, then 5 MOE, so its sugar line is:
 ```
 eeeeeddddddddddeeeee
 ```
+
+### Morpholinos (PMOs)
+
+A phosphorodiamidate morpholino oligomer is a different kind of molecule.
+The ribose is replaced by a morpholine ring, so there is no 2' position
+and no 2'-MOE/2'-OMe/2'-F choice to make. The backbone bond is an
+uncharged phosphorodiamidate rather than a phosphate. Set sugar `Mo` at
+every position and linkage `pd` for every bond:
+
+```
+Bases     GCTATTCTGTCAAGTGCCTA
+Sugars    Mo
+Linkages  pd
+```
+
+A single code in the Sugars or Linkages box means "all positions", so
+`Mo` and `pd` here cover the whole chain. As a triplet:
+
+```
+GMo-pdCMo-pdTMo-pdAMo-pdTMo-pdTMo-pdCMo-pdTMo-pdGMo-pdTMo-pdCMo-pdAMo-pdAMo-pdGMo-pdTMo-pdGMo-pdCMo-pdCMo-pdTMo-pdAMo
+```
+
+Pick "Generic morpholino (PMO)" from the examples dropdown to load it.
+A PMO weighs less than a ribose-phosphate oligo of the same length and
+carries no backbone charge. Its metabolites differ too: morpholinos
+resist nucleases, so the app does not build 3'/5'-exonuclease ladders
+for them. It reports the parent as the dominant species, with minor
+acid/lysosomal phosphorodiamidate-hydrolysis fragments, depurination,
+and the phosphorodiamidate-to-phosphoramidate charge conversion at
+-27.05 Da. A terminal group or a peptide/antibody conjugation handle
+goes in the 5'/3' conjugate dropdowns to match an exact measured mass.
 
 ---
 

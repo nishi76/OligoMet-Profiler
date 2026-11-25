@@ -142,6 +142,15 @@ options(shiny.maxRequestSize = 20 * 1024^3)  # 20 GB
   list("Generic 2'MOE/DNA gapmer" = list(
     seq = "Gm-sTm-sCm-sTm-sCm-sTd-sCd-sTd-sCd-sTd-sTd-sCm-sTm-sCm-sTm-sGm",
     conj5 = "none", conj3 = "none")),
+  # A phosphorodiamidate morpholino oligomer (PMO): uniform morpholino sugar
+  # ('Mo') and phosphorodiamidate linkage ('pd'). Illustrative 20-mer, no real
+  # analyte. Loads so you can see the morpholino chemistry, the uncharged
+  # backbone mass, and the PMO metabolite set (acid/lysosomal hydrolysis, not
+  # nuclease ladders). Terminal groups / a conjugation handle are set via the
+  # conjugate dropdowns to match an exact measured mass.
+  list("Generic morpholino (PMO)" = list(
+    seq = "GMo-pdCMo-pdTMo-pdAMo-pdTMo-pdTMo-pdCMo-pdTMo-pdGMo-pdTMo-pdCMo-pdAMo-pdAMo-pdGMo-pdTMo-pdGMo-pdCMo-pdCMo-pdTMo-pdAMo",
+    conj5 = "none", conj3 = "none")),
   setNames(
     lapply(REFERENCE_OLIGOS, function(r)
       list(seq = r$triplet, conj5 = r$conj5, conj3 = r$conj3)),
