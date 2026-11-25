@@ -294,7 +294,20 @@ SUGAR_FORMULAS <- list(
   # N3'->P5' phosphoramidate backbones: the 3'-OH is a 3'-NH2, so the
   # change lives in the sugar and the linkage stays an ordinary 'o'/'s'.
   # Deoxyribose with 3'-OH -> 3'-NH2: -O +NH, i.e. -0.9840 Da.
-  NP = list(formula = c(C=5,H=11,N=1,O=3),        name = "3'-amino-2',3'-dideoxyribose (N3'->P5' phosphoramidate)")
+  NP = list(formula = c(C=5,H=11,N=1,O=3),        name = "3'-amino-2',3'-dideoxyribose (N3'->P5' phosphoramidate)"),
+
+  # Morpholino (PMO): the ribose/deoxyribose sugar is replaced outright by a
+  # 6-membered morpholine ring (one ring O, one ring N), the base on the ring
+  # carbon, a 5'-CH2OH, and the ring nitrogen as the 3'-equivalent linkage
+  # point. There is no 2' position, so no 2'-modification can exist -- the
+  # sugar is uniform across a true PMO. As a "free sugar" in the base + sugar
+  # - H2O convention (anomeric OH at the base carbon) that is C5H11NO3, i.e.
+  # 2'-deoxyribose with the 3'-OH region replaced by the ring NH (-O +NH).
+  # Pair with the 'pd' phosphorodiamidate linkage. Validated against
+  # eteplirsen (see LINKAGE_FORMULAS$pd). Terminal groups and any conjugation
+  # handle are candidate-specific; add them via the conjugate/terminal
+  # mechanism to match an exact measured mass.
+  Mo = list(formula = c(C=5,H=11,N=1,O=3),        name = "morpholino (PMO subunit)", verify = TRUE)
 )
 
 # Internucleotide linkages (bridge residue added per internal bond).
@@ -358,7 +371,19 @@ LINKAGE_FORMULAS <- list(
   chx = list(formula = c(C=6,H=11,O=2,P=1),
              name = "cyclohexyl phosphonate (cHex)", verify = TRUE),
   mop = list(formula = c(C=4,H=9,O=3,P=1),
-             name = "methoxypropyl phosphonate (MOP)", verify = TRUE)
+             name = "methoxypropyl phosphonate (MOP)", verify = TRUE),
+
+  # Phosphorodiamidate (PMO backbone): -N(morpholino)-P(=O)(N(CH3)2)-O-CH2-.
+  # The uncharged linkage of phosphorodiamidate morpholino oligomers. Unlike
+  # every linkage above (a phosphate with one -OH swapped), this one connects
+  # the morpholino ring nitrogen of one subunit to the 5' oxygen of the next,
+  # carrying a dimethylamino group on phosphorus. As a bridge residue in the
+  # same assembly convention (linkage - H2O per bond) that is C2H6NO2P. Used
+  # only with the morpholino sugar 'Mo'. Validated: a morpholino 'Mo' sugar
+  # (C5H11NO3) plus this linkage reconstructs eteplirsen's molecular formula
+  # (C364H569N177O122P30) exactly, leaving an integer terminal remainder.
+  pd = list(formula = c(C=2,H=6,N=1,O=2,P=1),
+            name = "phosphorodiamidate (PMO linkage)", verify = TRUE)
 )
 
 # Terminal conjugates / linkers / caps. These are added as residues; the

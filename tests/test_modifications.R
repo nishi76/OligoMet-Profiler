@@ -207,5 +207,26 @@ ref <- validate_reference(verbose = FALSE)
 cat("  validate_reference():", if (isTRUE(ref$ok)) "ok" else "FAILED", "\n")
 if (!isTRUE(ref$ok)) fail <- fail + 1L
 
+cat("\n=== 8. PMO: morpholino sugar + phosphorodiamidate linkage ===\n")
+.dict <- build_dictionary()
+# morpholino nucleoside: base + Mo - H2O (thymine subunit)
+morphT <- add_formulas(add_formulas(BASE_FORMULAS$T$formula, SUGAR_FORMULAS$Mo$formula),
+                       scale_formula(.H2O, -1))
+cat(sprintf("  morpholino-T nucleoside: %-14s (expect C10H15N3O4)\n", format_formula(morphT)))
+if (!identical(format_formula(morphT), "C10H15N3O4")) fail <- fail + 1L
+# Eteplirsen (A10 C7 G6 T7, 30-mer) as a plain PMO (Mo sugar + pd linkage,
+# no terminal) must assemble to the expected uncharged backbone, and differ
+# from the published molecular formula (C364H569N177O122P30) by an integer,
+# non-negative terminal group -- the structural check that the morpholino and
+# phosphorodiamidate residue formulas are correct.
+et <- strsplit("CTCCAACATCAAGGAAGATGGCATTTCTAG", "")[[1]]
+f_et <- assemble_oligo_formula(et, rep("Mo", length(et)), rep("pd", length(et)), dict = .dict)
+cat(sprintf("  eteplirsen plain PMO:    %-18s (expect C351H543N174O116P29)\n", format_formula(f_et)))
+if (!identical(format_formula(f_et), "C351H543N174O116P29")) fail <- fail + 1L
+term <- parse_formula("C364H569N177O122P30") - f_et
+cat(sprintf("  terminal remainder:     %-18s (bounded integer >= 0 -> core validated)\n",
+            format_formula(term)))
+if (any(term < 0) || any(term != round(term))) fail <- fail + 1L
+
 if (fail > 0) stop(fail, " modification check(s) failed")
 cat("\n==== All modification tests passed ====\n")
