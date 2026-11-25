@@ -553,7 +553,16 @@ cyclic_phosphate_variant <- function(met, dict = STANDARD_DICT) {
 #
 # Recognized tokens: "depurination", "oxidation", "deamination",
 # "cyclic_phosphate" (or "all" for every applicable class).
-.MOD_CLASSES <- c("depurination", "oxidation", "deamination", "cyclic_phosphate")
+.MOD_CLASSES <- c("depurination", "oxidation", "deamination", "cyclic_phosphate",
+                  "pd_hydrolysis")
+
+# Phosphorodiamidate -> phosphoramidate hydrolysis (PMO only). Acid/lysosomal
+# hydrolysis of one phosphorodiamidate linkage's P-N(CH3)2 bond swaps the
+# dimethylamino group for -OH, turning an uncharged phosphorodiamidate ('pd',
+# C2H6NO2P) into a charged phosphoramidate monoester (HPO3-equivalent bridge).
+# Net formula change per event = HPO3 - pd = C-2 H-5 N-1 O+1, i.e. -27.0473 Da.
+# Applies only to a metabolite that actually carries a 'pd' linkage.
+.PD_HYDROLYSIS_SHIFT <- c(C = -2, H = -5, N = -1, O = 1)
 
 #' Enumerate a metabolite's modification mass-variants for the search grid
 #'
@@ -614,6 +623,12 @@ metabolite_mod_variants <- function(met, info = metabolite_mass_info(met, dict),
   }
   if ("cyclic_phosphate" %in% mods && can_form_cyclic_phosphate(met)) {
     add_raw("cyclic_phosphate", met$n, add_formulas(fv0, -.as_formula(.H2O)))
+  }
+  if ("pd_hydrolysis" %in% mods &&
+      !is.null(met$linkages) && any(met$linkages == "pd", na.rm = TRUE)) {
+    # One phosphorodiamidate linkage hydrolysed (NMe2 -> OH); MS1 cannot say
+    # which, so one collapsed mass at mod_site = NA.
+    add_raw("pd_hydrolysis", NA_integer_, add_formulas(fv0, .PD_HYDROLYSIS_SHIFT))
   }
 
   if (length(raw) > 0) {

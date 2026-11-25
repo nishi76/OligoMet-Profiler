@@ -194,6 +194,57 @@ is_gapmer <- function(spec) {
   any(s == "d") && !identical(s[1], "d") && !identical(s[n], "d")
 }
 
+#' Is this a phosphorodiamidate morpholino oligomer (PMO)?
+#'
+#' `TRUE` when every sugar is the morpholino ring (`"Mo"`), the uniform
+#' backbone of a PMO. A PMO has no 2' position (no 2'-modification is
+#' possible) and its phosphorodiamidate linkages are nuclease- and
+#' phosphodiesterase-resistant, so its metabolite set is fundamentally
+#' different from a nuclease-cleaved oligonucleotide (see
+#' [generate_metabolites()]).
+#'
+#' @param spec An `oligo_spec` list (see [parse_input()]).
+#' @return A single logical.
+#' @seealso [is_gapmer()], [generate_metabolites()]
+#' @export
+is_pmo <- function(spec) {
+  s <- spec$sugars
+  !is.null(s) && length(s) > 0 && all(s == "Mo")
+}
+
+# PMO ordering prior. PMOs are metabolically stable: parent dominates and is
+# cleared largely intact (renal/urinary). The only backbone route to shorter
+# species is slow acid/lysosomal hydrolysis of the phosphorodiamidate bonds,
+# which is position-random, not a clean enzymatic ladder, so there is NO
+# 3'>5' nuclease preference -- 3' and 5' chain-shortened fragments of the same
+# depth get equal, low weight, with a gentle decay by depth.
+.PMO_PRIOR <- list(frag_base = 0.12, decay = 0.85, conj_base = 0.6)
+
+#' Flat (non-nuclease) ordering weights for a PMO's metabolites
+#'
+#' Parent = 1; acid/lysosomal hydrolysis fragments get a low, 3'/5'-symmetric
+#' weight decaying with truncation depth. Used in place of
+#' [assign_nuclease_weights()] for morpholino chemistry, which has no nuclease
+#' preference.
+#'
+#' @param mets A list of metabolite objects (see [generate_metabolites()]).
+#' @return `mets` with a numeric `rel_weight` added to each entry.
+#' @seealso [generate_metabolites()], [assign_nuclease_weights()]
+#' @export
+assign_pmo_weights <- function(mets) {
+  P <- .PMO_PRIOR
+  for (i in seq_along(mets)) {
+    m <- mets[[i]]
+    kinds <- m$kind_all %||% m$kind
+    k <- suppressWarnings(as.integer(m$site))
+    w <- if ("parent" %in% kinds) 1.0
+         else if ("conj_catab" %in% kinds) P$conj_base * P$decay^(if (is.na(k)) 1 else k)
+         else P$frag_base * P$decay^(if (is.na(k)) 1 else max(0, k - 1))
+    mets[[i]]$rel_weight <- round(min(1, w), 4)
+  }
+  mets
+}
+
 # Pyrimidines (including the common methylated/modified forms). Pyrimidine
 # termini are cleaved faster than purines by the exo/endonucleases.
 .PYRIMIDINES <- c("C", "T", "U", "S", "m5C", "hm5C", "m5U", "psi")
@@ -468,11 +519,37 @@ generate_metabolites <- function(spec, opts = list(), dict = STANDARD_DICT) {
     }
   }
   if (dedupe) mets <- dedupe_metabolites(mets)
+
+  # Mechanism + PMO mode. A morpholino (PMO) backbone is nuclease- and
+  # phosphodiesterase-resistant, so its chain-shortened species are NOT
+  # enzymatic exo/endonuclease products: they are the minor fragments of slow
+  # acid/lysosomal hydrolysis of the phosphorodiamidate bonds. Relabel the
+  # mechanism and wording and switch off the nuclease-preference weighting,
+  # while keeping the structural kinds so the maps/summaries still work. The
+  # mass side needs no change here: PS->PO (no sulfur) and 2',3'-cyclic
+  # phosphate (no 2'-OH) self-gate off, and the phosphorodiamidate->
+  # phosphoramidate charge conversion is a mass variant (see
+  # metabolite_mod_variants(), class "pd_hydrolysis").
+  pmo <- opts[["mode"]] %||% (if (is_pmo(spec)) "pmo" else "nuclease")
+  pmo <- identical(pmo, "pmo") || is_pmo(spec)
+  for (i in seq_along(mets)) {
+    kinds <- mets[[i]]$kind_all %||% mets[[i]]$kind
+    mets[[i]]$mechanism <- if ("parent" %in% kinds) "parent"
+      else if ("conj_catab" %in% kinds) "conjugate"
+      else if (pmo) "acid_hydrolysis" else "nuclease"
+    if (pmo && grepl("exonuclease|endonuclease", mets[[i]]$modification %||% "")) {
+      m <- mets[[i]]
+      mets[[i]]$modification <- sub("3' exonuclease", "acid/lysosomal hydrolysis (3' end)",
+        sub("5' exonuclease", "acid/lysosomal hydrolysis (5' end)",
+        sub("endonuclease cleavage", "acid/lysosomal hydrolysis", m$modification)))
+    }
+  }
   # Relevance tier for inclusion-list prioritisation (1 = dominant species,
   # 2 = wider net). See .met_tier().
   for (i in seq_along(mets)) mets[[i]]$tier <- .met_tier(mets[[i]])
-  # Heuristic nuclease-preference weight (ordering prior, not kinetics).
-  mets <- assign_nuclease_weights(mets, spec, dict)
+  # Ordering prior (not kinetics): nuclease preference for a standard oligo,
+  # a flat parent-dominant prior for a PMO (no nuclease preference).
+  mets <- if (pmo) assign_pmo_weights(mets) else assign_nuclease_weights(mets, spec, dict)
   mets
 }
 

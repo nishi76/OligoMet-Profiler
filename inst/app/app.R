@@ -836,7 +836,8 @@ ui <- fluidPage(
                                   "Depurination (abasic)" = "depurination",
                                   "Oxidation (+O)" = "oxidation",
                                   "Deamination" = "deamination",
-                                  "2',3'-cyclic phosphate" = "cyclic_phosphate"),
+                                  "2',3'-cyclic phosphate" = "cyclic_phosphate",
+                                  "Phosphorodiamidate hydrolysis (PMO)" = "pd_hydrolysis"),
                       selected = "none", width = "100%"))
                   ),
                   tags$p(style = "font-size: 12px; color: var(--muted);",
@@ -990,7 +991,8 @@ ui <- fluidPage(
                                choices = c("Depurination (abasic): −117.044 Da (A), −133.039 Da (G)" = "depurination",
                                            "Oxidation (+O): +15.9949 Da" = "oxidation",
                                            "Deamination: +0.9840 Da" = "deamination",
-                                           "2',3'-cyclic phosphate: −18.0106 Da" = "cyclic_phosphate"),
+                                           "2',3'-cyclic phosphate: −18.0106 Da" = "cyclic_phosphate",
+                                           "Phosphorodiamidate hydrolysis (PMO, NMe2→OH): −27.047 Da" = "pd_hydrolysis"),
                                selected = DEFAULT_PIPELINE_PARAMS$mods),
             tags$div(style = "margin:-4px 0 6px;",
                      actionLink("mods_all", "Select all", style = "font-size:11px;"),
@@ -2548,7 +2550,7 @@ server <- function(input, output, session) {
 
   # Variable-modification search: one-click select-all / clear, the way a PTM
   # search lets you turn on every candidate modification at once.
-  .ALL_MODS <- c("depurination", "oxidation", "deamination", "cyclic_phosphate")
+  .ALL_MODS <- c("depurination", "oxidation", "deamination", "cyclic_phosphate", "pd_hydrolysis")
   observeEvent(input$mods_all, updateCheckboxGroupInput(session, "mods", selected = .ALL_MODS))
   observeEvent(input$mods_none, updateCheckboxGroupInput(session, "mods", selected = character(0)))
 
